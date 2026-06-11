@@ -12,13 +12,21 @@ python3 api/movevalue_api.py --port 5173
 
 ## 데이터 파이프라인
 
-`scripts/build_real_dataset.py`는 서울시 열린데이터광장의 `서울시 부동산 전월세가 정보` 2025년 파일을 내려받고, 15~85㎡ 거래를 생활권 법정동 기준으로 집계한다.
+`scripts/build_real_dataset.py`는 서울시 열린데이터광장의 `서울시 부동산 전월세가 정보` 2025년 파일을 내려받고, 15~85㎡ 거래를 생활권 법정동 기준으로 집계한다. 통근시간과 생활 SOC는 `scripts/movevalue_adapters.py`의 어댑터가 채운다.
 
 ```bash
 python3 scripts/build_real_dataset.py
 ```
 
 산출물은 `data/areas.actual.json`이며, 원천 ZIP은 `data/raw/`에 보관한다. `data/raw/`는 용량과 원천 데이터 재배포 이슈를 줄이기 위해 Git에서 제외한다.
+
+통근시간은 `ODSAY_API_KEY` 또는 `MOVEVALUE_ODSAY_API_KEY`가 설정되어 있으면 대중교통 경로 API를 호출하고, 키가 없거나 호출이 실패한 목적지는 기존 검증 테이블로 폴백한다.
+
+```bash
+ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
+```
+
+생활 SOC는 병의원·학교·공원 좌표 스냅샷을 생활권 대표역 기준 반경 1.6km로 집계해 `serviceScore`, `socSummary`, `evidence.socCounts`에 저장한다.
 
 ## 엔드포인트
 
@@ -65,7 +73,8 @@ API 키가 필요한 제공자는 키를 코드에 하드코딩하지 않고 환
 
 ## 확장 방향
 
-- 교통: 현재는 주요 업무지구별 실증용 통근시간 테이블을 사용한다. 배포 단계에서는 대중교통 경로 API나 GTFS 기반 라우팅으로 분리한다.
+- 교통: 현재는 ODsay 경로 API 어댑터를 구현했고, API 키가 없으면 주요 업무지구별 실증용 통근시간 테이블로 폴백한다. 배포 단계에서는 키 운영, 호출 캐시, 목적지 자유 입력, GTFS 기반 라우팅 옵션을 추가한다.
+- 생활 SOC: 현재는 병의원·학교·공원 좌표 스냅샷 반경 집계다. 다음 단계에서는 서울 열린데이터광장 API 키 기반 전체 자동 갱신과 편의시설 카테고리 확장을 추가한다.
 - 주거: 현재는 서울시 2025 전월세 파일 기반이다. 다음 단계에서는 월별 증분 갱신과 국토교통부 실거래가 API를 병행한다.
 - 클라이언트: iOS Swift 앱은 `/api/areas`와 `/api/recommendations`를 그대로 소비하는 구조로 확장한다.
 - 수익화: 부동산·교통 플랫폼에는 추천 점수 API, 지자체에는 생활권 취약지 리포트 API로 제공한다.

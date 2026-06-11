@@ -187,12 +187,22 @@ main > *,
   scroll-margin-top: 72px;
 }
 
+main > .anchor-target {
+  display: none;
+}
+
+main > .anchor-target.is-active-view {
+  display: block;
+}
+
+main > .workspace.is-active-view {
+  display: grid;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 340px minmax(360px, 1.2fr) minmax(360px, 0.9fr);
-  grid-template-areas:
-    "controls map detail"
-    "controls results detail";
+  grid-template-areas: "controls results detail";
   gap: 16px;
 }
 
@@ -209,7 +219,6 @@ main > *,
 }
 
 .map-panel {
-  grid-area: map;
   padding: 18px;
 }
 
@@ -386,6 +395,11 @@ input[type="range"] {
   border-radius: 8px;
   overflow: hidden;
   background: #e9efea;
+}
+
+.map-panel.section-block .map-canvas {
+  height: min(64vh, 560px);
+  min-height: 420px;
 }
 
 .map-canvas.synthetic-map {
@@ -764,7 +778,7 @@ input[type="range"] {
 
 .data-table {
   width: 100%;
-  min-width: 640px;
+  min-width: 780px;
   border-collapse: collapse;
   font-size: 13.5px;
 }
@@ -1033,7 +1047,6 @@ input[type="range"] {
   .workspace {
     grid-template-columns: 320px 1fr;
     grid-template-areas:
-      "controls map"
       "controls results"
       "detail detail";
   }
@@ -1089,10 +1102,14 @@ input[type="range"] {
     grid-template-columns: 1fr;
     grid-template-areas:
       "controls"
-      "map"
       "results"
       "detail";
     gap: 12px;
+  }
+
+  .map-panel.section-block .map-canvas {
+    height: 60vh;
+    min-height: 360px;
   }
 
   .section-block {

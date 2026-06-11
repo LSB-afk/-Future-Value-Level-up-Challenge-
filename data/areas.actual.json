@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generatedAt": "2026-06-11T06:51:49.209465+00:00",
+    "generatedAt": "2026-06-11T08:25:02.700583+00:00",
     "scope": "서울 주요 환승·업무 생활권 MVP",
     "housingSource": {
       "name": "서울시 부동산 전월세가 정보",
@@ -11,7 +11,31 @@
       "name": "서울시 역사마스터 정보",
       "url": "https://data.seoul.go.kr/dataList/OA-21232/S/1/datasetView.do"
     },
-    "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다."
+    "transitSource": {
+      "name": "ODsay 대중교통 경로 API 어댑터",
+      "url": "https://lab.odsay.com/guide/guide",
+      "apiKeyEnv": "ODSAY_API_KEY",
+      "fallback": "API 키 미설정 또는 호출 실패 시 기존 MVP 통근시간 테이블을 사용합니다."
+    },
+    "socSource": {
+      "name": "서울 열린데이터광장 생활 SOC 좌표 스냅샷",
+      "radiusMeters": 1600,
+      "datasets": [
+        {
+          "name": "서울시 병의원 위치 정보",
+          "url": "https://data.seoul.go.kr/dataList/OA-20337/S/1/datasetView.do"
+        },
+        {
+          "name": "서울시 학교 기본정보",
+          "url": "https://data.seoul.go.kr/dataList/OA-20502/S/1/datasetView.do"
+        },
+        {
+          "name": "서울시 주요 공원현황",
+          "url": "https://data.seoul.go.kr/dataList/OA-394/S/1/datasetView.do"
+        }
+      ]
+    },
+    "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다. 통근시간은 대중교통 경로 API 어댑터가 우선이며, API 키가 없으면 MVP 테이블로 폴백합니다. 생활 SOC는 병원·학교·공원 좌표 반경 집계 기반입니다."
   },
   "areas": [
     {
@@ -25,16 +49,77 @@
       "deposit10k": 1000.0,
       "jeonse10k": 28300.0,
       "transitScore": 80,
-      "serviceScore": 82,
+      "serviceScore": 83,
+      "socScore": 83,
       "safetyScore": 74,
       "carbonScore": 78,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 24,
         "yeouido": 44,
         "seoulStation": 28,
         "digital": 54,
         "pangyo": 50
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 2,
+          "school": 3,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "건국대학교병원",
+            "distanceMeters": 194
+          },
+          "school": {
+            "name": "건국대학교",
+            "distanceMeters": 910
+          },
+          "park": {
+            "name": "뚝섬한강공원",
+            "distanceMeters": 1110
+          }
+        },
+        "facilityRecords": 7,
+        "sampleFacilities": [
+          {
+            "category": "hospital",
+            "name": "건국대학교병원",
+            "distanceMeters": 194
+          },
+          {
+            "category": "school",
+            "name": "건국대학교",
+            "distanceMeters": 910
+          },
+          {
+            "category": "park",
+            "name": "뚝섬한강공원",
+            "distanceMeters": 1110
+          },
+          {
+            "category": "school",
+            "name": "세종대학교",
+            "distanceMeters": 1220
+          },
+          {
+            "category": "school",
+            "name": "광진중학교",
+            "distanceMeters": 1239
+          },
+          {
+            "category": "hospital",
+            "name": "혜민병원",
+            "distanceMeters": 1318
+          },
+          {
+            "category": "park",
+            "name": "서울어린이대공원",
+            "distanceMeters": 1459
+          }
+        ]
       },
       "recommendedFor": [
         "single",
@@ -50,7 +135,44 @@
         ],
         "matchedRentRecords": 19486,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 2,
+          "school": 3,
+          "park": 2
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "건국대학교병원",
+            "distanceMeters": 194
+          },
+          "school": {
+            "name": "건국대학교",
+            "distanceMeters": 910
+          },
+          "park": {
+            "name": "뚝섬한강공원",
+            "distanceMeters": 1110
+          }
+        },
+        "socFacilityRecords": 7
       }
     },
     {
@@ -64,16 +186,67 @@
       "deposit10k": 1000.0,
       "jeonse10k": 19000.0,
       "transitScore": 80,
-      "serviceScore": 84,
+      "serviceScore": 77,
+      "socScore": 77,
       "safetyScore": 74,
       "carbonScore": 78,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 29,
         "yeouido": 24,
         "seoulStation": 33,
         "digital": 17,
         "pangyo": 56
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 2,
+          "school": 1,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "에이치플러스 양지병원",
+            "distanceMeters": 69
+          },
+          "school": {
+            "name": "신림고등학교",
+            "distanceMeters": 1353
+          },
+          "park": {
+            "name": "도림천",
+            "distanceMeters": 199
+          }
+        },
+        "facilityRecords": 5,
+        "sampleFacilities": [
+          {
+            "category": "hospital",
+            "name": "에이치플러스 양지병원",
+            "distanceMeters": 69
+          },
+          {
+            "category": "park",
+            "name": "도림천",
+            "distanceMeters": 199
+          },
+          {
+            "category": "hospital",
+            "name": "서울특별시 보라매병원",
+            "distanceMeters": 1100
+          },
+          {
+            "category": "school",
+            "name": "신림고등학교",
+            "distanceMeters": 1353
+          },
+          {
+            "category": "park",
+            "name": "보라매공원",
+            "distanceMeters": 1407
+          }
+        ]
       },
       "recommendedFor": [
         "single",
@@ -88,7 +261,44 @@
         ],
         "matchedRentRecords": 24654,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 2,
+          "school": 1,
+          "park": 2
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "에이치플러스 양지병원",
+            "distanceMeters": 69
+          },
+          "school": {
+            "name": "신림고등학교",
+            "distanceMeters": 1353
+          },
+          "park": {
+            "name": "도림천",
+            "distanceMeters": 199
+          }
+        },
+        "socFacilityRecords": 5
       }
     },
     {
@@ -102,16 +312,62 @@
       "deposit10k": 2000.0,
       "jeonse10k": 32000.0,
       "transitScore": 92,
-      "serviceScore": 84,
+      "serviceScore": 70,
+      "socScore": 70,
       "safetyScore": 78,
       "carbonScore": 84,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 35,
         "yeouido": 46,
         "seoulStation": 21,
         "digital": 58,
         "pangyo": 61
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 1,
+          "school": 2,
+          "park": 1
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "서울특별시 동부병원",
+            "distanceMeters": 1299
+          },
+          "school": {
+            "name": "청량고등학교",
+            "distanceMeters": 732
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 1393
+          }
+        },
+        "facilityRecords": 4,
+        "sampleFacilities": [
+          {
+            "category": "school",
+            "name": "청량고등학교",
+            "distanceMeters": 732
+          },
+          {
+            "category": "school",
+            "name": "서울시립대학교",
+            "distanceMeters": 1284
+          },
+          {
+            "category": "hospital",
+            "name": "서울특별시 동부병원",
+            "distanceMeters": 1299
+          },
+          {
+            "category": "park",
+            "name": "청계천",
+            "distanceMeters": 1393
+          }
+        ]
       },
       "recommendedFor": [
         "single",
@@ -128,7 +384,44 @@
         ],
         "matchedRentRecords": 11306,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 1,
+          "school": 2,
+          "park": 1
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "서울특별시 동부병원",
+            "distanceMeters": 1299
+          },
+          "school": {
+            "name": "청량고등학교",
+            "distanceMeters": 732
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 1393
+          }
+        },
+        "socFacilityRecords": 4
       }
     },
     {
@@ -142,16 +435,72 @@
       "deposit10k": 5000.0,
       "jeonse10k": 59000.0,
       "transitScore": 92,
-      "serviceScore": 82,
+      "serviceScore": 81,
+      "socScore": 81,
       "safetyScore": 82,
       "carbonScore": 84,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 27,
         "yeouido": 36,
         "seoulStation": 19,
         "digital": 48,
         "pangyo": 52
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 1,
+          "school": 3,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "한양대학교병원",
+            "distanceMeters": 603
+          },
+          "school": {
+            "name": "무학여자고등학교",
+            "distanceMeters": 533
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 947
+          }
+        },
+        "facilityRecords": 6,
+        "sampleFacilities": [
+          {
+            "category": "school",
+            "name": "무학여자고등학교",
+            "distanceMeters": 533
+          },
+          {
+            "category": "hospital",
+            "name": "한양대학교병원",
+            "distanceMeters": 603
+          },
+          {
+            "category": "school",
+            "name": "성동고등학교",
+            "distanceMeters": 742
+          },
+          {
+            "category": "school",
+            "name": "한양대학교",
+            "distanceMeters": 816
+          },
+          {
+            "category": "park",
+            "name": "청계천",
+            "distanceMeters": 947
+          },
+          {
+            "category": "park",
+            "name": "응봉근린공원",
+            "distanceMeters": 1585
+          }
+        ]
       },
       "recommendedFor": [
         "commuter",
@@ -169,7 +518,44 @@
         ],
         "matchedRentRecords": 9721,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 1,
+          "school": 3,
+          "park": 2
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "한양대학교병원",
+            "distanceMeters": 603
+          },
+          "school": {
+            "name": "무학여자고등학교",
+            "distanceMeters": 533
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 947
+          }
+        },
+        "socFacilityRecords": 6
       }
     },
     {
@@ -183,16 +569,62 @@
       "deposit10k": 1000.0,
       "jeonse10k": 28000.0,
       "transitScore": 74,
-      "serviceScore": 80,
+      "serviceScore": 69,
+      "socScore": 69,
       "safetyScore": 72,
       "carbonScore": 75,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 37,
         "yeouido": 20,
         "seoulStation": 35,
         "digital": 6,
         "pangyo": 63
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 1,
+          "school": 2,
+          "park": 1
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "강남성심병원",
+            "distanceMeters": 1091
+          },
+          "school": {
+            "name": "영림중학교",
+            "distanceMeters": 411
+          },
+          "park": {
+            "name": "도림천 구로디지털단지 구간",
+            "distanceMeters": 106
+          }
+        },
+        "facilityRecords": 4,
+        "sampleFacilities": [
+          {
+            "category": "park",
+            "name": "도림천 구로디지털단지 구간",
+            "distanceMeters": 106
+          },
+          {
+            "category": "school",
+            "name": "영림중학교",
+            "distanceMeters": 411
+          },
+          {
+            "category": "hospital",
+            "name": "강남성심병원",
+            "distanceMeters": 1091
+          },
+          {
+            "category": "school",
+            "name": "구로고등학교",
+            "distanceMeters": 1288
+          }
+        ]
       },
       "recommendedFor": [
         "single",
@@ -207,7 +639,44 @@
         ],
         "matchedRentRecords": 13397,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 1,
+          "school": 2,
+          "park": 1
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "강남성심병원",
+            "distanceMeters": 1091
+          },
+          "school": {
+            "name": "영림중학교",
+            "distanceMeters": 411
+          },
+          "park": {
+            "name": "도림천 구로디지털단지 구간",
+            "distanceMeters": 106
+          }
+        },
+        "socFacilityRecords": 4
       }
     },
     {
@@ -221,16 +690,67 @@
       "deposit10k": 4000.0,
       "jeonse10k": 48450.0,
       "transitScore": 92,
-      "serviceScore": 81,
+      "serviceScore": 80,
+      "socScore": 80,
       "safetyScore": 78,
       "carbonScore": 84,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 38,
         "yeouido": 15,
         "seoulStation": 11,
         "digital": 32,
         "pangyo": 66
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 1,
+          "school": 2,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "공덕연세이비인후과의원",
+            "distanceMeters": 83
+          },
+          "school": {
+            "name": "서울여자중학교",
+            "distanceMeters": 204
+          },
+          "park": {
+            "name": "경의선숲길공원",
+            "distanceMeters": 679
+          }
+        },
+        "facilityRecords": 5,
+        "sampleFacilities": [
+          {
+            "category": "hospital",
+            "name": "공덕연세이비인후과의원",
+            "distanceMeters": 83
+          },
+          {
+            "category": "school",
+            "name": "서울여자중학교",
+            "distanceMeters": 204
+          },
+          {
+            "category": "park",
+            "name": "경의선숲길공원",
+            "distanceMeters": 679
+          },
+          {
+            "category": "park",
+            "name": "효창공원",
+            "distanceMeters": 823
+          },
+          {
+            "category": "school",
+            "name": "서강대학교",
+            "distanceMeters": 1086
+          }
+        ]
       },
       "recommendedFor": [
         "commuter",
@@ -247,7 +767,44 @@
         ],
         "matchedRentRecords": 8524,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 1,
+          "school": 2,
+          "park": 2
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "공덕연세이비인후과의원",
+            "distanceMeters": 83
+          },
+          "school": {
+            "name": "서울여자중학교",
+            "distanceMeters": 204
+          },
+          "park": {
+            "name": "경의선숲길공원",
+            "distanceMeters": 679
+          }
+        },
+        "socFacilityRecords": 5
       }
     },
     {
@@ -261,16 +818,77 @@
       "deposit10k": 2391.0,
       "jeonse10k": 35280.0,
       "transitScore": 80,
-      "serviceScore": 80,
+      "serviceScore": 82,
+      "socScore": 82,
       "safetyScore": 78,
       "carbonScore": 78,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 55,
         "yeouido": 31,
         "seoulStation": 39,
         "digital": 34,
         "pangyo": 80
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 1,
+          "school": 4,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "이대서울병원",
+            "distanceMeters": 1304
+          },
+          "school": {
+            "name": "마곡하늬중학교",
+            "distanceMeters": 144
+          },
+          "park": {
+            "name": "마곡나루근린공원",
+            "distanceMeters": 196
+          }
+        },
+        "facilityRecords": 7,
+        "sampleFacilities": [
+          {
+            "category": "school",
+            "name": "마곡하늬중학교",
+            "distanceMeters": 144
+          },
+          {
+            "category": "park",
+            "name": "마곡나루근린공원",
+            "distanceMeters": 196
+          },
+          {
+            "category": "park",
+            "name": "서울식물원",
+            "distanceMeters": 714
+          },
+          {
+            "category": "school",
+            "name": "마곡중학교",
+            "distanceMeters": 842
+          },
+          {
+            "category": "school",
+            "name": "공항고등학교",
+            "distanceMeters": 1229
+          },
+          {
+            "category": "hospital",
+            "name": "이대서울병원",
+            "distanceMeters": 1304
+          },
+          {
+            "category": "school",
+            "name": "방화중학교",
+            "distanceMeters": 1568
+          }
+        ]
       },
       "recommendedFor": [
         "newlywed",
@@ -285,7 +903,44 @@
         ],
         "matchedRentRecords": 15082,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 1,
+          "school": 4,
+          "park": 2
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "이대서울병원",
+            "distanceMeters": 1304
+          },
+          "school": {
+            "name": "마곡하늬중학교",
+            "distanceMeters": 144
+          },
+          "park": {
+            "name": "마곡나루근린공원",
+            "distanceMeters": 196
+          }
+        },
+        "socFacilityRecords": 7
       }
     },
     {
@@ -299,16 +954,72 @@
       "deposit10k": 2000.0,
       "jeonse10k": 48000.0,
       "transitScore": 86,
-      "serviceScore": 82,
+      "serviceScore": 81,
+      "socScore": 81,
       "safetyScore": 76,
       "carbonScore": 81,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 53,
         "yeouido": 29,
         "seoulStation": 26,
         "digital": 45,
         "pangyo": 76
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 1,
+          "school": 3,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "상암DMC의원",
+            "distanceMeters": 223
+          },
+          "school": {
+            "name": "상암고등학교",
+            "distanceMeters": 259
+          },
+          "park": {
+            "name": "월드컵공원",
+            "distanceMeters": 750
+          }
+        },
+        "facilityRecords": 6,
+        "sampleFacilities": [
+          {
+            "category": "hospital",
+            "name": "상암DMC의원",
+            "distanceMeters": 223
+          },
+          {
+            "category": "school",
+            "name": "상암고등학교",
+            "distanceMeters": 259
+          },
+          {
+            "category": "school",
+            "name": "하늘초등학교",
+            "distanceMeters": 511
+          },
+          {
+            "category": "park",
+            "name": "월드컵공원",
+            "distanceMeters": 750
+          },
+          {
+            "category": "park",
+            "name": "하늘공원",
+            "distanceMeters": 1015
+          },
+          {
+            "category": "school",
+            "name": "서울상암초등학교",
+            "distanceMeters": 1084
+          }
+        ]
       },
       "recommendedFor": [
         "commuter",
@@ -323,7 +1034,44 @@
         ],
         "matchedRentRecords": 4402,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 1,
+          "school": 3,
+          "park": 2
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "상암DMC의원",
+            "distanceMeters": 223
+          },
+          "school": {
+            "name": "상암고등학교",
+            "distanceMeters": 259
+          },
+          "park": {
+            "name": "월드컵공원",
+            "distanceMeters": 750
+          }
+        },
+        "socFacilityRecords": 6
       }
     },
     {
@@ -337,16 +1085,72 @@
       "deposit10k": 1000.0,
       "jeonse10k": 25000.0,
       "transitScore": 98,
-      "serviceScore": 91,
+      "serviceScore": 80,
+      "socScore": 80,
       "safetyScore": 80,
       "carbonScore": 87,
-      "dataReadiness": 94,
+      "dataReadiness": 95,
       "commuteMinutes": {
         "gangnam": 62,
         "yeouido": 33,
         "seoulStation": 36,
         "digital": 38,
         "pangyo": 88
+      },
+      "socSummary": {
+        "radiusMeters": 1600,
+        "counts": {
+          "hospital": 1,
+          "school": 4,
+          "park": 1
+        },
+        "nearestFacilities": {
+          "hospital": {
+            "name": "김포공항우리들병원",
+            "distanceMeters": 207
+          },
+          "school": {
+            "name": "서울공항초등학교",
+            "distanceMeters": 1038
+          },
+          "park": {
+            "name": "개화산공원",
+            "distanceMeters": 1148
+          }
+        },
+        "facilityRecords": 6,
+        "sampleFacilities": [
+          {
+            "category": "hospital",
+            "name": "김포공항우리들병원",
+            "distanceMeters": 207
+          },
+          {
+            "category": "school",
+            "name": "서울공항초등학교",
+            "distanceMeters": 1038
+          },
+          {
+            "category": "park",
+            "name": "개화산공원",
+            "distanceMeters": 1148
+          },
+          {
+            "category": "school",
+            "name": "공항고등학교",
+            "distanceMeters": 1166
+          },
+          {
+            "category": "school",
+            "name": "송정중학교",
+            "distanceMeters": 1313
+          },
+          {
+            "category": "school",
+            "name": "방화중학교",
+            "distanceMeters": 1599
+          }
+        ]
       },
       "recommendedFor": [
         "public",
@@ -362,7 +1166,44 @@
         ],
         "matchedRentRecords": 7747,
         "fallbackUsed": false,
-        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증"
+        "rentFallbackUsed": false,
+        "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+        "commuteSource": "MVP 통근시간 테이블",
+        "commuteMode": "table_fallback",
+        "commuteProvider": "fallback",
+        "commuteFallbackUsed": true,
+        "commuteFallbackDestinations": [
+          "gangnam",
+          "yeouido",
+          "seoulStation",
+          "digital",
+          "pangyo"
+        ],
+        "commuteApiKeyEnv": "ODSAY_API_KEY",
+        "commuteErrors": {},
+        "socSource": "서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 반경 집계",
+        "socMode": "public_coordinate_snapshot",
+        "socRadiusMeters": 1600,
+        "socCounts": {
+          "hospital": 1,
+          "school": 4,
+          "park": 1
+        },
+        "socNearestFacilities": {
+          "hospital": {
+            "name": "김포공항우리들병원",
+            "distanceMeters": 207
+          },
+          "school": {
+            "name": "서울공항초등학교",
+            "distanceMeters": 1038
+          },
+          "park": {
+            "name": "개화산공원",
+            "distanceMeters": 1148
+          }
+        },
+        "socFacilityRecords": 6
       }
     }
   ]

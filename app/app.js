@@ -15,9 +15,9 @@ const state = {
   refreshTimer: null,
   requestId: 0,
   map: null,
+  activeSection: "recommend",
   showAllCards: false,
   evidenceRendered: false,
-  navClickSuppressUntil: 0,
   weights: {
     commute: 35,
     cost: 30,
@@ -49,13 +49,14 @@ const personaBoost = {
 };
 
 const scoreTips = {
-  commute: "선택한 목적지까지의 대중교통 통근시간 기반 점수",
+  commute: "대중교통 경로 API 어댑터 기반 통근시간 점수, API 키가 없으면 검증 테이블로 폴백",
   cost: "예산 대비 월세 중앙값(2025 서울 전월세 실데이터) 기반 점수",
-  service: "환승·생활 인프라 접근성 점수 (MVP 프록시)",
+  service: "병원·학교·공원 좌표를 생활권 반경으로 집계한 생활 SOC 접근성 점수",
   safety: "안전·대기·녹지 환경 점수 (MVP 프록시)"
 };
 
 const nodes = {
+  main: document.querySelector("main"),
   budgetInput: document.querySelector("#budgetInput"),
   budgetOutput: document.querySelector("#budgetOutput"),
   destinationInput: document.querySelector("#destinationInput"),
@@ -100,6 +101,14 @@ function formatMoney10k(value) {
     return rest ? `${eok}억 ${formatNumber(rest)}만원` : `${eok}억원`;
   }
   return `${formatNumber(amount)}만원`;
+}
+
+function formatDistance(value) {
+  const meters = Math.round(Number(value || 0));
+  if (meters >= 1000) {
+    return `${(meters / 1000).toFixed(1)}km`;
+  }
+  return `${formatNumber(meters)}m`;
 }
 
 async function fetchJson(path) {
@@ -460,6 +469,11 @@ function renderEvidence(selected) {
   if (!selected.evidence) return "";
   const evidence = selected.evidence;
   const rentDongs = Array.isArray(evidence.rentDongs) ? evidence.rentDongs.join("·") : "";
+  const socCounts = evidence.socCounts || selected.socSummary?.counts || {};
+  const socText = `병원 ${socCounts.hospital || 0} · 학교 ${socCounts.school || 0} · 공원 ${socCounts.park || 0}`;
+  const commuteSource = evidence.commuteMode === "table_fallback"
+    ? `${evidence.commuteSource} (API 키 미설정 폴백)`
+    : evidence.commuteSource;
   return `
     <div class="callout">
       <p><strong>실데이터 근거</strong></p>
@@ -468,6 +482,8 @@ function renderEvidence(selected) {
         <li>집계 범위: ${evidence.rentDistrict || selected.district} ${rentDongs} (15~85㎡)</li>
         <li>매칭 거래: ${formatNumber(evidence.matchedRentRecords)}건 중앙값 집계</li>
         <li>좌표 검증: ${evidence.stationCoordinateSource || "서울시 역사마스터 정보"}</li>
+        <li>통근 경로: ${commuteSource}</li>
+        <li>생활 SOC: 반경 ${formatDistance(evidence.socRadiusMeters)} ${socText} 집계</li>
       </ul>
     </div>
   `;
@@ -504,7 +520,7 @@ function renderDetail() {
       ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
       ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
       ${scoreRow("안전·환경", selected.adjusted.safety, scoreTips.safety)}
-      <p class="score-note">통근·주거비는 실데이터 기반, 생활 SOC·안전·환경은 MVP 프록시 점수입니다.</p>
+      <p class="score-note">주거비·생활 SOC는 실제 공공데이터 기반, 통근은 경로 API 어댑터 우선·키 없을 때 테이블 폴백, 안전·환경은 MVP 프록시 점수입니다.</p>
     </div>
     <div class="callout">
       <p><strong>추천 근거</strong><br>${selected.insight}</p>
@@ -524,6 +540,8 @@ function renderEvidenceTable() {
     .map((item) => {
       const evidence = item.evidence || {};
       const dongs = Array.isArray(evidence.rentDongs) ? evidence.rentDongs.join(", ") : "-";
+      const socCounts = evidence.socCounts || item.socSummary?.counts || {};
+      const socSummary = `병원 ${socCounts.hospital || 0} · 학교 ${socCounts.school || 0} · 공원 ${socCounts.park || 0}`;
       return `
         <tr>
           <th scope="row">${item.name}<span class="cell-sub">${item.district}</span></th>
@@ -532,6 +550,7 @@ function renderEvidenceTable() {
           <td class="num">${formatNumber(item.rentMonthly10k)}만원</td>
           <td class="num">${formatMoney10k(item.deposit10k)}</td>
           <td class="num">${formatMoney10k(item.jeonse10k)}</td>
+          <td>${socSummary}<span class="cell-sub">반경 ${formatDistance(evidence.socRadiusMeters)}</span></td>
         </tr>
       `;
     });
@@ -545,7 +564,7 @@ function renderEvidenceTable() {
       <th scope="row">합계</th>
       <td>생활권 ${state.neighborhoods.length}개</td>
       <td class="num">${formatNumber(totalRecords)}건</td>
-      <td colspan="3" class="muted">15~85㎡ 거래 중앙값 기준</td>
+      <td colspan="4" class="muted">15~85㎡ 거래 중앙값 · 생활 SOC 반경 집계 기준</td>
     </tr>
   `);
 
@@ -627,39 +646,38 @@ function setActiveNav(sectionId) {
   });
 }
 
-function initNavigation() {
-  const sections = ["recommend", "map", "data-evidence", "api", "business", "submission"]
-    .map((id) => document.getElementById(id))
-    .filter(Boolean);
-  const recommendSection = document.getElementById("recommend");
-  const mapSection = document.getElementById("map");
+function activateSection(sectionId, options = {}) {
+  const target = document.getElementById(sectionId) ? sectionId : "recommend";
+  state.activeSection = target;
+  document.querySelectorAll("main > .anchor-target").forEach((section) => {
+    section.classList.toggle("is-active-view", section.id === target);
+  });
+  setActiveNav(target);
 
+  if (options.updateHash && window.location.hash !== `#${target}`) {
+    window.history.pushState(null, "", `#${target}`);
+  }
+
+  if (target === "map" && state.map?.instance) {
+    window.setTimeout(() => {
+      state.map.instance.invalidateSize();
+      focusSelectedMarker(false);
+    }, 80);
+  }
+}
+
+function initNavigation() {
   nodes.navLinks.forEach((link) => {
-    link.addEventListener("click", () => {
-      state.navClickSuppressUntil = Date.now() + 900;
-      setActiveNav(link.dataset.section);
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      activateSection(link.dataset.section, { updateHash: true });
     });
   });
 
-  const updateActive = () => {
-    if (Date.now() < state.navClickSuppressUntil) return;
-    const probe = window.scrollY + 130;
-    let current = sections[0];
-    sections.forEach((section) => {
-      if (section.offsetTop <= probe) {
-        current = section;
-      }
-    });
-    // 데스크톱 그리드에서는 지도 패널이 추천 영역과 같은 높이에서 시작하므로 추천을 우선한다.
-    if (current === mapSection && recommendSection && mapSection.offsetTop - recommendSection.offsetTop < 120) {
-      current = recommendSection;
-    }
-    setActiveNav(current.id);
-  };
-
-  window.addEventListener("scroll", updateActive, { passive: true });
-  window.addEventListener("resize", updateActive, { passive: true });
-  updateActive();
+  window.addEventListener("hashchange", () => {
+    activateSection(window.location.hash.replace("#", "") || "recommend");
+  });
+  activateSection(window.location.hash.replace("#", "") || "recommend");
 }
 
 function bindEvents() {

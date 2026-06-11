@@ -12,6 +12,8 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from movevalue_adapters import adapter_source_meta, build_commute_minutes, build_soc_metrics
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RAW_DIR = ROOT / "data" / "raw"
@@ -213,36 +215,9 @@ def build_rent_index() -> dict:
     return {"dong": index, "district": district_index}
 
 
-def normalize_score(value: float, low: float, high: float, invert: bool = False) -> int:
-    if high <= low:
-        return 70
-    normalized = (value - low) / (high - low)
-    if invert:
-        normalized = 1 - normalized
-    return round(max(0, min(1, normalized)) * 45 + 50)
-
-
 def build_areas() -> list[dict]:
     download_seoul_rent_zip()
     rent_index = build_rent_index()
-
-    monthly_values: list[float] = []
-    for area_def in AREA_DEFINITIONS:
-        rows = []
-        for dong in area_def["rentDongs"]:
-            data = rent_index["dong"].get((area_def["rentDistrict"], dong))
-            if data:
-                rows.append(data)
-        if not rows:
-            district_data = rent_index["district"].get(area_def["rentDistrict"])
-            if district_data:
-                rows.append(district_data)
-        monthly_pool = [value for data in rows for value in data["monthly"]]
-        if monthly_pool:
-            monthly_values.append(median(monthly_pool))
-
-    low_rent = min(monthly_values)
-    high_rent = max(monthly_values)
 
     areas = []
     for area_def in AREA_DEFINITIONS:
@@ -269,10 +244,16 @@ def build_areas() -> list[dict]:
         deposit = median(deposit_pool)
         jeonse = median(jeonse_pool)
         transit_score = min(98, 68 + area_def["lineCount"] * 6)
-        rent_score = normalize_score(rent_monthly, low_rent, high_rent, invert=True)
-        service_score = round((transit_score * 0.42) + (rent_score * 0.18) + 33)
+        commute_minutes, commute_evidence = build_commute_minutes(area_def)
+        soc_metrics = build_soc_metrics(area_def)
+        service_score = soc_metrics["score"]
         safety_score = round(70 + min(14, area_def["lineCount"] * 2) + (4 if "newlywed" in area_def["recommendedFor"] else 0))
         carbon_score = round(72 + min(18, area_def["lineCount"] * 3))
+        data_readiness = 94 if not fallback_used else 88
+        if commute_evidence["commuteProvider"] == "odsay" and not commute_evidence["fallbackUsed"]:
+            data_readiness += 2
+        if soc_metrics["facilityRecords"] >= 3:
+            data_readiness += 1
 
         areas.append(
             {
@@ -287,10 +268,18 @@ def build_areas() -> list[dict]:
                 "jeonse10k": jeonse,
                 "transitScore": transit_score,
                 "serviceScore": min(100, service_score),
+                "socScore": min(100, service_score),
                 "safetyScore": min(100, safety_score),
                 "carbonScore": min(100, carbon_score),
-                "dataReadiness": 94 if not fallback_used else 88,
-                "commuteMinutes": area_def["commuteMinutes"],
+                "dataReadiness": min(100, data_readiness),
+                "commuteMinutes": commute_minutes,
+                "socSummary": {
+                    "radiusMeters": soc_metrics["radiusMeters"],
+                    "counts": soc_metrics["counts"],
+                    "nearestFacilities": soc_metrics["nearestFacilities"],
+                    "facilityRecords": soc_metrics["facilityRecords"],
+                    "sampleFacilities": soc_metrics["sampleFacilities"],
+                },
                 "recommendedFor": area_def["recommendedFor"],
                 "insight": area_def["insight"],
                 "evidence": {
@@ -299,7 +288,21 @@ def build_areas() -> list[dict]:
                     "rentDongs": matched_dongs or area_def["rentDongs"],
                     "matchedRentRecords": matched_records,
                     "fallbackUsed": fallback_used,
+                    "rentFallbackUsed": fallback_used,
                     "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
+                    "commuteSource": commute_evidence["commuteSource"],
+                    "commuteMode": commute_evidence["commuteMode"],
+                    "commuteProvider": commute_evidence["commuteProvider"],
+                    "commuteFallbackUsed": commute_evidence["fallbackUsed"],
+                    "commuteFallbackDestinations": commute_evidence["fallbackDestinations"],
+                    "commuteApiKeyEnv": commute_evidence["apiKeyEnv"],
+                    "commuteErrors": commute_evidence.get("errors", {}),
+                    "socSource": soc_metrics["source"],
+                    "socMode": soc_metrics["mode"],
+                    "socRadiusMeters": soc_metrics["radiusMeters"],
+                    "socCounts": soc_metrics["counts"],
+                    "socNearestFacilities": soc_metrics["nearestFacilities"],
+                    "socFacilityRecords": soc_metrics["facilityRecords"],
                 },
             }
         )
@@ -308,6 +311,7 @@ def build_areas() -> list[dict]:
 
 def main() -> None:
     areas = build_areas()
+    source_meta = adapter_source_meta()
     payload = {
         "meta": {
             "generatedAt": datetime.now(timezone.utc).isoformat(),
@@ -321,7 +325,8 @@ def main() -> None:
                 "name": "서울시 역사마스터 정보",
                 "url": "https://data.seoul.go.kr/dataList/OA-21232/S/1/datasetView.do",
             },
-            "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다.",
+            **source_meta,
+            "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다. 통근시간은 대중교통 경로 API 어댑터가 우선이며, API 키가 없으면 MVP 테이블로 폴백합니다. 생활 SOC는 병원·학교·공원 좌표 반경 집계 기반입니다.",
         },
         "areas": areas,
     }

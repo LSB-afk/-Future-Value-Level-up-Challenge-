@@ -40,7 +40,7 @@
     </nav>
 
     <main>
-      <section id="recommend" class="workspace anchor-target" aria-label="생활권 추천 워크스페이스">
+      <section id="recommend" class="workspace anchor-target is-active-view" aria-label="생활권 추천 워크스페이스">
         <section class="panel controls" aria-label="조건 입력">
           <div class="section-title">
             <h2>조건</h2>
@@ -83,7 +83,7 @@
               <output id="costWeightOutput">30</output>
               <input id="costWeight" type="range" min="10" max="55" value="30">
             </label>
-            <label class="field compact" title="환승·생활 인프라 기반 생활 SOC 접근성 점수입니다. (MVP 프록시)">
+            <label class="field compact" title="병원·학교·공원 좌표를 생활권 반경으로 집계한 생활 SOC 접근성 점수입니다.">
               <span>생활 SOC</span>
               <output id="serviceWeightOutput">20</output>
               <input id="serviceWeight" type="range" min="5" max="40" value="20">
@@ -93,21 +93,7 @@
               <output id="safetyWeightOutput">15</output>
               <input id="safetyWeight" type="range" min="5" max="35" value="15">
             </label>
-            <p class="field-hint">통근·주거비는 실데이터 기반, 생활 SOC·안전·환경은 MVP 프록시 지표입니다.</p>
-          </div>
-        </section>
-
-        <section id="map" class="panel map-panel anchor-target" aria-label="생활권 지도">
-          <div class="section-title">
-            <h2>생활권 지도</h2>
-            <span id="selectedBadge" class="status-pill">선택 없음</span>
-          </div>
-          <div class="map-canvas" id="mapCanvas" role="region" aria-label="후보 생활권 실제 지도"></div>
-          <div class="legend">
-            <span><i class="dot high"></i>추천 상위권</span>
-            <span><i class="dot mid"></i>검토권</span>
-            <span><i class="dot low"></i>조건 미달</span>
-            <span class="legend-note">마커 숫자 = 종합점수, 크기 = 점수 비례</span>
+            <p class="field-hint">주거비와 생활 SOC는 실제 공공데이터 기반, 통근은 경로 API 어댑터 우선·키 없을 때 테이블 폴백, 안전·환경은 MVP 프록시입니다.</p>
           </div>
         </section>
 
@@ -130,6 +116,20 @@
         </aside>
       </section>
 
+      <section id="map" class="panel map-panel section-block anchor-target" aria-label="생활권 지도">
+        <div class="section-title">
+          <h2>생활권 지도</h2>
+          <span id="selectedBadge" class="status-pill">선택 없음</span>
+        </div>
+        <div class="map-canvas" id="mapCanvas" role="region" aria-label="후보 생활권 실제 지도"></div>
+        <div class="legend">
+          <span><i class="dot high"></i>추천 상위권</span>
+          <span><i class="dot mid"></i>검토권</span>
+          <span><i class="dot low"></i>조건 미달</span>
+          <span class="legend-note">마커 숫자 = 종합점수, 크기 = 점수 비례</span>
+        </div>
+      </section>
+
       <section id="data-evidence" class="panel section-block anchor-target" aria-label="데이터 근거">
         <div class="section-title">
           <h2>데이터 근거</h2>
@@ -150,10 +150,11 @@
                 <th scope="col">월세 중앙값</th>
                 <th scope="col">보증금 중앙값</th>
                 <th scope="col">전세 중앙값</th>
+                <th scope="col">SOC 근거</th>
               </tr>
             </thead>
             <tbody id="evidenceTableBody">
-              <tr><td colspan="6" class="muted">데이터 로딩 중…</td></tr>
+              <tr><td colspan="7" class="muted">데이터 로딩 중…</td></tr>
             </tbody>
           </table>
         </div>
@@ -165,8 +166,8 @@
           </div>
           <div class="callout warn">
             <p><strong>정직한 한계</strong><br>
-              통근시간·생활 SOC·안전·환경 점수는 MVP 검증용 프록시 지표입니다.
-              선정 후 구체화 단계에서 대중교통 경로 API, 생활시설·안전·대기 공공데이터 어댑터로 교체·고도화합니다.</p>
+              통근시간은 대중교통 경로 API 어댑터를 먼저 사용하되 API 키가 없으면 MVP 테이블로 폴백합니다.
+              안전·환경 점수는 MVP 프록시이며, 선정 후 안전·대기·녹지 공공데이터 어댑터로 고도화합니다.</p>
           </div>
         </div>
       </section>
