@@ -202,7 +202,9 @@ main > .workspace.is-active-view {
 .workspace {
   display: grid;
   grid-template-columns: 340px minmax(360px, 1.2fr) minmax(360px, 0.9fr);
-  grid-template-areas: "controls results detail";
+  grid-template-areas:
+    "controls results detail"
+    "controls results route";
   gap: 16px;
 }
 
@@ -229,6 +231,12 @@ main > .workspace.is-active-view {
 
 .detail {
   grid-area: detail;
+  padding: 18px;
+}
+
+.route-panel {
+  grid-area: route;
+  align-self: start;
   padding: 18px;
 }
 
@@ -807,19 +815,7 @@ input[type="range"] {
 .route-planner {
   display: grid;
   gap: 12px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfcf8;
-}
-
-.compact-title {
-  margin-bottom: 0;
-}
-
-.compact-title h3 {
-  margin: 0;
-  font-size: 16px;
+  padding: 0;
 }
 
 .route-form {
@@ -1219,7 +1215,7 @@ input[type="range"] {
     grid-template-columns: 320px 1fr;
     grid-template-areas:
       "controls results"
-      "detail detail";
+      "detail route";
   }
 
   .chain,
@@ -1274,7 +1270,8 @@ input[type="range"] {
     grid-template-areas:
       "controls"
       "results"
-      "detail";
+      "detail"
+      "route";
     gap: 12px;
   }
 

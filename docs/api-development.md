@@ -74,24 +74,24 @@ curl 'http://127.0.0.1:5173/api/recommendations?budget=70&destination=gangnam&pe
 
 ### `GET /api/geocode`
 
-주소, 후보 생활권명, 목적지명, 직접 좌표 입력을 좌표 객체로 변환한다.
+주소, 후보 생활권명, 목적지명, 직접 좌표 입력을 좌표 객체로 변환한다. 웹앱 기본값으로 쓰는 생활권 대표 주소와 주요 목적지 주소는 API 키 없이 로컬 좌표로 매칭된다.
 
 쿼리 파라미터:
 
 | 이름 | 예시 | 설명 |
 | --- | --- | --- |
-| `query` | `건대입구` | 후보 생활권명, 역명, 목적지명, 주소, 또는 `37.5405,127.0692` 좌표 |
+| `query` | `서울 광진구 화양동` | 후보 생활권명, 역명, 목적지명, 대표 주소, 상세 주소, 또는 `37.5405,127.0692` 좌표 |
 
 동작:
 
-- 후보 생활권명·역명·목적지명은 로컬 데이터에서 즉시 매칭한다.
+- 후보 생활권명·역명·목적지명·대표 주소는 로컬 데이터에서 즉시 매칭한다.
 - 좌표 문자열은 API 키 없이 파싱한다.
-- 일반 주소는 `KAKAO_REST_API_KEY` 또는 `MOVEVALUE_KAKAO_REST_API_KEY`가 있을 때 Kakao Local API로 변환한다.
+- 사용자가 입력한 상세 주소는 `KAKAO_REST_API_KEY` 또는 `MOVEVALUE_KAKAO_REST_API_KEY`가 있을 때 Kakao Local API로 변환한다.
 
 예시:
 
 ```bash
-curl 'http://127.0.0.1:5173/api/geocode?query=konkuk'
+curl 'http://127.0.0.1:5173/api/geocode?query=서울%20광진구%20화양동'
 ```
 
 ### `GET /api/commute-route`
@@ -102,7 +102,7 @@ curl 'http://127.0.0.1:5173/api/geocode?query=konkuk'
 
 | 이름 | 예시 | 설명 |
 | --- | --- | --- |
-| `origin` | `37.5405,127.0692` | 집 위치. 주소, 후보 생활권명, 역명, 좌표 가능 |
+| `origin` | `서울 광진구 화양동` | 집 위치. 주소, 후보 생활권명, 역명, 좌표 가능 |
 | `destination` | `gangnam` | 기본 목적지 ID. `gangnam`, `yeouido`, `seoulStation`, `digital`, `pangyo` 지원 |
 | `destinationQuery` | `서울 강남구 테헤란로 ...` | 회사 주소 또는 좌표. 있으면 기본 목적지 대신 사용 |
 | `provider` | `auto` | `auto`, `odsay`, `tmap` |
@@ -123,7 +123,7 @@ curl 'http://127.0.0.1:5173/api/geocode?query=konkuk'
 예시:
 
 ```bash
-curl 'http://127.0.0.1:5173/api/commute-route?origin=37.5405,127.0692&destination=gangnam&provider=auto'
+curl 'http://127.0.0.1:5173/api/commute-route?origin=서울%20광진구%20화양동&destinationQuery=서울%20강남구%20역삼동&provider=auto'
 ```
 
 ## 지도 구현과 제공자 교체

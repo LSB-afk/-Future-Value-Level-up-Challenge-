@@ -55,7 +55,7 @@ python3 scripts/build_real_dataset.py
 
 통근시간은 `ODSAY_API_KEY` 또는 `MOVEVALUE_ODSAY_API_KEY`가 있으면 대중교통 경로 API를 호출하고, 키가 없거나 실패하면 기존 검증 테이블로 폴백합니다. 생활 SOC는 병의원·학교·공원 좌표 스냅샷을 생활권 대표역 기준 반경 1.6km로 집계합니다.
 
-실제 주소 검색과 통근 루트 검증은 서버 환경변수로 API 키를 주입합니다. 키를 코드에 직접 쓰지 않습니다.
+실제 주소 검색과 통근 루트 검증은 서버 환경변수로 API 키를 주입합니다. 기본 생활권·목적지 대표 주소는 API 키 없이 로컬 좌표로 변환되며, 사용자가 입력한 상세 주소는 Kakao 키가 있을 때 검색합니다. 키를 코드에 직접 쓰지 않습니다.
 
 ```bash
 export KAKAO_REST_API_KEY="카카오 REST API 키"
@@ -70,7 +70,7 @@ python3 api/movevalue_api.py --port 5173
 - `GET /api/areas`: 실제 기반 생활권 데이터 전체 조회
 - `GET /api/recommendations`: 예산, 목적지, 가구 유형, 가중치 기반 추천 랭킹 조회
 - `GET /api/geocode`: 주소·후보지명·좌표 입력을 좌표 객체로 변환
-- `GET /api/commute-route`: 집 위치와 회사 위치를 받아 ODsay/TMAP 경로 또는 폴백 통근 루트 반환
+- `GET /api/commute-route`: 집 주소와 회사 주소를 받아 ODsay/TMAP 경로 또는 폴백 통근 루트 반환
 
 ## 데이터 기반과 한계
 

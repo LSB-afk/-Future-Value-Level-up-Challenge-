@@ -26,11 +26,22 @@ DATA_PATH = ROOT / "data" / "areas.actual.json"
 
 
 DESTINATIONS = {
-    "gangnam": {"label": "강남 업무지구", "lat": 37.4979, "lng": 127.0276},
-    "yeouido": {"label": "여의도", "lat": 37.5219, "lng": 126.9245},
-    "seoulStation": {"label": "서울역/도심", "lat": 37.5563, "lng": 126.9723},
-    "digital": {"label": "구로디지털단지", "lat": 37.4853, "lng": 126.9015},
-    "pangyo": {"label": "판교", "lat": 37.3947, "lng": 127.1112},
+    "gangnam": {"label": "강남 업무지구", "address": "서울 강남구 역삼동", "lat": 37.4979, "lng": 127.0276},
+    "yeouido": {"label": "여의도", "address": "서울 영등포구 여의도동", "lat": 37.5219, "lng": 126.9245},
+    "seoulStation": {"label": "서울역/도심", "address": "서울 중구 봉래동2가", "lat": 37.5563, "lng": 126.9723},
+    "digital": {"label": "구로디지털단지", "address": "서울 구로구 구로동", "lat": 37.4853, "lng": 126.9015},
+    "pangyo": {"label": "판교", "address": "경기도 성남시 분당구 삼평동", "lat": 37.3947, "lng": 127.1112},
+}
+AREA_ADDRESSES = {
+    "konkuk": "서울 광진구 화양동",
+    "sillim": "서울 관악구 신림동",
+    "cheongnyangni": "서울 동대문구 청량리동",
+    "guroDigital": "서울 구로구 구로동",
+    "wangsimni": "서울 성동구 행당동",
+    "gimpoAirport": "서울 강서구 공항동",
+    "magok": "서울 강서구 마곡동",
+    "sangam": "서울 마포구 상암동",
+    "yeongdeungpo": "서울 영등포구 영등포동",
 }
 
 DEFAULT_WEIGHTS = {"commute": 35, "cost": 30, "service": 20, "safety": 15}
@@ -118,15 +129,40 @@ def load_dataset() -> dict:
         return json.load(file)
 
 
+def destination_addresses() -> dict[str, str]:
+    return {key: value["address"] for key, value in DESTINATIONS.items()}
+
+
+def decorate_dataset(dataset: dict) -> dict:
+    decorated = dict(dataset)
+    decorated["meta"] = {
+        **dataset.get("meta", {}),
+        "destinationAddresses": destination_addresses(),
+    }
+    decorated["areas"] = [
+        {
+            **area,
+            "representativeAddress": AREA_ADDRESSES.get(area["id"], f"{area.get('district', '')} {area.get('station', '')}".strip()),
+        }
+        for area in dataset.get("areas", [])
+    ]
+    return decorated
+
+
 def known_locations() -> dict[str, dict]:
     dataset = load_dataset()
     locations = {
-        key: {"label": value["label"], "lat": value["lat"], "lng": value["lng"]}
+        key: {"label": value["label"], "address": value["address"], "lat": value["lat"], "lng": value["lng"]}
         for key, value in DESTINATIONS.items()
     }
+    for key, value in DESTINATIONS.items():
+        locations[value["label"]] = locations[key]
+        locations[value["address"]] = locations[key]
     for area in dataset.get("areas", []):
+        address = AREA_ADDRESSES.get(area["id"], "")
         location = {
             "label": area["name"],
+            "address": address,
             "name": area["name"],
             "station": area.get("station", ""),
             "lat": area["lat"],
@@ -134,6 +170,8 @@ def known_locations() -> dict[str, dict]:
         }
         locations[area["id"]] = location
         locations[area["name"]] = location
+        if address:
+            locations[address] = location
         if area.get("station"):
             locations[area["station"]] = location
     return locations
@@ -170,6 +208,8 @@ def score_area(area: dict, query: Query) -> dict:
             "adjusted": {key: round(value) for key, value in adjusted.items()},
             "destination": query.destination,
             "destinationLabel": DESTINATIONS[query.destination]["label"],
+            "destinationAddress": DESTINATIONS[query.destination]["address"],
+            "representativeAddress": AREA_ADDRESSES.get(area["id"], f"{area.get('district', '')} {area.get('station', '')}".strip()),
         }
     )
     return result
@@ -184,6 +224,8 @@ def recommendations(query: Query) -> dict:
             **dataset.get("meta", {}),
             "destination": query.destination,
             "destinationLabel": DESTINATIONS[query.destination]["label"],
+            "destinationAddress": DESTINATIONS[query.destination]["address"],
+            "destinationAddresses": destination_addresses(),
             "persona": query.persona,
             "budget": query.budget,
             "weights": query.weights,
@@ -278,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
                 )
                 return
             if path == "/api/areas":
-                self.send_json(HTTPStatus.OK, load_dataset())
+                self.send_json(HTTPStatus.OK, decorate_dataset(load_dataset()))
                 return
             if path == "/api/geocode":
                 raw = parse_qs(parsed.query)

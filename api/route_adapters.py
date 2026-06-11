@@ -107,18 +107,23 @@ def resolve_location(query: str, known_locations: dict[str, dict[str, Any]]) -> 
 
     normalized = value.replace(" ", "").lower()
     for key, location in known_locations.items():
-        candidates = {
-            key.replace(" ", "").lower(),
-            str(location.get("label", "")).replace(" ", "").lower(),
-            str(location.get("name", "")).replace(" ", "").lower(),
-            str(location.get("station", "")).replace(" ", "").lower(),
-        }
-        if normalized in candidates:
+        candidates = [
+            ("address", location.get("address", "")),
+            ("label", location.get("label", "")),
+            ("name", location.get("name", "")),
+            ("station", location.get("station", "")),
+            ("key", key),
+        ]
+        matched_kind = next(
+            (kind for kind, candidate in candidates if normalized == str(candidate).replace(" ", "").lower()),
+            "",
+        )
+        if matched_kind:
             return {
-                "label": location.get("label") or location.get("name") or key,
+                "label": location.get("address") if matched_kind == "address" else location.get("label") or location.get("name") or key,
                 "lat": float(location["lat"]),
                 "lng": float(location["lng"]),
-                "source": "known_location",
+                "source": "known_address" if matched_kind == "address" else "known_location",
             }
 
     kakao = geocode_with_kakao(value)
@@ -126,7 +131,7 @@ def resolve_location(query: str, known_locations: dict[str, dict[str, Any]]) -> 
         return kakao
 
     raise ValueError(
-        f"'{value}'를 좌표로 변환하지 못했습니다. 주소 검색은 {KAKAO_KEY_ENV}가 필요하며, 키가 없으면 '37.5405,127.0692' 형식의 좌표를 입력하세요."
+        f"'{value}'를 좌표로 변환하지 못했습니다. 상세 주소 검색은 {KAKAO_KEY_ENV}가 필요합니다. 키가 없으면 기본 제공 대표 주소, 생활권명, 목적지명 또는 '37.5405,127.0692' 형식의 좌표를 입력하세요."
     )
 
 

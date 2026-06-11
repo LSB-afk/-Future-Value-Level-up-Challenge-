@@ -40,6 +40,26 @@ const destinationLabels = {
   pangyo: "판교"
 };
 
+const destinationAddresses = {
+  gangnam: "서울 강남구 역삼동",
+  yeouido: "서울 영등포구 여의도동",
+  seoulStation: "서울 중구 봉래동2가",
+  digital: "서울 구로구 구로동",
+  pangyo: "경기도 성남시 분당구 삼평동"
+};
+
+const areaAddressDefaults = {
+  konkuk: "서울 광진구 화양동",
+  sillim: "서울 관악구 신림동",
+  cheongnyangni: "서울 동대문구 청량리동",
+  guroDigital: "서울 구로구 구로동",
+  wangsimni: "서울 성동구 행당동",
+  gimpoAirport: "서울 강서구 공항동",
+  magok: "서울 강서구 마곡동",
+  sangam: "서울 마포구 상암동",
+  yeongdeungpo: "서울 영등포구 영등포동"
+};
+
 const personaLabels = {
   single: "1인 청년",
   commuter: "직장인",
@@ -80,6 +100,7 @@ const nodes = {
   resultSummary: document.querySelector("#resultSummary"),
   mapCanvas: document.querySelector("#mapCanvas"),
   detailContent: document.querySelector("#detailContent"),
+  routeContent: document.querySelector("#routeContent"),
   selectedBadge: document.querySelector("#selectedBadge"),
   rankBadge: document.querySelector("#rankBadge"),
   candidateCount: document.querySelector("#candidateCount"),
@@ -129,6 +150,19 @@ function formatDistance(value) {
 function formatFare(value) {
   const fare = Number(value || 0);
   return fare ? `${formatNumber(fare)}원` : "-";
+}
+
+function destinationAddressFor() {
+  return state.apiMeta?.destinationAddresses?.[state.destination]
+    || destinationAddresses[state.destination]
+    || destinationLabels[state.destination]
+    || "";
+}
+
+function representativeAddressFor(item) {
+  return item?.representativeAddress
+    || areaAddressDefaults[item?.id]
+    || `${item?.district || ""} ${item?.station || item?.name || ""}`.trim();
 }
 
 async function fetchJson(path) {
@@ -601,22 +635,18 @@ function renderRouteResult(selected) {
 }
 
 function renderRoutePlanner(selected) {
-  const originValue = `${Number(selected.lat).toFixed(5)},${Number(selected.lng).toFixed(5)}`;
-  const destinationValue = destinationLabels[state.destination] || "";
+  const originValue = representativeAddressFor(selected);
+  const destinationValue = selected.destinationAddress || destinationAddressFor();
   return `
     <div class="route-planner">
-      <div class="section-title compact-title">
-        <h3>실제 통근 루트 검증</h3>
-        <span class="status-pill">ODsay/TMAP</span>
-      </div>
       <div class="route-form">
         <label class="field compact">
-          <span>집 위치</span>
-          <input id="routeOriginInput" type="text" value="${escapeHtml(originValue)}" placeholder="주소 또는 37.5405,127.0692">
+          <span>집 주소</span>
+          <input id="routeOriginInput" type="text" value="${escapeHtml(originValue)}" placeholder="예: 서울 광진구 화양동">
         </label>
         <label class="field compact">
-          <span>회사 위치</span>
-          <input id="routeDestinationInput" type="text" value="${escapeHtml(destinationValue)}" placeholder="회사 주소 또는 좌표">
+          <span>회사 주소</span>
+          <input id="routeDestinationInput" type="text" value="${escapeHtml(destinationValue)}" placeholder="예: 서울 강남구 역삼동">
         </label>
         <label class="field compact">
           <span>경로 API</span>
@@ -626,10 +656,10 @@ function renderRoutePlanner(selected) {
             <option value="tmap">TMAP</option>
           </select>
         </label>
-        <button id="routeUseSelectedButton" class="ghost-button route-action" type="button">선택 생활권 좌표 사용</button>
+        <button id="routeUseSelectedButton" class="ghost-button route-action" type="button">추천 생활권 주소 사용</button>
         <button id="routeCalculateButton" class="ghost-button route-action primary" type="button">통근 루트 계산</button>
       </div>
-      <p class="field-hint">주소 검색은 Kakao REST 키가 있을 때 동작합니다. 키가 없으면 위도,경도 좌표나 후보 생활권·목적지 이름으로 계산합니다.</p>
+      <p class="field-hint">기본 대표 주소는 로컬 좌표로 바로 변환됩니다. 직접 입력한 상세 주소 검색은 Kakao REST 키가 있을 때 동작합니다.</p>
       ${renderRouteResult(selected)}
     </div>
   `;
@@ -696,11 +726,24 @@ function renderDetail() {
       <p><strong>추천 근거</strong><br>${selected.insight}</p>
     </div>
     ${renderEvidence(selected)}
-    ${renderRoutePlanner(selected)}
     <div class="callout">
       <p><strong>사업 적용</strong><br>부동산 플랫폼에는 생활권 점수 API로, 지자체에는 주거-이동 부담 리포트로 제공할 수 있다.</p>
     </div>
   `;
+}
+
+function renderRoutePanel() {
+  const selected = state.results.find((item) => item.id === state.selectedId);
+
+  if (!nodes.routeContent) return;
+  if (!selected) {
+    nodes.routeContent.innerHTML = state.isLoading
+      ? `<div class="callout"><p>추천 후보를 불러온 뒤 통근 루트를 계산할 수 있습니다.</p></div>`
+      : `<div class="callout"><p>추천 생활권을 선택하면 집 주소와 회사 주소 기준 통근 루트를 검증할 수 있습니다.</p></div>`;
+    return;
+  }
+
+  nodes.routeContent.innerHTML = renderRoutePlanner(selected);
   bindRoutePlanner(selected);
 }
 
@@ -724,7 +767,6 @@ async function calculateCommuteRoute(selected) {
 
   const origin = originInput.value.trim();
   const destinationText = destinationInput.value.trim();
-  const defaultDestination = destinationLabels[state.destination] || "";
   const params = new URLSearchParams({
     origin,
     provider: providerInput.value || "auto"
@@ -732,17 +774,17 @@ async function calculateCommuteRoute(selected) {
 
   if (!origin) {
     state.route = { selectedId: selected.id, isLoading: false, result: null, error: "집 위치를 입력하세요." };
-    renderDetail();
+    renderRoutePanel();
     return;
   }
-  if (destinationText && destinationText !== defaultDestination) {
+  if (destinationText) {
     params.set("destinationQuery", destinationText);
   } else {
     params.set("destination", state.destination);
   }
 
   state.route = { selectedId: selected.id, isLoading: true, result: null, error: "" };
-  renderDetail();
+  renderRoutePanel();
 
   try {
     const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
@@ -758,7 +800,7 @@ async function calculateCommuteRoute(selected) {
       result: null,
       error: `경로 계산 실패: ${error.message}`
     };
-    renderDetail();
+    renderRoutePanel();
   }
 }
 
@@ -775,7 +817,7 @@ function bindRoutePlanner(selected) {
 
   useSelectedButton?.addEventListener("click", () => {
     if (originInput) {
-      originInput.value = `${Number(selected.lat).toFixed(5)},${Number(selected.lng).toFixed(5)}`;
+      originInput.value = representativeAddressFor(selected);
     }
   });
 
@@ -883,6 +925,7 @@ function render() {
   renderMap();
   renderCards();
   renderDetail();
+  renderRoutePanel();
   renderEvidenceTable();
 }
 
