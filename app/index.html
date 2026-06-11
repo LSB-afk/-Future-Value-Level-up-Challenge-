@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MoveValue 생활권 매칭</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">국토교통 데이터 기반 서비스 모델</p>
+        <h1>MoveValue 생활권 매칭</h1>
+      </div>
+      <div class="header-metrics" aria-label="프로토타입 핵심 지표">
+        <span><strong id="candidateCount">0</strong>개 생활권</span>
+        <span><strong>5</strong>개 공개 데이터 축</span>
+        <span><strong>API</strong> 전환 설계</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <section class="panel controls" aria-label="조건 입력">
+        <div class="section-title">
+          <h2>조건</h2>
+          <button id="resetButton" class="icon-button" type="button" title="기본값으로 초기화" aria-label="기본값으로 초기화">↺</button>
+        </div>
+
+        <label class="field">
+          <span>월 주거 예산</span>
+          <output id="budgetOutput">70만원</output>
+          <input id="budgetInput" type="range" min="40" max="130" value="70" step="5">
+        </label>
+
+        <label class="field">
+          <span>주요 목적지</span>
+          <select id="destinationInput">
+            <option value="gangnam">강남 업무지구</option>
+            <option value="yeouido">여의도</option>
+            <option value="seoulStation">서울역/도심</option>
+            <option value="digital">구로디지털단지</option>
+            <option value="pangyo">판교</option>
+          </select>
+        </label>
+
+        <fieldset class="segmented" aria-label="가구 유형">
+          <legend>가구 유형</legend>
+          <label><input type="radio" name="persona" value="single" checked><span>1인 청년</span></label>
+          <label><input type="radio" name="persona" value="commuter"><span>직장인</span></label>
+          <label><input type="radio" name="persona" value="newlywed"><span>신혼</span></label>
+          <label><input type="radio" name="persona" value="senior"><span>교통약자</span></label>
+        </fieldset>
+
+        <div class="weights" aria-label="우선순위">
+          <label class="field compact">
+            <span>통근</span>
+            <output id="commuteWeightOutput">35</output>
+            <input id="commuteWeight" type="range" min="10" max="55" value="35">
+          </label>
+          <label class="field compact">
+            <span>주거비</span>
+            <output id="costWeightOutput">30</output>
+            <input id="costWeight" type="range" min="10" max="55" value="30">
+          </label>
+          <label class="field compact">
+            <span>생활 SOC</span>
+            <output id="serviceWeightOutput">20</output>
+            <input id="serviceWeight" type="range" min="5" max="40" value="20">
+          </label>
+          <label class="field compact">
+            <span>안전·환경</span>
+            <output id="safetyWeightOutput">15</output>
+            <input id="safetyWeight" type="range" min="5" max="35" value="15">
+          </label>
+        </div>
+      </section>
+
+      <section class="panel map-panel" aria-label="생활권 지도">
+        <div class="section-title">
+          <h2>생활권 분포</h2>
+          <span id="selectedBadge" class="status-pill">선택 없음</span>
+        </div>
+        <div class="map-canvas" id="mapCanvas" role="img" aria-label="후보 생활권 위치와 점수 분포"></div>
+        <div class="legend">
+          <span><i class="dot high"></i>추천 상위권</span>
+          <span><i class="dot mid"></i>검토권</span>
+          <span><i class="dot low"></i>조건 미달</span>
+        </div>
+      </section>
+
+      <section class="panel recommendation" aria-label="추천 결과">
+        <div class="section-title">
+          <h2>추천 랭킹</h2>
+          <span id="updatedAt" class="muted"></span>
+        </div>
+        <div id="cards" class="cards"></div>
+      </section>
+
+      <aside class="panel detail" aria-label="상세 분석">
+        <div class="section-title">
+          <h2>상세 근거</h2>
+          <span id="rankBadge" class="status-pill">-</span>
+        </div>
+        <div id="detailContent" class="detail-content"></div>
+      </aside>
+
+      <section class="panel value-chain" aria-label="서비스 밸류체인">
+        <div class="section-title">
+          <h2>밸류체인</h2>
+          <span class="muted">데이터 산업 생태계 연결</span>
+        </div>
+        <div class="chain">
+          <div><strong>공공·민간 데이터</strong><span>실거래가, 교통, 좌표, 생활 SOC</span></div>
+          <div><strong>MoveValue 가공</strong><span>주소 정규화, 생활권 결합, 설명형 점수</span></div>
+          <div><strong>서비스/API</strong><span>시민 추천, 플랫폼 API, 정책 리포트</span></div>
+          <div><strong>수요처 환류</strong><span>시민 피드백, 지자체 실증, 데이터 구매</span></div>
+        </div>
+      </section>
+    </main>
+
+    <template id="cardTemplate">
+      <article class="result-card">
+        <button class="card-button" type="button">
+          <span class="rank"></span>
+          <span class="card-main">
+            <strong class="name"></strong>
+            <span class="meta"></span>
+          </span>
+          <span class="score"></span>
+        </button>
+        <div class="bar"><span></span></div>
+      </article>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
+

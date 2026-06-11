@@ -1,0 +1,9 @@
+.DS_Store
+__pycache__/
+*.pyc
+.env
+.env.*
+.omx/
+node_modules/
+qa/docx-render/
+qa/screenshots/
