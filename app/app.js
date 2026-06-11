@@ -1,3 +1,5 @@
+const CARD_PREVIEW_COUNT = 6;
+
 const state = {
   neighborhoods: [],
   results: [],
@@ -9,8 +11,13 @@ const state = {
   apiOnline: false,
   isLoading: false,
   lastError: "",
+  lastUpdated: null,
   refreshTimer: null,
   requestId: 0,
+  map: null,
+  showAllCards: false,
+  evidenceRendered: false,
+  navClickSuppressUntil: 0,
   weights: {
     commute: 35,
     cost: 30,
@@ -27,11 +34,25 @@ const destinationLabels = {
   pangyo: "판교"
 };
 
+const personaLabels = {
+  single: "1인 청년",
+  commuter: "직장인",
+  newlywed: "신혼",
+  senior: "교통약자"
+};
+
 const personaBoost = {
   single: { cost: 7, service: 2 },
   commuter: { commute: 7, transit: 3 },
   newlywed: { safety: 5, service: 5 },
   senior: { safety: 7, service: 4 }
+};
+
+const scoreTips = {
+  commute: "선택한 목적지까지의 대중교통 통근시간 기반 점수",
+  cost: "예산 대비 월세 중앙값(2025 서울 전월세 실데이터) 기반 점수",
+  service: "환승·생활 인프라 접근성 점수 (MVP 프록시)",
+  safety: "안전·대기·녹지 환경 점수 (MVP 프록시)"
 };
 
 const nodes = {
@@ -48,12 +69,18 @@ const nodes = {
   safetyWeightOutput: document.querySelector("#safetyWeightOutput"),
   resetButton: document.querySelector("#resetButton"),
   cards: document.querySelector("#cards"),
+  toggleCards: document.querySelector("#toggleCards"),
+  resultSummary: document.querySelector("#resultSummary"),
   mapCanvas: document.querySelector("#mapCanvas"),
   detailContent: document.querySelector("#detailContent"),
   selectedBadge: document.querySelector("#selectedBadge"),
   rankBadge: document.querySelector("#rankBadge"),
   candidateCount: document.querySelector("#candidateCount"),
   updatedAt: document.querySelector("#updatedAt"),
+  apiStatusPill: document.querySelector("#apiStatusPill"),
+  apiStatusLabel: document.querySelector("#apiStatusLabel"),
+  evidenceTableBody: document.querySelector("#evidenceTableBody"),
+  navLinks: document.querySelectorAll(".app-nav .nav-link"),
   cardTemplate: document.querySelector("#cardTemplate")
 };
 
@@ -63,6 +90,16 @@ function clamp(value, min = 0, max = 100) {
 
 function formatNumber(value) {
   return Number(value || 0).toLocaleString("ko-KR");
+}
+
+function formatMoney10k(value) {
+  const amount = Math.round(Number(value || 0));
+  if (amount >= 10000) {
+    const eok = Math.floor(amount / 10000);
+    const rest = amount % 10000;
+    return rest ? `${eok}억 ${formatNumber(rest)}만원` : `${eok}억원`;
+  }
+  return `${formatNumber(amount)}만원`;
 }
 
 async function fetchJson(path) {
@@ -172,6 +209,7 @@ async function refreshRecommendations() {
     render();
   } else {
     renderControls();
+    renderLoadingHint();
   }
 
   try {
@@ -192,6 +230,10 @@ async function refreshRecommendations() {
   } finally {
     if (requestId === state.requestId) {
       state.isLoading = false;
+      state.lastUpdated = new Date();
+      if (state.map) {
+        state.map.fitted = false;
+      }
       ensureSelection();
       render();
     }
@@ -202,6 +244,7 @@ function scheduleRefresh(delay = 140) {
   window.clearTimeout(state.refreshTimer);
   state.isLoading = true;
   renderControls();
+  renderLoadingHint();
   state.refreshTimer = window.setTimeout(() => {
     refreshRecommendations();
   }, delay);
@@ -213,8 +256,92 @@ function markerColor(score) {
   return "var(--accent-2)";
 }
 
-function renderMap() {
+function markerTone(score) {
+  if (score >= 80) return "high";
+  if (score >= 68) return "mid";
+  return "low";
+}
+
+function initializeLeafletMap() {
+  if (state.map || !window.L) return;
+
   nodes.mapCanvas.innerHTML = "";
+  nodes.mapCanvas.classList.remove("synthetic-map");
+
+  const instance = L.map(nodes.mapCanvas, {
+    zoomControl: true,
+    scrollWheelZoom: false,
+    preferCanvas: true
+  }).setView([37.54, 126.98], 11);
+
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+  }).addTo(instance);
+
+  state.map = {
+    instance,
+    markerLayer: L.layerGroup().addTo(instance),
+    markersById: {},
+    fitted: false
+  };
+}
+
+function renderLeafletMap() {
+  initializeLeafletMap();
+  if (!state.map) return false;
+
+  const { instance, markerLayer } = state.map;
+  markerLayer.clearLayers();
+  state.map.markersById = {};
+
+  const bounds = [];
+  state.results.forEach((item, index) => {
+    const selected = item.id === state.selectedId;
+    const marker = L.marker([item.lat, item.lng], {
+      title: `${index + 1}위 ${item.name} ${item.total}점`,
+      icon: L.divIcon({
+        className: "mv-map-icon-wrapper",
+        html: `<span class="mv-map-icon ${markerTone(item.total)}${selected ? " is-selected" : ""}" style="--size:${18 + item.total / 5}px"><strong>${item.total}</strong></span>`,
+        iconSize: [42, 42],
+        iconAnchor: [21, 21],
+        popupAnchor: [0, -20]
+      })
+    });
+
+    marker.bindPopup(`
+      <strong>${item.name}</strong> <span class="popup-rank">${index + 1}위</span><br>
+      ${item.destinationLabel || destinationLabels[state.destination]} ${item.minutes}분<br>
+      월세 중앙값 ${formatNumber(item.rentMonthly10k)}만원<br>
+      종합점수 <strong>${item.total}점</strong>
+    `);
+    marker.on("click", () => selectArea(item.id, { source: "map" }));
+    marker.addTo(markerLayer);
+    state.map.markersById[item.id] = marker;
+    bounds.push([item.lat, item.lng]);
+  });
+
+  if (bounds.length && !state.map.fitted) {
+    instance.fitBounds(bounds, { padding: [26, 26], maxZoom: 12 });
+    state.map.fitted = true;
+  }
+
+  window.setTimeout(() => instance.invalidateSize(), 0);
+  return true;
+}
+
+function focusSelectedMarker(pan) {
+  const marker = state.map?.markersById?.[state.selectedId];
+  if (!marker) return;
+  if (pan) {
+    state.map.instance.panTo(marker.getLatLng());
+  }
+  marker.openPopup();
+}
+
+function renderFallbackMap() {
+  nodes.mapCanvas.innerHTML = "";
+  nodes.mapCanvas.classList.add("synthetic-map");
 
   if (!state.neighborhoods.length) {
     nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
@@ -240,25 +367,59 @@ function renderMap() {
     marker.style.setProperty("--marker", markerColor(item.total));
     marker.setAttribute("aria-label", `${item.name} ${item.total}점`);
     marker.innerHTML = `<span>${item.name} ${item.total}</span>`;
-    marker.addEventListener("click", () => selectArea(item.id));
+    marker.addEventListener("click", () => selectArea(item.id, { source: "map" }));
     nodes.mapCanvas.append(marker);
   });
 }
 
+function renderMap() {
+  if (!state.neighborhoods.length) {
+    nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
+    return;
+  }
+
+  if (!renderLeafletMap()) {
+    renderFallbackMap();
+  }
+}
+
+function buildReason(item) {
+  const dims = [
+    ["통근", item.adjusted.commute],
+    ["주거비", item.adjusted.cost],
+    ["생활 SOC", item.adjusted.service],
+    ["안전·환경", item.adjusted.safety]
+  ].sort((a, b) => b[1] - a[1]);
+
+  const parts = [`${dims[0][0]}·${dims[1][0]} 강점`];
+  const overBudget = Math.round(Number(item.rentMonthly10k) - state.budget);
+  parts.push(overBudget > 0 ? `예산 ${overBudget}만원 초과 주의` : "예산 내 후보");
+  if (item.recommendedFor?.includes(state.persona)) {
+    parts.push(`${personaLabels[state.persona]} 적합`);
+  }
+  return parts.join(" · ");
+}
+
 function renderCards() {
+  nodes.cards.classList.toggle("is-loading", state.isLoading);
+  nodes.cards.setAttribute("aria-busy", state.isLoading ? "true" : "false");
   nodes.cards.innerHTML = "";
 
   if (state.isLoading && !state.results.length) {
     nodes.cards.innerHTML = `<div class="empty-state">추천 계산 중</div>`;
+    nodes.toggleCards.hidden = true;
     return;
   }
 
   if (!state.results.length) {
     nodes.cards.innerHTML = `<div class="empty-state">추천 결과가 없습니다.</div>`;
+    nodes.toggleCards.hidden = true;
     return;
   }
 
-  state.results.slice(0, 8).forEach((item, index) => {
+  const visible = state.showAllCards ? state.results : state.results.slice(0, CARD_PREVIEW_COUNT);
+
+  visible.forEach((item, index) => {
     const fragment = nodes.cardTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".result-card");
     const button = fragment.querySelector(".card-button");
@@ -267,20 +428,27 @@ function renderCards() {
     fragment.querySelector(".rank").textContent = index + 1;
     fragment.querySelector(".name").textContent = `${item.name} · ${item.district}`;
     fragment.querySelector(".meta").textContent = `${destinationLabel} ${item.minutes}분 · 월 ${item.rentMonthly10k}만원 · ${item.station}`;
+    fragment.querySelector(".reason").textContent = buildReason(item);
     fragment.querySelector(".score").textContent = `${item.total}점`;
     fragment.querySelector(".bar span").style.setProperty("--bar", `${item.total}%`);
-    button.addEventListener("click", () => selectArea(item.id));
+    button.addEventListener("click", () => selectArea(item.id, { source: "card" }));
     nodes.cards.append(fragment);
   });
+
+  const total = state.results.length;
+  nodes.toggleCards.hidden = total <= CARD_PREVIEW_COUNT;
+  nodes.toggleCards.textContent = state.showAllCards
+    ? `상위 ${CARD_PREVIEW_COUNT}개만 보기`
+    : `전체 ${total}개 후보 보기`;
 }
 
 function metric(label, value) {
   return `<div class="metric"><span>${label}</span><strong>${value}</strong></div>`;
 }
 
-function scoreRow(label, value) {
+function scoreRow(label, value, tip) {
   return `
-    <div class="score-row">
+    <div class="score-row" title="${tip || ""}">
       <span>${label}</span>
       <div class="mini-bar"><span style="--value:${value}%"></span></div>
       <strong>${Math.round(value)}</strong>
@@ -290,10 +458,17 @@ function scoreRow(label, value) {
 
 function renderEvidence(selected) {
   if (!selected.evidence) return "";
-  const rentDongs = Array.isArray(selected.evidence.rentDongs) ? selected.evidence.rentDongs.join(", ") : "";
+  const evidence = selected.evidence;
+  const rentDongs = Array.isArray(evidence.rentDongs) ? evidence.rentDongs.join("·") : "";
   return `
     <div class="callout">
-      <p><strong>실데이터 근거</strong><br>${selected.evidence.rentSource} · ${rentDongs} · ${formatNumber(selected.evidence.matchedRentRecords)}건 집계</p>
+      <p><strong>실데이터 근거</strong></p>
+      <ul class="evidence-list">
+        <li>출처: ${evidence.rentSource}</li>
+        <li>집계 범위: ${evidence.rentDistrict || selected.district} ${rentDongs} (15~85㎡)</li>
+        <li>매칭 거래: ${formatNumber(evidence.matchedRentRecords)}건 중앙값 집계</li>
+        <li>좌표 검증: ${evidence.stationCoordinateSource || "서울시 역사마스터 정보"}</li>
+      </ul>
     </div>
   `;
 }
@@ -310,7 +485,7 @@ function renderDetail() {
   }
 
   nodes.selectedBadge.textContent = selected.name;
-  nodes.rankBadge.textContent = `${rank}위`;
+  nodes.rankBadge.textContent = `${rank}위 / ${state.results.length}개`;
   nodes.detailContent.innerHTML = `
     <div>
       <h3>${selected.name} · ${selected.district}</h3>
@@ -319,16 +494,17 @@ function renderDetail() {
     <div class="metric-grid">
       ${metric("종합점수", `${selected.total}점`)}
       ${metric("통근시간", `${selected.minutes}분`)}
-      ${metric("월세 중앙값", `${formatNumber(selected.rentMonthly10k)}만원`)}
-      ${metric("보증금 중앙값", `${formatNumber(selected.deposit10k)}만원`)}
-      ${metric("전세 중앙값", `${formatNumber(selected.jeonse10k)}만원`)}
+      ${metric("월세 중앙값", formatMoney10k(selected.rentMonthly10k))}
+      ${metric("보증금 중앙값", formatMoney10k(selected.deposit10k))}
+      ${metric("전세 중앙값", formatMoney10k(selected.jeonse10k))}
       ${metric("대중교통", `${selected.transitScore}점`)}
     </div>
     <div class="score-list" aria-label="항목별 점수">
-      ${scoreRow("통근", selected.adjusted.commute)}
-      ${scoreRow("주거비", selected.adjusted.cost)}
-      ${scoreRow("생활 SOC", selected.adjusted.service)}
-      ${scoreRow("안전·환경", selected.adjusted.safety)}
+      ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
+      ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
+      ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
+      ${scoreRow("안전·환경", selected.adjusted.safety, scoreTips.safety)}
+      <p class="score-note">통근·주거비는 실데이터 기반, 생활 SOC·안전·환경은 MVP 프록시 점수입니다.</p>
     </div>
     <div class="callout">
       <p><strong>추천 근거</strong><br>${selected.insight}</p>
@@ -340,6 +516,64 @@ function renderDetail() {
   `;
 }
 
+function renderEvidenceTable() {
+  if (!nodes.evidenceTableBody || state.evidenceRendered || !state.neighborhoods.length) return;
+
+  const rows = [...state.neighborhoods]
+    .sort((a, b) => (b.evidence?.matchedRentRecords || 0) - (a.evidence?.matchedRentRecords || 0))
+    .map((item) => {
+      const evidence = item.evidence || {};
+      const dongs = Array.isArray(evidence.rentDongs) ? evidence.rentDongs.join(", ") : "-";
+      return `
+        <tr>
+          <th scope="row">${item.name}<span class="cell-sub">${item.district}</span></th>
+          <td>${dongs}</td>
+          <td class="num">${formatNumber(evidence.matchedRentRecords)}건</td>
+          <td class="num">${formatNumber(item.rentMonthly10k)}만원</td>
+          <td class="num">${formatMoney10k(item.deposit10k)}</td>
+          <td class="num">${formatMoney10k(item.jeonse10k)}</td>
+        </tr>
+      `;
+    });
+
+  const totalRecords = state.neighborhoods.reduce(
+    (sum, item) => sum + Number(item.evidence?.matchedRentRecords || 0),
+    0
+  );
+  rows.push(`
+    <tr class="total-row">
+      <th scope="row">합계</th>
+      <td>생활권 ${state.neighborhoods.length}개</td>
+      <td class="num">${formatNumber(totalRecords)}건</td>
+      <td colspan="3" class="muted">15~85㎡ 거래 중앙값 기준</td>
+    </tr>
+  `);
+
+  nodes.evidenceTableBody.innerHTML = rows.join("");
+  state.evidenceRendered = true;
+}
+
+function renderApiStatus() {
+  if (!nodes.apiStatusPill) return;
+  if (state.apiOnline) {
+    nodes.apiStatusPill.textContent = "API 연결됨";
+    nodes.apiStatusPill.className = "nav-status is-online";
+    nodes.apiStatusPill.title = "추천이 서버 API에서 계산됩니다.";
+  } else {
+    nodes.apiStatusPill.textContent = "로컬 계산";
+    nodes.apiStatusPill.className = "nav-status is-offline";
+    nodes.apiStatusPill.title = state.lastError || "API 미연결 시 브라우저에서 동일 로직으로 계산합니다.";
+  }
+  if (nodes.apiStatusLabel) {
+    nodes.apiStatusLabel.textContent = state.apiOnline ? "API" : "로컬";
+  }
+}
+
+function renderLoadingHint() {
+  nodes.cards.classList.toggle("is-loading", state.isLoading);
+  nodes.cards.setAttribute("aria-busy", state.isLoading ? "true" : "false");
+}
+
 function renderControls() {
   const sourceYear = state.apiMeta?.housingSource?.year;
   const modeLabel = state.apiOnline ? "API" : "로컬";
@@ -349,23 +583,83 @@ function renderControls() {
   nodes.serviceWeightOutput.textContent = state.weights.service;
   nodes.safetyWeightOutput.textContent = state.weights.safety;
   nodes.candidateCount.textContent = state.apiMeta?.totalCandidates || state.neighborhoods.length;
+
+  const total = state.results.length || state.neighborhoods.length;
+  const shown = state.results.length
+    ? (state.showAllCards ? state.results.length : Math.min(CARD_PREVIEW_COUNT, state.results.length))
+    : 0;
+  nodes.resultSummary.textContent = total ? `전체 후보 ${total}개 중 상위 ${shown}개` : "";
+
+  const stamp = state.lastUpdated
+    ? state.lastUpdated.toLocaleTimeString("ko-KR", { hour12: false })
+    : "";
   nodes.updatedAt.textContent = state.isLoading
-    ? "추천 계산 중"
+    ? "조건 반영 중…"
     : sourceYear
-      ? `${modeLabel} · ${sourceYear} 서울 전월세`
+      ? `${modeLabel} 계산 · ${sourceYear} 서울 전월세 실데이터${stamp ? ` · ${stamp} 기준` : ""}`
       : "데이터 준비 중";
 }
 
 function render() {
   renderControls();
+  renderApiStatus();
   renderMap();
   renderCards();
   renderDetail();
+  renderEvidenceTable();
 }
 
-function selectArea(id) {
+function selectArea(id, options = {}) {
   state.selectedId = id;
+
+  const rank = state.results.findIndex((item) => item.id === id);
+  if (rank >= CARD_PREVIEW_COUNT && !state.showAllCards) {
+    state.showAllCards = true;
+  }
+
   render();
+  focusSelectedMarker(options.source === "card");
+}
+
+function setActiveNav(sectionId) {
+  nodes.navLinks.forEach((link) => {
+    link.classList.toggle("is-active", link.dataset.section === sectionId);
+  });
+}
+
+function initNavigation() {
+  const sections = ["recommend", "map", "data-evidence", "api", "business", "submission"]
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+  const recommendSection = document.getElementById("recommend");
+  const mapSection = document.getElementById("map");
+
+  nodes.navLinks.forEach((link) => {
+    link.addEventListener("click", () => {
+      state.navClickSuppressUntil = Date.now() + 900;
+      setActiveNav(link.dataset.section);
+    });
+  });
+
+  const updateActive = () => {
+    if (Date.now() < state.navClickSuppressUntil) return;
+    const probe = window.scrollY + 130;
+    let current = sections[0];
+    sections.forEach((section) => {
+      if (section.offsetTop <= probe) {
+        current = section;
+      }
+    });
+    // 데스크톱 그리드에서는 지도 패널이 추천 영역과 같은 높이에서 시작하므로 추천을 우선한다.
+    if (current === mapSection && recommendSection && mapSection.offsetTop - recommendSection.offsetTop < 120) {
+      current = recommendSection;
+    }
+    setActiveNav(current.id);
+  };
+
+  window.addEventListener("scroll", updateActive, { passive: true });
+  window.addEventListener("resize", updateActive, { passive: true });
+  updateActive();
 }
 
 function bindEvents() {
@@ -400,6 +694,12 @@ function bindEvents() {
     });
   });
 
+  nodes.toggleCards.addEventListener("click", () => {
+    state.showAllCards = !state.showAllCards;
+    renderControls();
+    renderCards();
+  });
+
   nodes.resetButton.addEventListener("click", () => {
     state.budget = 70;
     state.destination = "gangnam";
@@ -413,12 +713,14 @@ function bindEvents() {
     nodes.serviceWeight.value = state.weights.service;
     nodes.safetyWeight.value = state.weights.safety;
     state.selectedId = null;
+    state.showAllCards = false;
     scheduleRefresh(0);
   });
 }
 
 async function init() {
   bindEvents();
+  initNavigation();
   render();
   await loadAreas();
   await refreshRecommendations();

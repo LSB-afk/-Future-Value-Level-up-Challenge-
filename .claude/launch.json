@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "movevalue",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["api/movevalue_api.py", "--port", "5173"],
+      "port": 5173,
+      "autoPort": false
+    }
+  ]
+}

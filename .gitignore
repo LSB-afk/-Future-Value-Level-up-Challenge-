@@ -4,6 +4,8 @@ __pycache__/
 .env
 .env.*
 .omx/
+.omc/
+.claude/settings.local.json
 node_modules/
 data/raw/
 qa/docx-render/

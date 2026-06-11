@@ -45,13 +45,23 @@ python3 scripts/build_real_dataset.py
 | `costWeight` | `30` | 주거비 점수 가중치 |
 | `serviceWeight` | `20` | 생활 SOC 점수 가중치 |
 | `safetyWeight` | `15` | 안전·환경 점수 가중치 |
-| `limit` | `8` | 반환 개수 |
+| `limit` | `9` | 반환 개수 (기본 8, 웹앱은 지도 마커 9개를 위해 9 요청) |
 
 예시:
 
 ```bash
-curl 'http://127.0.0.1:5173/api/recommendations?budget=70&destination=gangnam&persona=single&commuteWeight=35&costWeight=30&serviceWeight=20&safetyWeight=15&limit=8'
+curl 'http://127.0.0.1:5173/api/recommendations?budget=70&destination=gangnam&persona=single&commuteWeight=35&costWeight=30&serviceWeight=20&safetyWeight=15&limit=9'
 ```
+
+## 지도 구현과 제공자 교체
+
+웹앱 지도는 API 키가 필요 없는 **Leaflet 1.9.4 + OpenStreetMap 타일**을 사용한다. 구현 위치는 `app/app.js`의 `initializeLeafletMap()`이며, 타일 레이어 한 줄만 바꾸면 다른 제공자로 교체할 수 있다.
+
+- **VWorld**: `L.tileLayer("https://api.vworld.kr/req/wmts/1.0.0/{API_KEY}/Base/{z}/{y}/{x}.png")` — 국토교통부 제공, 발급 키 필요. 공공 서비스 신뢰도 측면에서 1순위 교체 후보.
+- **카카오/네이버 지도**: 자체 JS SDK를 사용하므로 Leaflet 마커 로직을 SDK 마커 API로 옮겨야 한다. `renderLeafletMap()`의 마커 데이터(좌표·점수·선택 상태)는 그대로 재사용 가능하다.
+- 타일 로딩이 실패하거나 Leaflet 스크립트가 차단된 환경에서는 좌표 비례 분포도 폴백(`renderFallbackMap()`)이 자동으로 동작한다.
+
+API 키가 필요한 제공자는 키를 코드에 하드코딩하지 않고 환경 변수 또는 서버 측 프록시로 주입한다.
 
 ## 확장 방향
 
