@@ -17,6 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
 from route_adapters import build_commute_route, credential_status, resolve_location
 
 
@@ -293,6 +294,23 @@ def commute_route(raw: dict[str, list[str]]) -> dict:
     return route
 
 
+def integration_status() -> dict:
+    return {**credential_status(), **apartment_credential_status()}
+
+
+def apartment_health() -> dict:
+    dataset, source_mode, source_error = load_apartment_dataset()
+    meta = dataset.get("meta", {})
+    return {
+        "sourceMode": source_mode,
+        "sourceError": source_error,
+        "complete": bool(meta.get("complete")),
+        "totalRecords": int(meta.get("totalRecords") or len(dataset.get("apartments", []))),
+        "availableRecords": int(meta.get("recordsWithCoordinates") or len(dataset.get("apartments", []))),
+        "source": meta.get("source", {}),
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MoveValueAPI/0.1"
 
@@ -341,7 +359,8 @@ class Handler(BaseHTTPRequestHandler):
                         "ok": True,
                         "areas": len(dataset["areas"]),
                         "source": dataset["meta"],
-                        "integrations": credential_status(),
+                        "apartments": apartment_health(),
+                        "integrations": integration_status(),
                     },
                 )
                 return
@@ -356,13 +375,16 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/commute-route":
                 self.send_json(HTTPStatus.OK, commute_route(parse_qs(parsed.query)))
                 return
+            if path == "/api/apartments":
+                self.send_json(HTTPStatus.OK, apartments_response(parse_qs(parsed.query)))
+                return
             if path == "/api/recommendations":
                 query = normalize_query(parse_qs(parsed.query))
                 self.send_json(HTTPStatus.OK, recommendations(query))
                 return
             self.serve_static(path)
         except ValueError as exc:
-            self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc), "integrations": credential_status()})
+            self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc), "integrations": integration_status()})
         except Exception as exc:  # noqa: BLE001 - API should return JSON error in prototype mode.
             self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
 

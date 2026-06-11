@@ -8,9 +8,9 @@
 
 - **추천**: 예산·목적지·가구 유형·우선순위 기반 생활권 랭킹. 카드마다 통근시간·월세·SOC·안전환경 수치를 넣은 "왜 추천됐는지" 한 줄 근거를 표시하고, 전체 후보 9개 중 상위 6개를 기본 노출합니다.
 - **통근검증**: 추천 생활권을 선택해 집 주소와 회사 주소 기준 통근 루트를 별도 화면에서 검증합니다. ODsay/TMAP 키가 있으면 live 경로 API를 우선 사용하고, 없으면 거리 기반 폴백으로 총 소요시간·환승·도보·요금을 표시합니다.
-- **지도**: Leaflet + OpenStreetMap 타일 실제 지도. 생활권 9개 마커를 점수별 색상·크기로 표시하고, 카드 선택과 양방향 연동됩니다. 지도 로딩 실패 시 분포도 폴백으로 전환됩니다.
+- **지도**: Leaflet + OpenStreetMap 타일 실제 지도. 생활권 9개 마커와 서울시 공동주택 아파트 단지 레이어를 함께 표시하고, 카드 선택과 양방향 연동됩니다. 지도 로딩 실패 시 분포도 폴백으로 전환됩니다.
 - **데이터 근거**: 서울시 2025 전월세 실데이터의 생활권별 매칭 거래 건수, 월세·보증금·전세 중앙값, 실거래 예시, 병원·학교·공원 반경 집계, 치안시설·CCTV·대기측정망 기반 안전환경 근거.
-- **API**: `/api/health`, `/api/areas`, `/api/recommendations`, `/api/geocode`, `/api/commute-route` 설명과 호출 예시, B2B/B2G 확장 방향.
+- **API**: `/api/health`, `/api/areas`, `/api/recommendations`, `/api/geocode`, `/api/commute-route`, `/api/apartments` 설명과 호출 예시, B2B/B2G 확장 방향.
 - **사업모델**: B2C/B2B/B2G/데이터 마켓 수익 채널과 서비스 밸류체인.
 - **제출자료**: 참가신청서 DOCX 위치와 문서 경로 안내.
 
@@ -18,9 +18,12 @@
 
 - `api/`: 추천 계산과 정적 웹앱 제공을 담당하는 Python API 서버
 - `api/route_adapters.py`: Kakao 주소 검색, ODsay/TMAP 대중교통 경로, 거리 기반 폴백 어댑터
+- `api/apartment_adapters.py`: 서울시 공동주택 아파트 정보 API/스냅샷 기반 지도 레이어 어댑터
 - `app/`: API를 호출하는 브라우저 실행 프로토타입 (Leaflet 지도 포함)
 - `data/areas.actual.json`: 서울시 2025 전월세 스냅샷 기반 생활권 데이터
+- `data/apartments.seoul.snapshot.json`: 서울시 공동주택 아파트 정보 sample 키 기반 단지 레이어 미리보기 스냅샷
 - `scripts/build_real_dataset.py`: 실제 공공데이터 다운로드·정규화 파이프라인
+- `scripts/build_apartment_snapshot.py`: 서울 열린데이터광장 `OpenAptInfo` 단지 데이터 스냅샷 생성기
 - `scripts/movevalue_adapters.py`: 대중교통 경로 API 폴백 어댑터, 생활 SOC 좌표 집계 어댑터, 안전·환경 스냅샷 점수 어댑터
 - `docs/competition-brief.md`: 공모전 공고·양식 확인 요약
 - `docs/data-sources.md`: 실제 연계 가능한 공공데이터 근거
@@ -44,7 +47,7 @@ python3 api/movevalue_api.py --port 5173
 
 ## 지도
 
-지도는 API 키가 필요 없는 Leaflet + OpenStreetMap 타일을 사용합니다. VWorld·카카오·네이버 지도로 교체하는 방법은 `docs/api-development.md`의 "지도 제공자 교체" 절을 참고하세요. 타일 로딩에 실패하면 좌표 기반 분포도 폴백이 유지됩니다.
+지도는 API 키가 필요 없는 Leaflet + OpenStreetMap 타일을 사용합니다. 서울 아파트 단지 레이어는 `GET /api/apartments`가 반환하는 좌표를 지도 위에 표시하며, `SEOUL_OPEN_API_KEY`가 있으면 서울 열린데이터광장 `OpenAptInfo` 전체 단지를 런타임으로 불러옵니다. 키가 없으면 저장소의 제한 스냅샷으로 폴백합니다. VWorld·카카오·네이버 지도로 교체하는 방법은 `docs/api-development.md`의 "지도 제공자 교체" 절을 참고하세요. 타일 로딩에 실패하면 좌표 기반 분포도 폴백이 유지됩니다.
 
 ## 실제 데이터 갱신
 
@@ -62,6 +65,7 @@ python3 scripts/build_real_dataset.py
 export KAKAO_REST_API_KEY="카카오 REST API 키"
 export ODSAY_API_KEY="ODsay API 키"
 export TMAP_APP_KEY="TMAP appKey"
+export SEOUL_OPEN_API_KEY="서울 열린데이터광장 인증키"
 python3 api/movevalue_api.py --port 5173
 ```
 
@@ -72,10 +76,11 @@ python3 api/movevalue_api.py --port 5173
 - `GET /api/recommendations`: 예산, 목적지, 가구 유형, 가중치 기반 추천 랭킹 조회
 - `GET /api/geocode`: 주소·후보지명·좌표 입력을 좌표 객체로 변환
 - `GET /api/commute-route`: 집 주소와 회사 주소를 받아 ODsay/TMAP 경로 또는 폴백 통근 루트 반환
+- `GET /api/apartments`: 서울시 공동주택 아파트 정보 기반 단지·클러스터 지도 레이어 반환
 
 ## 데이터 기반과 한계
 
-주거비(월세·보증금·전세 중앙값)는 서울시 2025 전월세 실데이터에서 집계한 값입니다. 생활 SOC는 병의원·학교·공원 좌표 스냅샷 반경 집계 기반이고, 안전·환경은 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷 기반입니다. 통근시간은 경로 API 어댑터가 있으나 키 미설정 환경에서는 테이블 폴백으로 생성됩니다. 선정 후 구체화 단계에서는 ODsay/TMAP live API 검증, 원천 API 자동 갱신, 전체 행정동 커버리지로 고도화합니다(`docs/product-roadmap.md` 참고).
+주거비(월세·보증금·전세 중앙값)는 서울시 2025 전월세 실데이터에서 집계한 값입니다. 생활 SOC는 병의원·학교·공원 좌표 스냅샷 반경 집계 기반이고, 안전·환경은 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷 기반입니다. 통근시간은 경로 API 어댑터가 있으나 키 미설정 환경에서는 테이블 폴백으로 생성됩니다. 아파트 지도 레이어는 서울시 공동주택 단지 좌표 기반이며, 현재 커밋된 스냅샷은 sample 키 제한 때문에 5건 미리보기만 포함합니다. `SEOUL_OPEN_API_KEY`를 설정하면 공식 API의 전체 단지 데이터를 같은 엔드포인트로 불러옵니다. 선정 후 구체화 단계에서는 ODsay/TMAP live API 검증, 원천 API 자동 갱신, 전체 행정동 커버리지로 고도화합니다(`docs/product-roadmap.md` 참고).
 
 ## 제출 전 확인 필요
 

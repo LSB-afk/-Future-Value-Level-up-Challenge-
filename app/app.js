@@ -22,6 +22,16 @@ const state = {
     result: null,
     error: ""
   },
+  apartments: {
+    enabled: true,
+    isLoading: false,
+    features: [],
+    meta: null,
+    error: "",
+    lastKey: "",
+    requestId: 0,
+    timer: null
+  },
   showAllCards: false,
   evidenceRendered: false,
   weights: {
@@ -101,6 +111,8 @@ const nodes = {
   mapCanvas: document.querySelector("#mapCanvas"),
   detailContent: document.querySelector("#detailContent"),
   routeContent: document.querySelector("#routeContent"),
+  apartmentLayerToggle: document.querySelector("#apartmentLayerToggle"),
+  apartmentLayerStatus: document.querySelector("#apartmentLayerStatus"),
   selectedBadge: document.querySelector("#selectedBadge"),
   rankBadge: document.querySelector("#rankBadge"),
   candidateCount: document.querySelector("#candidateCount"),
@@ -347,10 +359,17 @@ function initializeLeafletMap() {
   state.map = {
     instance,
     markerLayer: L.layerGroup().addTo(instance),
+    apartmentLayer: L.layerGroup().addTo(instance),
     routeLayer: L.layerGroup().addTo(instance),
     markersById: {},
     fitted: false
   };
+
+  instance.on("moveend zoomend", () => {
+    if (state.apartments.enabled) {
+      scheduleApartmentLayerLoad();
+    }
+  });
 }
 
 function drawRouteLine(bounds) {
@@ -436,6 +455,12 @@ function renderLeafletMap() {
     state.map.fitted = true;
   }
 
+  if (state.apartments.enabled) {
+    scheduleApartmentLayerLoad();
+  } else {
+    renderApartmentLayer();
+  }
+
   window.setTimeout(() => instance.invalidateSize(), 0);
   return true;
 }
@@ -447,6 +472,173 @@ function focusSelectedMarker(pan) {
     state.map.instance.panTo(marker.getLatLng());
   }
   marker.openPopup();
+}
+
+function apartmentLayerKey() {
+  if (!state.map?.instance) return "";
+  const bounds = state.map.instance.getBounds();
+  const zoom = state.map.instance.getZoom();
+  return [
+    zoom,
+    bounds.getSouth().toFixed(3),
+    bounds.getWest().toFixed(3),
+    bounds.getNorth().toFixed(3),
+    bounds.getEast().toFixed(3)
+  ].join(":");
+}
+
+function apartmentBoundsParam() {
+  const bounds = state.map.instance.getBounds();
+  return [
+    bounds.getSouth().toFixed(6),
+    bounds.getWest().toFixed(6),
+    bounds.getNorth().toFixed(6),
+    bounds.getEast().toFixed(6)
+  ].join(",");
+}
+
+function renderApartmentLayerStatus() {
+  if (!nodes.apartmentLayerStatus) return;
+  if (!state.apartments.enabled) {
+    nodes.apartmentLayerStatus.textContent = "아파트 단지 레이어 꺼짐";
+    nodes.apartmentLayerStatus.className = "map-layer-status";
+    return;
+  }
+  if (state.apartments.isLoading) {
+    nodes.apartmentLayerStatus.textContent = "아파트 단지 불러오는 중";
+    nodes.apartmentLayerStatus.className = "map-layer-status is-loading";
+    return;
+  }
+  if (state.apartments.error) {
+    nodes.apartmentLayerStatus.textContent = state.apartments.error;
+    nodes.apartmentLayerStatus.className = "map-layer-status is-warning";
+    return;
+  }
+  const meta = state.apartments.meta;
+  if (!meta) {
+    nodes.apartmentLayerStatus.textContent = "아파트 단지 데이터 준비 중";
+    nodes.apartmentLayerStatus.className = "map-layer-status";
+    return;
+  }
+  const mode = meta.complete ? "전체" : "제한 스냅샷";
+  const viewCount = meta.filteredRecords || 0;
+  const total = meta.totalRecords || meta.availableRecords || 0;
+  nodes.apartmentLayerStatus.textContent = `${mode} ${formatNumber(total)}개 중 현재 화면 ${formatNumber(viewCount)}개`;
+  nodes.apartmentLayerStatus.className = meta.complete ? "map-layer-status is-ready" : "map-layer-status is-warning";
+}
+
+function apartmentPopup(feature) {
+  const approval = feature.approvalDate || (feature.approvalYear ? `${feature.approvalYear}년` : "사용승인일 없음");
+  const parking = feature.parkingCount ? ` · 주차 ${formatNumber(feature.parkingCount)}대` : "";
+  return `
+    <strong>${escapeHtml(feature.name)}</strong><br>
+    ${escapeHtml(feature.address || `${feature.district || ""} ${feature.dong || ""}`.trim())}<br>
+    ${formatNumber(feature.households)}세대 · ${formatNumber(feature.buildingCount)}개동 · ${escapeHtml(approval)}${parking}<br>
+    <span class="popup-muted">${escapeHtml(feature.housingType || "공동주택")} · ${escapeHtml(feature.heating || "난방 정보 없음")}</span>
+  `;
+}
+
+function clusterPopup(feature) {
+  const districts = Array.isArray(feature.districts) && feature.districts.length ? feature.districts.join(", ") : "서울";
+  const samples = Array.isArray(feature.sampleNames) ? feature.sampleNames.join(", ") : "";
+  return `
+    <strong>아파트 단지 ${formatNumber(feature.count)}개</strong><br>
+    ${escapeHtml(districts)} · ${formatNumber(feature.households)}세대<br>
+    <span class="popup-muted">${escapeHtml(samples)}</span><br>
+    <span class="popup-muted">확대하면 개별 단지로 표시됩니다.</span>
+  `;
+}
+
+function renderApartmentLayer() {
+  if (!state.map?.apartmentLayer) return;
+  const layer = state.map.apartmentLayer;
+  layer.clearLayers();
+
+  if (!state.apartments.enabled) {
+    renderApartmentLayerStatus();
+    return;
+  }
+
+  state.apartments.features.forEach((feature) => {
+    if (feature.type === "cluster") {
+      const marker = L.marker([feature.lat, feature.lng], {
+        title: `아파트 단지 ${feature.count}개`,
+        icon: L.divIcon({
+          className: "apt-cluster-wrapper",
+          html: `<span class="apt-cluster"><strong>${formatNumber(feature.count)}</strong></span>`,
+          iconSize: [44, 44],
+          iconAnchor: [22, 22],
+          popupAnchor: [0, -18]
+        })
+      });
+      marker.bindPopup(clusterPopup(feature));
+      marker.on("click", () => {
+        const nextZoom = Math.max(state.map.instance.getZoom() + 2, 14);
+        state.map.instance.setView([feature.lat, feature.lng], nextZoom);
+      });
+      marker.addTo(layer);
+      return;
+    }
+
+    L.circleMarker([feature.lat, feature.lng], {
+      radius: 4,
+      color: "#ffffff",
+      weight: 1.5,
+      fillColor: "#6f4aa8",
+      fillOpacity: 0.82
+    })
+      .bindPopup(apartmentPopup(feature))
+      .bindTooltip(feature.name, { direction: "top", offset: [0, -4] })
+      .addTo(layer);
+  });
+  renderApartmentLayerStatus();
+}
+
+async function loadApartmentsForMap(force = false) {
+  if (!state.map?.instance || !state.apartments.enabled) return;
+
+  const key = apartmentLayerKey();
+  if (!force && key && key === state.apartments.lastKey) {
+    renderApartmentLayer();
+    return;
+  }
+
+  const requestId = ++state.apartments.requestId;
+  state.apartments.lastKey = key;
+  state.apartments.isLoading = true;
+  state.apartments.error = "";
+  renderApartmentLayerStatus();
+
+  const params = new URLSearchParams({
+    bounds: apartmentBoundsParam(),
+    zoom: state.map.instance.getZoom(),
+    cluster: "true",
+    limit: 5000
+  });
+
+  try {
+    const payload = await fetchJson(`/api/apartments?${params.toString()}`);
+    if (requestId !== state.apartments.requestId) return;
+    state.apartments.features = Array.isArray(payload.features) ? payload.features : [];
+    state.apartments.meta = payload.meta || null;
+    state.apartments.error = "";
+  } catch (error) {
+    if (requestId !== state.apartments.requestId) return;
+    state.apartments.features = [];
+    state.apartments.error = `아파트 단지 로딩 실패: ${error.message}`;
+  } finally {
+    if (requestId === state.apartments.requestId) {
+      state.apartments.isLoading = false;
+      renderApartmentLayer();
+    }
+  }
+}
+
+function scheduleApartmentLayerLoad(force = false) {
+  window.clearTimeout(state.apartments.timer);
+  state.apartments.timer = window.setTimeout(() => {
+    loadApartmentsForMap(force);
+  }, 160);
 }
 
 function renderFallbackMap() {
@@ -491,6 +683,7 @@ function renderFallbackMap() {
 }
 
 function renderMap() {
+  renderApartmentLayerStatus();
   if (!state.neighborhoods.length) {
     nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
     return;
@@ -1044,6 +1237,9 @@ function activateSection(sectionId, options = {}) {
   if (target === "map" && state.map?.instance) {
     window.setTimeout(() => {
       state.map.instance.invalidateSize();
+      if (state.apartments.enabled) {
+        scheduleApartmentLayerLoad();
+      }
       focusSelectedMarker(false);
     }, 80);
   }
@@ -1118,6 +1314,22 @@ function bindEvents() {
     state.showAllCards = false;
     resetRouteState();
     scheduleRefresh(0);
+  });
+
+  nodes.apartmentLayerToggle?.addEventListener("change", (event) => {
+    state.apartments.enabled = event.target.checked;
+    state.apartments.lastKey = "";
+
+    if (!state.apartments.enabled) {
+      state.apartments.features = [];
+      state.apartments.error = "";
+      state.map?.apartmentLayer?.clearLayers();
+      renderApartmentLayerStatus();
+      return;
+    }
+
+    scheduleApartmentLayerLoad(true);
+    renderApartmentLayerStatus();
   });
 }
 

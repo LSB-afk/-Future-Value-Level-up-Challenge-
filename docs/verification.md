@@ -1,6 +1,6 @@
 # Verification Log
 
-확인일: 2026-06-11 (데이터 정밀도 2차 + 매물 예시·안전환경·추천 사유 보완 + 통근검증 독립 화면)
+확인일: 2026-06-11 (데이터 정밀도 2차 + 통근검증 독립 화면 + 서울 아파트 단지 지도 레이어)
 
 ## 데이터 재생성
 
@@ -12,23 +12,31 @@
 - 생활 SOC 집계 예시: 건대입구 병원 2·학교 3·공원 2, 마곡나루 병원 1·학교 4·공원 2, 상암DMC 병원 1·학교 3·공원 2
 - 안전·환경 집계 예시: 건대입구 치안시설 2·CCTV 62대·공원 2, 신림 치안시설 1·CCTV 78대·공원 2
 - 전월세 예시: 생활권별 4건 생성. 상세 지번·건물명 없이 계약월·법정동·면적·보증금·월세·건물용도·층만 저장
+- `SEOUL_OPEN_API_KEY=sample python3 scripts/build_apartment_snapshot.py`로 `data/apartments.seoul.snapshot.json` 생성
+- 서울시 공동주택 아파트 정보 `OpenAptInfo` 공식 총 건수 2,876건 확인. sample 키 제한으로 현재 스냅샷은 5건 미리보기이며 `meta.complete=false`
 
 ## 정적 검사
 
 - `node --check app/app.js` 통과
 - `python3 -m json.tool data/areas.actual.json` 통과
-- `python3 -m py_compile api/movevalue_api.py api/route_adapters.py scripts/build_real_dataset.py scripts/movevalue_adapters.py` 통과
+- `python3 -m json.tool data/apartments.seoul.snapshot.json` 통과
+- `python3 -m py_compile api/movevalue_api.py api/route_adapters.py api/apartment_adapters.py scripts/build_real_dataset.py scripts/movevalue_adapters.py scripts/build_apartment_snapshot.py` 통과
+- `git diff --check` 통과
 
 ## API 검증
 
 - API 서버 실행: `python3 api/movevalue_api.py --port 5173`
 - `GET /api/health`: `ok=true`, 생활권 9개, 2025 서울시 전월세 출처, ODsay 경로 API 어댑터 메타, 생활 SOC 데이터셋 메타, 안전환경 데이터셋 메타 포함
+- `GET /api/health`: `apartments.sourceMode=snapshot`, `apartments.totalRecords=2876`, `apartments.availableRecords=5`, `apartments.complete=false`, `integrations.seoulOpenApi=false` 확인
 - `GET /api/recommendations?...&limit=9`: 9개 랭킹 반환, `meta.totalCandidates=9`, 1위 건대입구 91점(기본 조건), `reasonText`에 강남 24분·월세 57만원·병원 2·학교 3·공원 2·치안시설 2·CCTV 62대 표시
 - 1위 건대입구 응답: `rentExamples` 4건, `evidence.safetyEnvCounts={police:2, cctvClusters:1, cctv:62, park:2}`, `evidence.commuteMode=table_fallback`
 - `GET /api/areas`: `meta.integrations={odsay:false,tmap:false,kakao:false}`, 생활권 ID 9개, `guro/gongdeok/gimpoairport` 대표 주소 정상 반환
 - `GET /api/geocode?query=konkuk`: 건대입구 로컬 좌표(`source=known_location`) 반환
 - `GET /api/geocode?query=서울%20광진구%20화양동`: 생활권 대표 주소 로컬 좌표(`source=known_address`) 반환
 - `GET /api/commute-route?origin=서울%20광진구%20화양동&destinationQuery=서울%20강남구%20역삼동&provider=auto`: ODsay/TMAP 키 미설정 환경에서 `provider=fallback`, `mode=estimated_fallback`, 주소 라벨 유지, 총 27분, 요금 1,550원, 단계 3개 반환
+- `GET /api/apartments?bounds=37.45,126.80,37.70,127.18&zoom=11&cluster=true`: `sourceMode=snapshot`, `filteredRecords=5`, `returnedFeatures=5`, 개봉건영·월계동원베네스트·우리유앤미·오금현대백조(임대)·송파파인타운13단지 반환
+- `GET /api/apartments?q=%EC%86%A1%ED%8C%8C%ED%8C%8C%EC%9D%B8%ED%83%80%EC%9A%B4&zoom=16&cluster=false`: 단지명 검색으로 송파파인타운13단지 1건 반환
+- `GET /api/apartments?district=%EC%86%A1%ED%8C%8C%EA%B5%AC&zoom=16&cluster=false`: 송파구 2건 반환
 - `GET /` 루트 웹 페이지 `200 OK`
 - `HEAD /app.js`: `Cache-Control: no-store` 확인. 개발·심사 중 최신 정적 파일 반영 지연을 방지
 
@@ -51,6 +59,10 @@
 - 통근 루트 계산 클릭: 폴백 결과 카드 렌더링, 주소 라벨 `서울 광진구 화양동 → 서울 강남구 역삼동`, 요약 지표 4개(총 소요·환승·도보·요금), 단계 3개, 키 미설정 notice 표시, 에러 상태 없음
 - 통근검증 화면: ODsay/TMAP 키 미설정 안내 표시. 키는 환경변수로만 감지하며 저장소에는 기록하지 않음
 - `지도에서 보기` 클릭: `지도` 섹션만 표시, 마커 9개 유지, Leaflet SVG 경로 6개 렌더링, 폴백 경로선 표시 확인
+- 지도 화면의 `서울 아파트 단지 표시` 토글 체크 상태 확인, 상태 배지 `제한 스냅샷 2,876개 중 현재 화면 4개` 표시
+- 지도 화면에서 아파트 단지 마커 4개 표시. 팝업 예시: `개봉건영 서울특별시 구로구 고척로21나길 85-6 209세대 · 2개동 · 1994-05-09 분양 · 개별난방`
+- 아파트 레이어 토글 OFF: 단지 마커 0개, 상태 `아파트 단지 레이어 꺼짐`
+- 아파트 레이어 토글 ON: 단지 마커 4개 복귀, 상태 `제한 스냅샷 2,876개 중 현재 화면 4개`
 - "전체 후보 9개 중 상위 6개" 표기와 전체 보기 토글 동작
 - 추천 카드별 한 줄 근거 표시
 - 데이터 근거 표: 생활권 9개 + 합계 114,319건, 월세·보증금·전세 중앙값(억 단위 변환 포함), SOC 근거, 안전환경 근거 컬럼 표시
@@ -68,7 +80,9 @@
 - 통근 루트 계산 후 결과 에러 없음, 주소 라벨 유지, 요약 지표 4개·단계 3개 표시
 - 상단 메뉴는 가로 스크롤 내비게이션으로 유지
 - `지도` 화면: `map`만 표시, Leaflet 마커 9개, 통근 경로 SVG 3개, 지도 높이 487px로 표시
+- `지도` 화면: 아파트 단지 마커 5개, 상태 배지 `제한 스냅샷 2,876개 중 현재 화면 5개`, 토글 체크 상태 유지
 - 지도 화면에서도 `document.documentElement.scrollWidth == 375`
+- 아파트 레이어 툴바 너비 317px, 상태 배지 너비 317px로 모바일 화면 내 정렬
 - 브라우저 콘솔 오류·경고: 없음
 
 ## 수정된 결함
@@ -82,6 +96,7 @@
 - 통근 루트 검증 UI가 `상세 근거` 안에 들어가 화면 맥락이 섞이던 문제를 독립 화면으로 분리.
 - 통근 루트 검증 UI가 추천 화면에 계속 붙어 있어 화면 밀도가 높던 문제를 `통근검증` 독립 메뉴로 분리.
 - 추천 카드 우측 종합점수 숫자와 점수바가 카드 판단을 점수 위주로 보이게 하던 문제를 제거.
+- 생활권 지도에 실제 주거 후보 단지 정보가 없어 추천 결과와 현실 주거 공급의 연결이 약했던 문제를 서울시 공동주택 아파트 정보 기반 지도 레이어로 보완.
 - 안전·환경이 MVP 프록시로 남아 있던 약점을 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷 점수로 교체.
 - 생활권 추천이 추상적인 강점 문구에 머물던 문제를 통근시간·월세·SOC·안전환경 수치 기반 문장으로 교체.
 - 생활권 단위 추천만 있고 후보 매물 설득력이 부족했던 문제를 개인정보성 상세주소 제외 전월세 실거래 예시로 보강.
@@ -93,6 +108,8 @@
 - 통근시간은 ODsay 대중교통 경로 API 어댑터가 구현되어 있지만, 이번 검증 환경에서는 API 키가 없어 기존 테이블 폴백으로 생성됐다.
 - 사용자 통근 루트는 Kakao 주소 검색, ODsay, TMAP 런타임 어댑터가 구현되어 있다. 이번 검증에서는 API 키를 환경변수로 주입하지 않아 실제 외부 호출은 수행하지 않았고, 로컬 대표 주소/후보명 해석과 거리 기반 폴백을 검증했다.
 - 채팅으로 전달된 API 키는 저장소·문서·커밋에 기록하지 않았다. 실제 live API 검증은 `KAKAO_REST_API_KEY`, `ODSAY_API_KEY`, `TMAP_APP_KEY`를 로컬 환경변수로 설정한 별도 실행에서 수행해야 한다.
+- 서울 아파트 단지 레이어는 서울 열린데이터광장 `OpenAptInfo` 어댑터와 `/api/apartments`가 구현되어 있다. 이번 검증에서는 `SEOUL_OPEN_API_KEY`를 주입하지 않아 sample 제한 스냅샷 5건으로 검증했다. 전체 2,876건 표시는 실제 `SEOUL_OPEN_API_KEY` 설정 후 같은 엔드포인트에서 확인해야 한다.
+- 현재 지도 레이어는 단지 좌표 레벨이다. 건물별 폴리곤 전체 표시는 건축물대장·공간데이터 타일링을 별도 단계에서 검토한다.
 - 생활 SOC는 서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 기반이다. 운영 단계에서는 API 키 기반 전체 자동 갱신과 편의시설 카테고리 확장이 필요하다.
 - 안전·환경 점수는 공공데이터 스냅샷 기반으로 교체했다. 다만 원천 API 자동 갱신과 행정동 전체 커버리지는 추후 구현이 필요하다.
 - 지도 타일은 OpenStreetMap 공개 타일을 사용하며, 운영 배포 시 VWorld 등으로 교체를 권장한다 (`docs/api-development.md` 참고).

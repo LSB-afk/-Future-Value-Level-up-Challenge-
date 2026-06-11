@@ -16,6 +16,7 @@ python3 api/movevalue_api.py --port 5173
 export KAKAO_REST_API_KEY="카카오 REST API 키"
 export ODSAY_API_KEY="ODsay API 키"
 export TMAP_APP_KEY="TMAP appKey"
+export SEOUL_OPEN_API_KEY="서울 열린데이터광장 인증키"
 python3 api/movevalue_api.py --port 5173
 ```
 
@@ -41,11 +42,17 @@ ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 
 웹 실행 중 사용자가 입력하는 집/회사 경로 검증은 `api/route_adapters.py`가 담당한다. 이 런타임 어댑터는 Kakao 주소 검색, ODsay 대중교통 경로, TMAP 대중교통 경로, 거리 기반 폴백을 같은 응답 형식으로 정규화한다.
 
+서울 아파트 단지 지도 레이어는 `api/apartment_adapters.py`가 담당한다. `SEOUL_OPEN_API_KEY`가 있으면 서울 열린데이터광장 `OpenAptInfo` 전체 단지를 live API로 불러오고, 키가 없거나 호출에 실패하면 `data/apartments.seoul.snapshot.json`으로 폴백한다. 현재 커밋된 스냅샷은 sample 키 제한으로 2,876건 중 5건 미리보기만 포함한다.
+
+```bash
+SEOUL_OPEN_API_KEY=발급키 python3 scripts/build_apartment_snapshot.py
+```
+
 ## 엔드포인트
 
 ### `GET /api/health`
 
-데이터 파일 로딩 상태, 후보 생활권 수, 경로·주소 API 키 설정 여부를 확인한다. 키 값은 반환하지 않고 `true/false`만 반환한다.
+데이터 파일 로딩 상태, 후보 생활권 수, 경로·주소·서울 열린데이터 API 키 설정 여부를 확인한다. 키 값은 반환하지 않고 `true/false`만 반환한다.
 
 ### `GET /api/areas`
 
@@ -139,9 +146,41 @@ curl 'http://127.0.0.1:5173/api/geocode?query=서울%20광진구%20화양동'
 curl 'http://127.0.0.1:5173/api/commute-route?origin=서울%20광진구%20화양동&destinationQuery=서울%20강남구%20역삼동&provider=auto'
 ```
 
+### `GET /api/apartments`
+
+서울시 공동주택 아파트 정보 기반 지도 레이어를 반환한다. 지도 화면은 현재 지도 bounds와 zoom을 넘겨 받아 단지 개별 마커 또는 클러스터 마커를 렌더링한다.
+
+쿼리 파라미터:
+
+| 이름 | 예시 | 설명 |
+| --- | --- | --- |
+| `bounds` | `37.45,126.80,37.70,127.18` | `south,west,north,east` 순서의 지도 화면 범위 |
+| `zoom` | `11` | Leaflet 현재 줌. 낮은 줌에서는 클러스터링 |
+| `cluster` | `true` | `false`이면 개별 단지만 반환 |
+| `limit` | `5000` | 반환 전 필터링 최대 건수 |
+| `district` | `송파구` | 선택 자치구만 필터링 |
+| `q` | `파인타운` | 단지명·주소·동 검색 |
+
+응답 핵심 필드:
+
+| 필드 | 설명 |
+| --- | --- |
+| `meta.sourceMode` | `live_api`, `snapshot`, `snapshot_fallback` |
+| `meta.complete` | 전체 데이터 여부. 현재 sample 스냅샷은 `false` |
+| `meta.totalRecords` | 공식 API가 알려준 총 단지 수 |
+| `meta.availableRecords` | 현재 서버가 좌표와 함께 보유한 단지 수 |
+| `features[].type` | `apartment` 또는 `cluster` |
+| `features[].households` | 단지 또는 클러스터 총 세대수 |
+
+예시:
+
+```bash
+curl 'http://127.0.0.1:5173/api/apartments?bounds=37.45,126.80,37.70,127.18&zoom=11&cluster=true'
+```
+
 ## 지도 구현과 제공자 교체
 
-웹앱 지도는 API 키가 필요 없는 **Leaflet 1.9.4 + OpenStreetMap 타일**을 사용한다. 구현 위치는 `app/app.js`의 `initializeLeafletMap()`이며, 타일 레이어 한 줄만 바꾸면 다른 제공자로 교체할 수 있다.
+웹앱 지도는 API 키가 필요 없는 **Leaflet 1.9.4 + OpenStreetMap 타일**을 사용한다. 구현 위치는 `app/app.js`의 `initializeLeafletMap()`이며, 타일 레이어 한 줄만 바꾸면 다른 제공자로 교체할 수 있다. 서울 아파트 단지 레이어는 별도 `apartmentLayer`에 그려지므로, 지도 제공자를 바꿔도 `/api/apartments` 응답 구조는 유지할 수 있다.
 
 - **VWorld**: `L.tileLayer("https://api.vworld.kr/req/wmts/1.0.0/{API_KEY}/Base/{z}/{y}/{x}.png")` — 국토교통부 제공, 발급 키 필요. 공공 서비스 신뢰도 측면에서 1순위 교체 후보.
 - **카카오/네이버 지도**: 자체 JS SDK를 사용하므로 Leaflet 마커 로직을 SDK 마커 API로 옮겨야 한다. `renderLeafletMap()`의 마커 데이터(좌표·점수·선택 상태)는 그대로 재사용 가능하다.
@@ -155,5 +194,6 @@ API 키가 필요한 제공자는 키를 코드에 하드코딩하지 않고 환
 - 생활 SOC: 현재는 병의원·학교·공원 좌표 스냅샷 반경 집계다. 다음 단계에서는 서울 열린데이터광장 API 키 기반 전체 자동 갱신과 편의시설 카테고리 확장을 추가한다.
 - 안전·환경: 현재는 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷 기반이다. 다음 단계에서는 원천 API 자동 갱신, 행정동 전체 커버리지, 범죄안전지수·녹지율 보정치를 추가한다.
 - 주거: 현재는 서울시 2025 전월세 파일 기반 중앙값과 후보 거래 예시를 제공한다. 다음 단계에서는 월별 증분 갱신과 국토교통부 실거래가 API를 병행한다.
+- 주거 지도 레이어: 현재는 서울시 공동주택 아파트 정보 단지 좌표를 표시한다. `SEOUL_OPEN_API_KEY`가 없으면 sample 제한 스냅샷으로 동작하며, 운영 단계에서는 전체 단지 갱신 배치와 건축물대장·공간데이터 기반 건물 폴리곤 타일을 검토한다.
 - 클라이언트: iOS Swift 앱은 `/api/areas`와 `/api/recommendations`를 그대로 소비하는 구조로 확장한다.
 - 수익화: 부동산·교통 플랫폼에는 추천 점수 API, 지자체에는 생활권 취약지 리포트 API로 제공한다.

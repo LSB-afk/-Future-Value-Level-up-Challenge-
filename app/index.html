@@ -134,11 +134,19 @@
           <h2>생활권 지도</h2>
           <span id="selectedBadge" class="status-pill">선택 없음</span>
         </div>
+        <div class="map-toolbar" aria-label="지도 레이어 설정">
+          <label class="layer-toggle">
+            <input id="apartmentLayerToggle" type="checkbox" checked>
+            <span>서울 아파트 단지 표시</span>
+          </label>
+          <span id="apartmentLayerStatus" class="map-layer-status">아파트 단지 데이터 준비 중</span>
+        </div>
         <div class="map-canvas" id="mapCanvas" role="region" aria-label="후보 생활권 실제 지도"></div>
         <div class="legend">
           <span><i class="dot high"></i>추천 상위권</span>
           <span><i class="dot mid"></i>검토권</span>
           <span><i class="dot low"></i>조건 미달</span>
+          <span><i class="dot apt"></i>아파트 단지</span>
           <span class="legend-note">마커 숫자 = 종합점수, 크기 = 점수 비례</span>
         </div>
       </section>
@@ -216,6 +224,10 @@
             <header><span class="method">GET</span><code>/api/commute-route</code></header>
             <p>집 위치와 회사 위치를 받아 ODsay/TMAP 대중교통 경로를 계산합니다. 키가 없거나 호출에 실패하면 거리 기반 폴백을 반환해 UI가 계속 동작합니다.</p>
           </article>
+          <article class="api-card">
+            <header><span class="method">GET</span><code>/api/apartments</code></header>
+            <p>서울시 공동주택 아파트 정보 기반 단지 레이어를 반환합니다. 서울 열린데이터광장 키가 있으면 전체 단지를, 없으면 제한 스냅샷을 사용합니다.</p>
+          </article>
         </div>
         <div class="code-block" aria-label="추천 API 호출 예시">
           <span class="code-label">추천 API 호출 예시</span>
@@ -224,6 +236,10 @@
         <div class="code-block" aria-label="통근 경로 API 호출 예시">
           <span class="code-label">통근 경로 API 호출 예시</span>
           <pre><code>curl 'http://127.0.0.1:5173/api/commute-route?origin=37.5405,127.0692&amp;destination=gangnam&amp;provider=auto'</code></pre>
+        </div>
+        <div class="code-block" aria-label="아파트 단지 API 호출 예시">
+          <span class="code-label">아파트 단지 API 호출 예시</span>
+          <pre><code>curl 'http://127.0.0.1:5173/api/apartments?bounds=37.45,126.80,37.70,127.18&amp;zoom=11&amp;cluster=true'</code></pre>
         </div>
         <div class="callout">
           <p><strong>B2B·B2G 확장</strong><br>
