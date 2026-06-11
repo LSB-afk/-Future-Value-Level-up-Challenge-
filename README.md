@@ -24,6 +24,7 @@
 - `docs/api-development.md`: API 구조, 실행 방법, 지도 제공자 교체 가이드
 - `docs/service-model.md`: 사업모델, 밸류체인, 구현계획
 - `docs/product-roadmap.md`: 선정 후 구체화 단계 개발 순서
+- `docs/worklog.md`: 작업 일지, 다음 작업 우선순위, 이어서 작업용 프롬프트
 - `docs/verification.md`: 실행·브라우저·데이터 검증 로그
 - `docs/application-draft.md`: 참가신청서 및 기획서 작성 초안
 - `deliverables/`: 제출용 문서 산출물 저장 위치
