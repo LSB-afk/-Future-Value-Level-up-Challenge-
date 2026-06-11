@@ -126,6 +126,14 @@ const nodes = {
   apartmentLayerToggle: document.querySelector("#apartmentLayerToggle"),
   apartmentLayerStatus: document.querySelector("#apartmentLayerStatus"),
   propertyDashboard: document.querySelector("#propertyDashboard"),
+  mapBudgetValue: document.querySelector("#mapBudgetValue"),
+  mapDestinationValue: document.querySelector("#mapDestinationValue"),
+  mapPersonaValue: document.querySelector("#mapPersonaValue"),
+  mapRankCount: document.querySelector("#mapRankCount"),
+  mapRankCaption: document.querySelector("#mapRankCaption"),
+  mapRankingList: document.querySelector("#mapRankingList"),
+  mapApartmentCount: document.querySelector("#mapApartmentCount"),
+  mapApartmentList: document.querySelector("#mapApartmentList"),
   selectedBadge: document.querySelector("#selectedBadge"),
   rankBadge: document.querySelector("#rankBadge"),
   candidateCount: document.querySelector("#candidateCount"),
@@ -453,9 +461,9 @@ function renderLeafletMap() {
       title: `${index + 1}위 ${item.name} ${item.total}점`,
       icon: L.divIcon({
         className: "mv-map-icon-wrapper",
-        html: `<span class="mv-map-icon ${markerTone(item.total)}${selected ? " is-selected" : ""}" style="--size:${18 + item.total / 5}px"><strong>${item.total}</strong></span>`,
-        iconSize: [42, 42],
-        iconAnchor: [21, 21],
+        html: `<span class="mv-map-icon ${markerTone(item.total)}${selected ? " is-selected" : ""}" style="--size:${42 + item.total / 5}px"><strong>${item.total}</strong><small>${escapeHtml(item.name)}</small></span>`,
+        iconSize: [70, 70],
+        iconAnchor: [35, 35],
         popupAnchor: [0, -20]
       })
     });
@@ -587,6 +595,7 @@ function renderApartmentLayer() {
 
   if (!state.apartments.enabled) {
     renderApartmentLayerStatus();
+    renderMapSidebar();
     return;
   }
 
@@ -637,6 +646,7 @@ function renderApartmentLayer() {
       .addTo(layer);
   });
   renderApartmentLayerStatus();
+  renderMapSidebar();
 }
 
 async function loadApartmentsForMap(force = false) {
@@ -737,6 +747,62 @@ function renderMap() {
   if (!renderLeafletMap()) {
     renderFallbackMap();
   }
+}
+
+function renderMapSidebar() {
+  if (!nodes.mapRankingList) return;
+
+  nodes.mapBudgetValue.textContent = `${formatNumber(state.budget)}만원`;
+  nodes.mapDestinationValue.textContent = destinationLabels[state.destination] || "-";
+  nodes.mapPersonaValue.textContent = personaLabels[state.persona] || "-";
+  nodes.mapRankCount.textContent = state.results.length ? `${Math.min(5, state.results.length)}개 표시` : "-";
+  nodes.mapRankCaption.textContent = `${destinationLabels[state.destination] || "목적지"} 기준 종합 점수`;
+
+  if (!state.results.length) {
+    nodes.mapRankingList.innerHTML = `<div class="map-list-empty">추천 계산 중</div>`;
+  } else {
+    nodes.mapRankingList.innerHTML = state.results.slice(0, 5).map((item, index) => `
+      <button class="map-list-item ranking-item${item.id === state.selectedId ? " is-selected" : ""}" type="button" data-map-area-id="${escapeHtml(item.id)}">
+        <span class="map-item-rank">${index + 1}</span>
+        <span class="map-item-main">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${escapeHtml(item.reasonText || buildSpecificReason(item))}</small>
+        </span>
+        <em>${formatNumber(item.total)}점</em>
+      </button>
+    `).join("");
+  }
+
+  const apartmentFeatures = state.apartments.features.filter((feature) => feature.type === "apartment");
+  const apartmentCount = state.apartments.meta?.filteredRecords ?? apartmentFeatures.length;
+  nodes.mapApartmentCount.textContent = apartmentCount ? `${formatNumber(apartmentCount)}개` : "-";
+  if (!state.apartments.enabled) {
+    nodes.mapApartmentList.innerHTML = `<div class="map-list-empty">아파트 레이어 꺼짐</div>`;
+  } else if (state.apartments.isLoading) {
+    nodes.mapApartmentList.innerHTML = `<div class="map-list-empty">단지 불러오는 중</div>`;
+  } else if (!apartmentFeatures.length) {
+    nodes.mapApartmentList.innerHTML = `<div class="map-list-empty">현재 화면에 표시할 단지가 없습니다.</div>`;
+  } else {
+    nodes.mapApartmentList.innerHTML = apartmentFeatures.slice(0, 6).map((item) => {
+      const preview = item.pricePreview || {};
+      return `
+        <button class="map-list-item apartment-item${item.id === state.property.selectedId ? " is-selected" : ""}" type="button" data-map-property-id="${escapeHtml(item.id)}">
+          <span class="map-item-main">
+            <strong>${escapeHtml(item.name)}</strong>
+            <small>${escapeHtml(item.district || "")} ${escapeHtml(item.dong || "")} · ${formatNumber(item.households)}세대</small>
+          </span>
+          <em>${preview.saleLabel ? escapeHtml(preview.saleLabel.replace(" ", "")) : "상세"}</em>
+        </button>
+      `;
+    }).join("");
+  }
+
+  document.querySelectorAll("[data-map-area-id]").forEach((button) => {
+    button.addEventListener("click", () => selectArea(button.dataset.mapAreaId, { source: "map" }));
+  });
+  document.querySelectorAll("[data-map-property-id]").forEach((button) => {
+    button.addEventListener("click", () => selectProperty(button.dataset.mapPropertyId));
+  });
 }
 
 function propertyMetric(label, value, note = "") {
@@ -926,6 +992,7 @@ function renderPropertyDashboard() {
   if (!nodes.propertyDashboard) return;
 
   if (state.property.isLoading) {
+    nodes.propertyDashboard.classList.add("has-property-detail");
     nodes.propertyDashboard.innerHTML = `
       <div class="property-empty">
         <strong>단지 상세 정보를 불러오는 중입니다.</strong>
@@ -936,12 +1003,14 @@ function renderPropertyDashboard() {
   }
 
   if (state.property.error) {
+    nodes.propertyDashboard.classList.add("has-property-detail");
     nodes.propertyDashboard.innerHTML = `<div class="property-empty is-error">${escapeHtml(state.property.error)}</div>`;
     return;
   }
 
   const detail = state.property.detail;
   if (!detail) {
+    nodes.propertyDashboard.classList.remove("has-property-detail");
     nodes.propertyDashboard.innerHTML = `
       <div class="property-empty">
         <strong>지도에서 아파트 단지를 선택하세요.</strong>
@@ -951,6 +1020,7 @@ function renderPropertyDashboard() {
     return;
   }
 
+  nodes.propertyDashboard.classList.add("has-property-detail");
   const price = detail.price || {};
   const risk = detail.risk || {};
   const lifestyle = detail.lifestyle || {};
@@ -1616,6 +1686,7 @@ function render() {
   renderControls();
   renderApiStatus();
   renderMap();
+  renderMapSidebar();
   renderPropertyDashboard();
   renderCards();
   renderDetail();
@@ -1647,6 +1718,7 @@ function setActiveNav(sectionId) {
 function activateSection(sectionId, options = {}) {
   const target = document.getElementById(sectionId) ? sectionId : "recommend";
   state.activeSection = target;
+  document.body.classList.toggle("is-map-view", target === "map");
   document.querySelectorAll("main > .anchor-target").forEach((section) => {
     section.classList.toggle("is-active-view", section.id === target);
   });

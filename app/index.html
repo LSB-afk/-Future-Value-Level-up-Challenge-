@@ -129,27 +129,81 @@
         <div id="routeContent" class="route-content"></div>
       </section>
 
-      <section id="map" class="panel map-panel section-block anchor-target" aria-label="생활권 지도">
-        <div class="section-title">
-          <h2>생활권 지도</h2>
-          <span id="selectedBadge" class="status-pill">선택 없음</span>
+      <section id="map" class="map-dashboard-shell anchor-target" aria-label="생활권 지도">
+        <aside class="map-sidebar" aria-label="지도 대시보드">
+          <header class="map-brand">
+            <span class="brand-mark">MV</span>
+            <div>
+              <strong>MoveValue</strong>
+              <span>생활권 매칭 대시보드</span>
+            </div>
+          </header>
+
+          <nav class="map-mode-links" aria-label="지도 화면 전환">
+            <a href="#recommend">랭킹 대시보드</a>
+            <a href="#map" class="is-active">부동산 현황</a>
+          </nav>
+
+          <section class="map-side-card" aria-label="현재 조건">
+            <div class="map-card-title">
+              <h3>매칭 조건</h3>
+              <a href="#recommend">현황 보기</a>
+            </div>
+            <dl class="map-condition-list">
+              <div><dt>예산</dt><dd id="mapBudgetValue">-</dd></div>
+              <div><dt>목적지</dt><dd id="mapDestinationValue">-</dd></div>
+              <div><dt>가구유형</dt><dd id="mapPersonaValue">-</dd></div>
+              <div><dt>선택 생활권</dt><dd id="selectedBadge">선택 없음</dd></div>
+            </dl>
+          </section>
+
+          <section class="map-side-card" aria-label="지도 레이어 설정">
+            <div class="map-card-title">
+              <h3>지도 레이어</h3>
+              <span id="mapApartmentCount">-</span>
+            </div>
+            <label class="layer-toggle">
+              <input id="apartmentLayerToggle" type="checkbox" checked>
+              <span>서울 아파트 단지 표시</span>
+            </label>
+            <span id="apartmentLayerStatus" class="map-layer-status">아파트 단지 데이터 준비 중</span>
+          </section>
+
+          <section class="map-side-card map-list-card" aria-label="추천 생활권">
+            <div class="map-card-title">
+              <h3>추천 생활권</h3>
+              <span id="mapRankCount">-</span>
+            </div>
+            <p class="map-list-caption" id="mapRankCaption">현재 조건 기준</p>
+            <div id="mapRankingList" class="map-list"></div>
+          </section>
+
+          <section class="map-side-card map-list-card" aria-label="지도 매물">
+            <div class="map-card-title">
+              <h3>지도 매물</h3>
+              <span>현재 화면</span>
+            </div>
+            <div id="mapApartmentList" class="map-list compact-list"></div>
+          </section>
+        </aside>
+
+        <div class="map-stage">
+          <div class="map-floating-header">
+            <div>
+              <strong>서울 아파트 현황</strong>
+              <span>생활권 점수와 가격 라벨 반영 영역</span>
+            </div>
+          </div>
+          <div class="map-canvas" id="mapCanvas" role="region" aria-label="후보 생활권 실제 지도"></div>
+          <div class="legend map-floating-legend">
+            <span><i class="dot high"></i>추천 상위권</span>
+            <span><i class="dot mid"></i>검토권</span>
+            <span><i class="dot low"></i>조건 미달</span>
+            <span><i class="dot apt"></i>아파트 단지</span>
+            <span class="legend-note">생활권 마커 숫자 = 종합점수, 단지 라벨 = 추정 매매가</span>
+          </div>
+          <div id="propertyDashboard" class="property-dashboard map-property-drawer" aria-live="polite"></div>
         </div>
-        <div class="map-toolbar" aria-label="지도 레이어 설정">
-          <label class="layer-toggle">
-            <input id="apartmentLayerToggle" type="checkbox" checked>
-            <span>서울 아파트 단지 표시</span>
-          </label>
-          <span id="apartmentLayerStatus" class="map-layer-status">아파트 단지 데이터 준비 중</span>
-        </div>
-        <div class="map-canvas" id="mapCanvas" role="region" aria-label="후보 생활권 실제 지도"></div>
-        <div class="legend">
-          <span><i class="dot high"></i>추천 상위권</span>
-          <span><i class="dot mid"></i>검토권</span>
-          <span><i class="dot low"></i>조건 미달</span>
-          <span><i class="dot apt"></i>아파트 단지</span>
-          <span class="legend-note">생활권 마커 숫자 = 종합점수, 단지 라벨 = 추정 매매가</span>
-        </div>
-        <div id="propertyDashboard" class="property-dashboard" aria-live="polite"></div>
       </section>
 
       <section id="data-evidence" class="panel section-block anchor-target" aria-label="데이터 근거">
