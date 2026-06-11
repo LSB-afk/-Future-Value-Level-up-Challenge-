@@ -10,6 +10,15 @@ python3 api/movevalue_api.py --port 5173
 
 접속 URL은 `http://127.0.0.1:5173/`이다.
 
+실제 주소 검색과 대중교통 경로는 서버 환경변수로 API 키를 주입한다. 키는 코드, 문서, 커밋에 저장하지 않는다.
+
+```bash
+export KAKAO_REST_API_KEY="카카오 REST API 키"
+export ODSAY_API_KEY="ODsay API 키"
+export TMAP_APP_KEY="TMAP appKey"
+python3 api/movevalue_api.py --port 5173
+```
+
 ## 데이터 파이프라인
 
 `scripts/build_real_dataset.py`는 서울시 열린데이터광장의 `서울시 부동산 전월세가 정보` 2025년 파일을 내려받고, 15~85㎡ 거래를 생활권 법정동 기준으로 집계한다. 통근시간과 생활 SOC는 `scripts/movevalue_adapters.py`의 어댑터가 채운다.
@@ -28,11 +37,13 @@ ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 
 생활 SOC는 병의원·학교·공원 좌표 스냅샷을 생활권 대표역 기준 반경 1.6km로 집계해 `serviceScore`, `socSummary`, `evidence.socCounts`에 저장한다.
 
+웹 실행 중 사용자가 입력하는 집/회사 경로 검증은 `api/route_adapters.py`가 담당한다. 이 런타임 어댑터는 Kakao 주소 검색, ODsay 대중교통 경로, TMAP 대중교통 경로, 거리 기반 폴백을 같은 응답 형식으로 정규화한다.
+
 ## 엔드포인트
 
 ### `GET /api/health`
 
-데이터 파일 로딩 상태와 후보 생활권 수를 확인한다.
+데이터 파일 로딩 상태, 후보 생활권 수, 경로·주소 API 키 설정 여부를 확인한다. 키 값은 반환하지 않고 `true/false`만 반환한다.
 
 ### `GET /api/areas`
 
@@ -61,6 +72,60 @@ ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 curl 'http://127.0.0.1:5173/api/recommendations?budget=70&destination=gangnam&persona=single&commuteWeight=35&costWeight=30&serviceWeight=20&safetyWeight=15&limit=9'
 ```
 
+### `GET /api/geocode`
+
+주소, 후보 생활권명, 목적지명, 직접 좌표 입력을 좌표 객체로 변환한다.
+
+쿼리 파라미터:
+
+| 이름 | 예시 | 설명 |
+| --- | --- | --- |
+| `query` | `건대입구` | 후보 생활권명, 역명, 목적지명, 주소, 또는 `37.5405,127.0692` 좌표 |
+
+동작:
+
+- 후보 생활권명·역명·목적지명은 로컬 데이터에서 즉시 매칭한다.
+- 좌표 문자열은 API 키 없이 파싱한다.
+- 일반 주소는 `KAKAO_REST_API_KEY` 또는 `MOVEVALUE_KAKAO_REST_API_KEY`가 있을 때 Kakao Local API로 변환한다.
+
+예시:
+
+```bash
+curl 'http://127.0.0.1:5173/api/geocode?query=konkuk'
+```
+
+### `GET /api/commute-route`
+
+집 위치와 회사 위치를 받아 통근 경로를 계산한다. `provider=auto`이면 ODsay를 먼저 시도하고 실패하면 TMAP을 시도한다. 둘 다 사용할 수 없으면 거리 기반 추정 폴백을 반환한다.
+
+쿼리 파라미터:
+
+| 이름 | 예시 | 설명 |
+| --- | --- | --- |
+| `origin` | `37.5405,127.0692` | 집 위치. 주소, 후보 생활권명, 역명, 좌표 가능 |
+| `destination` | `gangnam` | 기본 목적지 ID. `gangnam`, `yeouido`, `seoulStation`, `digital`, `pangyo` 지원 |
+| `destinationQuery` | `서울 강남구 테헤란로 ...` | 회사 주소 또는 좌표. 있으면 기본 목적지 대신 사용 |
+| `provider` | `auto` | `auto`, `odsay`, `tmap` |
+
+응답 핵심 필드:
+
+| 필드 | 설명 |
+| --- | --- |
+| `provider` | 실제 사용된 제공자. `odsay`, `tmap`, `fallback` |
+| `mode` | `live_api` 또는 `estimated_fallback` |
+| `summary.totalMinutes` | 총 소요시간 |
+| `summary.transferCount` | 환승 횟수 |
+| `summary.totalWalkMeters` | 총 도보 거리 |
+| `summary.fare` | 예상 요금 |
+| `steps` | 도보·버스·지하철 등 단계별 이동 요약 |
+| `coordinates` | 지도 경로선 표시용 좌표 |
+
+예시:
+
+```bash
+curl 'http://127.0.0.1:5173/api/commute-route?origin=37.5405,127.0692&destination=gangnam&provider=auto'
+```
+
 ## 지도 구현과 제공자 교체
 
 웹앱 지도는 API 키가 필요 없는 **Leaflet 1.9.4 + OpenStreetMap 타일**을 사용한다. 구현 위치는 `app/app.js`의 `initializeLeafletMap()`이며, 타일 레이어 한 줄만 바꾸면 다른 제공자로 교체할 수 있다.
@@ -73,7 +138,7 @@ API 키가 필요한 제공자는 키를 코드에 하드코딩하지 않고 환
 
 ## 확장 방향
 
-- 교통: 현재는 ODsay 경로 API 어댑터를 구현했고, API 키가 없으면 주요 업무지구별 실증용 통근시간 테이블로 폴백한다. 배포 단계에서는 키 운영, 호출 캐시, 목적지 자유 입력, GTFS 기반 라우팅 옵션을 추가한다.
+- 교통: 현재는 ODsay/TMAP 경로 API 어댑터와 집-회사 통근 루트 검증 UI를 구현했다. API 키가 없으면 주요 업무지구별 통근시간 테이블 또는 거리 기반 폴백으로 동작한다. 배포 단계에서는 키 운영, 호출 캐시, 혼잡도, 첫차·막차, GTFS 기반 라우팅 옵션을 추가한다.
 - 생활 SOC: 현재는 병의원·학교·공원 좌표 스냅샷 반경 집계다. 다음 단계에서는 서울 열린데이터광장 API 키 기반 전체 자동 갱신과 편의시설 카테고리 확장을 추가한다.
 - 주거: 현재는 서울시 2025 전월세 파일 기반이다. 다음 단계에서는 월별 증분 갱신과 국토교통부 실거래가 API를 병행한다.
 - 클라이언트: iOS Swift 앱은 `/api/areas`와 `/api/recommendations`를 그대로 소비하는 구조로 확장한다.

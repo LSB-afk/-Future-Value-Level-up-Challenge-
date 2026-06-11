@@ -16,6 +16,12 @@ const state = {
   requestId: 0,
   map: null,
   activeSection: "recommend",
+  route: {
+    selectedId: null,
+    isLoading: false,
+    result: null,
+    error: ""
+  },
   showAllCards: false,
   evidenceRendered: false,
   weights: {
@@ -103,12 +109,26 @@ function formatMoney10k(value) {
   return `${formatNumber(amount)}만원`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
 function formatDistance(value) {
   const meters = Math.round(Number(value || 0));
   if (meters >= 1000) {
     return `${(meters / 1000).toFixed(1)}km`;
   }
   return `${formatNumber(meters)}m`;
+}
+
+function formatFare(value) {
+  const fare = Number(value || 0);
+  return fare ? `${formatNumber(fare)}원` : "-";
 }
 
 async function fetchJson(path) {
@@ -279,8 +299,7 @@ function initializeLeafletMap() {
 
   const instance = L.map(nodes.mapCanvas, {
     zoomControl: true,
-    scrollWheelZoom: false,
-    preferCanvas: true
+    scrollWheelZoom: false
   }).setView([37.54, 126.98], 11);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -291,9 +310,52 @@ function initializeLeafletMap() {
   state.map = {
     instance,
     markerLayer: L.layerGroup().addTo(instance),
+    routeLayer: L.layerGroup().addTo(instance),
     markersById: {},
     fitted: false
   };
+}
+
+function drawRouteLine(bounds) {
+  if (!state.map?.routeLayer) return;
+  state.map.routeLayer.clearLayers();
+
+  const route = state.route.result;
+  if (!route || route.origin?.lat == null || route.destination?.lat == null) return;
+
+  const coordinates = Array.isArray(route.coordinates) && route.coordinates.length >= 2
+    ? route.coordinates
+    : [route.origin, route.destination];
+  const latLngs = coordinates
+    .filter((point) => point?.lat != null && point?.lng != null)
+    .map((point) => [Number(point.lat), Number(point.lng)]);
+  if (latLngs.length < 2) return;
+
+  const isFallback = route.mode !== "live_api";
+  L.polyline(latLngs, {
+    color: isFallback ? "#b4872a" : "#356c9c",
+    weight: 5,
+    opacity: 0.78,
+    dashArray: isFallback ? "8 8" : null
+  }).addTo(state.map.routeLayer);
+
+  L.circleMarker(latLngs[0], {
+    radius: 7,
+    color: "#ffffff",
+    weight: 2,
+    fillColor: "#356c9c",
+    fillOpacity: 1
+  }).bindTooltip(route.origin.label || "출발지").addTo(state.map.routeLayer);
+
+  L.circleMarker(latLngs[latLngs.length - 1], {
+    radius: 7,
+    color: "#ffffff",
+    weight: 2,
+    fillColor: "#c94d2f",
+    fillOpacity: 1
+  }).bindTooltip(route.destination.label || "도착지").addTo(state.map.routeLayer);
+
+  latLngs.forEach((point) => bounds.push(point));
 }
 
 function renderLeafletMap() {
@@ -329,6 +391,8 @@ function renderLeafletMap() {
     state.map.markersById[item.id] = marker;
     bounds.push([item.lat, item.lng]);
   });
+
+  drawRouteLine(bounds);
 
   if (bounds.length && !state.map.fitted) {
     instance.fitBounds(bounds, { padding: [26, 26], maxZoom: 12 });
@@ -379,6 +443,14 @@ function renderFallbackMap() {
     marker.addEventListener("click", () => selectArea(item.id, { source: "map" }));
     nodes.mapCanvas.append(marker);
   });
+
+  const route = state.route.result;
+  if (route?.origin && route?.destination) {
+    const routeLine = document.createElement("div");
+    routeLine.className = "fallback-route-line";
+    routeLine.textContent = route.mode === "live_api" ? "실제 경로 계산됨" : "추정 경로";
+    nodes.mapCanvas.append(routeLine);
+  }
 }
 
 function renderMap() {
@@ -465,6 +537,104 @@ function scoreRow(label, value, tip) {
   `;
 }
 
+function routeProviderLabel(provider) {
+  if (provider === "odsay") return "ODsay";
+  if (provider === "tmap") return "TMAP";
+  return "폴백";
+}
+
+function routeModeLabel(mode) {
+  return mode === "live_api" ? "실제 경로 API" : "거리 기반 추정";
+}
+
+function renderRouteSteps(route) {
+  const steps = Array.isArray(route.steps) ? route.steps : [];
+  if (!steps.length) {
+    return `<p class="muted route-empty">표시할 세부 단계가 없습니다.</p>`;
+  }
+  return `
+    <ol class="route-steps">
+      ${steps.map((step) => {
+        const mode = step.mode || "이동";
+        const title = step.route || (mode === "도보" ? "도보 이동" : "구간 이동");
+        return `
+          <li>
+            <span class="route-mode">${escapeHtml(mode)}</span>
+            <strong>${escapeHtml(title)}</strong>
+            <span>${escapeHtml(step.startName || "출발")} → ${escapeHtml(step.endName || "도착")}</span>
+            <em>${formatNumber(step.minutes || 0)}분 · ${formatDistance(step.distanceMeters || 0)}</em>
+          </li>
+        `;
+      }).join("")}
+    </ol>
+  `;
+}
+
+function renderRouteResult(selected) {
+  if (state.route.selectedId !== selected.id) return "";
+  if (state.route.isLoading) {
+    return `<div class="route-result is-loading">실제 통근 경로를 계산하고 있습니다.</div>`;
+  }
+  if (state.route.error) {
+    return `<div class="route-result is-error">${escapeHtml(state.route.error)}</div>`;
+  }
+  const route = state.route.result;
+  if (!route) return "";
+  const summary = route.summary || {};
+  return `
+    <div class="route-result">
+      <div class="route-result-head">
+        <strong>${routeProviderLabel(route.provider)} · ${routeModeLabel(route.mode)}</strong>
+        <button class="text-button" type="button" data-route-map>지도에서 보기</button>
+      </div>
+      <div class="route-summary-grid">
+        ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
+        ${metric("환승", `${formatNumber(summary.transferCount)}회`)}
+        ${metric("도보", formatDistance(summary.totalWalkMeters))}
+        ${metric("요금", formatFare(summary.fare))}
+      </div>
+      <p class="route-label">${escapeHtml(route.origin?.label)} → ${escapeHtml(route.destination?.label)}</p>
+      ${renderRouteSteps(route)}
+      ${route.notice ? `<p class="score-note">${escapeHtml(route.notice)}</p>` : ""}
+    </div>
+  `;
+}
+
+function renderRoutePlanner(selected) {
+  const originValue = `${Number(selected.lat).toFixed(5)},${Number(selected.lng).toFixed(5)}`;
+  const destinationValue = destinationLabels[state.destination] || "";
+  return `
+    <div class="route-planner">
+      <div class="section-title compact-title">
+        <h3>실제 통근 루트 검증</h3>
+        <span class="status-pill">ODsay/TMAP</span>
+      </div>
+      <div class="route-form">
+        <label class="field compact">
+          <span>집 위치</span>
+          <input id="routeOriginInput" type="text" value="${escapeHtml(originValue)}" placeholder="주소 또는 37.5405,127.0692">
+        </label>
+        <label class="field compact">
+          <span>회사 위치</span>
+          <input id="routeDestinationInput" type="text" value="${escapeHtml(destinationValue)}" placeholder="회사 주소 또는 좌표">
+        </label>
+        <label class="field compact">
+          <span>경로 API</span>
+          <select id="routeProviderInput">
+            <option value="auto">자동 선택</option>
+            <option value="odsay">ODsay</option>
+            <option value="tmap">TMAP</option>
+          </select>
+        </label>
+        <button id="routeUseSelectedButton" class="ghost-button route-action" type="button">선택 생활권 좌표 사용</button>
+        <button id="routeCalculateButton" class="ghost-button route-action primary" type="button">통근 루트 계산</button>
+      </div>
+      <p class="field-hint">주소 검색은 Kakao REST 키가 있을 때 동작합니다. 키가 없으면 위도,경도 좌표나 후보 생활권·목적지 이름으로 계산합니다.</p>
+      ${renderRouteResult(selected)}
+    </div>
+  `;
+}
+
 function renderEvidence(selected) {
   if (!selected.evidence) return "";
   const evidence = selected.evidence;
@@ -526,10 +696,98 @@ function renderDetail() {
       <p><strong>추천 근거</strong><br>${selected.insight}</p>
     </div>
     ${renderEvidence(selected)}
+    ${renderRoutePlanner(selected)}
     <div class="callout">
       <p><strong>사업 적용</strong><br>부동산 플랫폼에는 생활권 점수 API로, 지자체에는 주거-이동 부담 리포트로 제공할 수 있다.</p>
     </div>
   `;
+  bindRoutePlanner(selected);
+}
+
+function resetRouteState() {
+  state.route = {
+    selectedId: null,
+    isLoading: false,
+    result: null,
+    error: ""
+  };
+  if (state.map?.routeLayer) {
+    state.map.routeLayer.clearLayers();
+  }
+}
+
+async function calculateCommuteRoute(selected) {
+  const originInput = document.querySelector("#routeOriginInput");
+  const destinationInput = document.querySelector("#routeDestinationInput");
+  const providerInput = document.querySelector("#routeProviderInput");
+  if (!originInput || !destinationInput || !providerInput) return;
+
+  const origin = originInput.value.trim();
+  const destinationText = destinationInput.value.trim();
+  const defaultDestination = destinationLabels[state.destination] || "";
+  const params = new URLSearchParams({
+    origin,
+    provider: providerInput.value || "auto"
+  });
+
+  if (!origin) {
+    state.route = { selectedId: selected.id, isLoading: false, result: null, error: "집 위치를 입력하세요." };
+    renderDetail();
+    return;
+  }
+  if (destinationText && destinationText !== defaultDestination) {
+    params.set("destinationQuery", destinationText);
+  } else {
+    params.set("destination", state.destination);
+  }
+
+  state.route = { selectedId: selected.id, isLoading: true, result: null, error: "" };
+  renderDetail();
+
+  try {
+    const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
+    state.route = { selectedId: selected.id, isLoading: false, result: payload, error: "" };
+    if (state.map) {
+      state.map.fitted = false;
+    }
+    render();
+  } catch (error) {
+    state.route = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: null,
+      error: `경로 계산 실패: ${error.message}`
+    };
+    renderDetail();
+  }
+}
+
+function bindRoutePlanner(selected) {
+  const originInput = document.querySelector("#routeOriginInput");
+  const providerInput = document.querySelector("#routeProviderInput");
+  const useSelectedButton = document.querySelector("#routeUseSelectedButton");
+  const calculateButton = document.querySelector("#routeCalculateButton");
+  const mapButton = document.querySelector("[data-route-map]");
+
+  if (providerInput && state.route.selectedId === selected.id && state.route.result?.provider) {
+    providerInput.value = state.route.result.provider === "fallback" ? "auto" : state.route.result.provider;
+  }
+
+  useSelectedButton?.addEventListener("click", () => {
+    if (originInput) {
+      originInput.value = `${Number(selected.lat).toFixed(5)},${Number(selected.lng).toFixed(5)}`;
+    }
+  });
+
+  calculateButton?.addEventListener("click", () => calculateCommuteRoute(selected));
+
+  mapButton?.addEventListener("click", () => {
+    activateSection("map", { updateHash: true });
+    if (state.map) {
+      state.map.fitted = false;
+      renderMap();
+    }
+  });
 }
 
 function renderEvidenceTable() {
@@ -629,6 +887,9 @@ function render() {
 }
 
 function selectArea(id, options = {}) {
+  if (state.selectedId !== id) {
+    resetRouteState();
+  }
   state.selectedId = id;
 
   const rank = state.results.findIndex((item) => item.id === id);
@@ -688,6 +949,7 @@ function bindEvents() {
 
   nodes.destinationInput.addEventListener("change", (event) => {
     state.destination = event.target.value;
+    resetRouteState();
     scheduleRefresh(0);
   });
 
@@ -732,6 +994,7 @@ function bindEvents() {
     nodes.safetyWeight.value = state.weights.safety;
     state.selectedId = null;
     state.showAllCards = false;
+    resetRouteState();
     scheduleRefresh(0);
   });
 }

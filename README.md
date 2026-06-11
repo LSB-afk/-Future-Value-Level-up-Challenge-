@@ -9,13 +9,14 @@
 - **추천**: 예산·목적지·가구 유형·우선순위 기반 생활권 랭킹. 카드마다 "왜 추천됐는지" 한 줄 근거를 표시하고, 전체 후보 9개 중 상위 6개를 기본 노출합니다.
 - **지도**: Leaflet + OpenStreetMap 타일 실제 지도. 생활권 9개 마커를 점수별 색상·크기로 표시하고, 카드 선택과 양방향 연동됩니다. 지도 로딩 실패 시 분포도 폴백으로 전환됩니다.
 - **데이터 근거**: 서울시 2025 전월세 실데이터의 생활권별 매칭 거래 건수, 월세·보증금·전세 중앙값, 병원·학교·공원 반경 집계 근거와 남은 MVP 프록시 지표의 한계 고지.
-- **API**: `/api/health`, `/api/areas`, `/api/recommendations` 설명과 호출 예시, B2B/B2G 확장 방향.
+- **API**: `/api/health`, `/api/areas`, `/api/recommendations`, `/api/geocode`, `/api/commute-route` 설명과 호출 예시, B2B/B2G 확장 방향.
 - **사업모델**: B2C/B2B/B2G/데이터 마켓 수익 채널과 서비스 밸류체인.
 - **제출자료**: 참가신청서 DOCX 위치와 문서 경로 안내.
 
 ## 현재 산출물
 
 - `api/`: 추천 계산과 정적 웹앱 제공을 담당하는 Python API 서버
+- `api/route_adapters.py`: Kakao 주소 검색, ODsay/TMAP 대중교통 경로, 거리 기반 폴백 어댑터
 - `app/`: API를 호출하는 브라우저 실행 프로토타입 (Leaflet 지도 포함)
 - `data/areas.actual.json`: 서울시 2025 전월세 스냅샷 기반 생활권 데이터
 - `scripts/build_real_dataset.py`: 실제 공공데이터 다운로드·정규화 파이프라인
@@ -54,11 +55,22 @@ python3 scripts/build_real_dataset.py
 
 통근시간은 `ODSAY_API_KEY` 또는 `MOVEVALUE_ODSAY_API_KEY`가 있으면 대중교통 경로 API를 호출하고, 키가 없거나 실패하면 기존 검증 테이블로 폴백합니다. 생활 SOC는 병의원·학교·공원 좌표 스냅샷을 생활권 대표역 기준 반경 1.6km로 집계합니다.
 
+실제 주소 검색과 통근 루트 검증은 서버 환경변수로 API 키를 주입합니다. 키를 코드에 직접 쓰지 않습니다.
+
+```bash
+export KAKAO_REST_API_KEY="카카오 REST API 키"
+export ODSAY_API_KEY="ODsay API 키"
+export TMAP_APP_KEY="TMAP appKey"
+python3 api/movevalue_api.py --port 5173
+```
+
 ## 주요 API
 
 - `GET /api/health`: 데이터 로딩 상태 확인
 - `GET /api/areas`: 실제 기반 생활권 데이터 전체 조회
 - `GET /api/recommendations`: 예산, 목적지, 가구 유형, 가중치 기반 추천 랭킹 조회
+- `GET /api/geocode`: 주소·후보지명·좌표 입력을 좌표 객체로 변환
+- `GET /api/commute-route`: 집 위치와 회사 위치를 받아 ODsay/TMAP 경로 또는 폴백 통근 루트 반환
 
 ## 데이터 기반과 한계
 

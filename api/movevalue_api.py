@@ -17,6 +17,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from route_adapters import build_commute_route, credential_status, resolve_location
+
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
@@ -116,6 +118,27 @@ def load_dataset() -> dict:
         return json.load(file)
 
 
+def known_locations() -> dict[str, dict]:
+    dataset = load_dataset()
+    locations = {
+        key: {"label": value["label"], "lat": value["lat"], "lng": value["lng"]}
+        for key, value in DESTINATIONS.items()
+    }
+    for area in dataset.get("areas", []):
+        location = {
+            "label": area["name"],
+            "name": area["name"],
+            "station": area.get("station", ""),
+            "lat": area["lat"],
+            "lng": area["lng"],
+        }
+        locations[area["id"]] = location
+        locations[area["name"]] = location
+        if area.get("station"):
+            locations[area["station"]] = location
+    return locations
+
+
 def score_area(area: dict, query: Query) -> dict:
     minutes = estimate_commute_minutes(area, query.destination)
     monthly_rent = float(area.get("rentMonthly10k") or 0)
@@ -171,6 +194,37 @@ def recommendations(query: Query) -> dict:
     }
 
 
+def single_value(raw: dict[str, list[str]], name: str, default: str = "") -> str:
+    return raw.get(name, [default])[0].strip()
+
+
+def resolve_route_location(raw: dict[str, list[str]], prefix: str, fallback_key: str = "") -> dict:
+    lat = single_value(raw, f"{prefix}Lat")
+    lng = single_value(raw, f"{prefix}Lng")
+    if lat and lng:
+        return resolve_location(f"{lat},{lng}", known_locations())
+
+    query = single_value(raw, prefix)
+    if query:
+        return resolve_location(query, known_locations())
+
+    if fallback_key:
+        return resolve_location(fallback_key, known_locations())
+
+    raise ValueError(f"{prefix} 위치 값이 필요합니다.")
+
+
+def commute_route(raw: dict[str, list[str]]) -> dict:
+    origin = resolve_route_location(raw, "origin")
+    destination_query = single_value(raw, "destinationQuery")
+    destination_key = single_value(raw, "destination", "gangnam")
+    destination = resolve_route_location(raw, "destination", destination_query or destination_key)
+    provider = single_value(raw, "provider", "auto")
+    route = build_commute_route(origin, destination, provider)
+    route["credentialStatus"] = credential_status()
+    return route
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MoveValueAPI/0.1"
 
@@ -213,16 +267,34 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/api/health":
                 dataset = load_dataset()
-                self.send_json(HTTPStatus.OK, {"ok": True, "areas": len(dataset["areas"]), "source": dataset["meta"]})
+                self.send_json(
+                    HTTPStatus.OK,
+                    {
+                        "ok": True,
+                        "areas": len(dataset["areas"]),
+                        "source": dataset["meta"],
+                        "integrations": credential_status(),
+                    },
+                )
                 return
             if path == "/api/areas":
                 self.send_json(HTTPStatus.OK, load_dataset())
+                return
+            if path == "/api/geocode":
+                raw = parse_qs(parsed.query)
+                location = resolve_location(single_value(raw, "query"), known_locations())
+                self.send_json(HTTPStatus.OK, {"ok": True, "location": location, "integrations": credential_status()})
+                return
+            if path == "/api/commute-route":
+                self.send_json(HTTPStatus.OK, commute_route(parse_qs(parsed.query)))
                 return
             if path == "/api/recommendations":
                 query = normalize_query(parse_qs(parsed.query))
                 self.send_json(HTTPStatus.OK, recommendations(query))
                 return
             self.serve_static(path)
+        except ValueError as exc:
+            self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc), "integrations": credential_status()})
         except Exception as exc:  # noqa: BLE001 - API should return JSON error in prototype mode.
             self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
 
@@ -248,6 +320,7 @@ class Handler(BaseHTTPRequestHandler):
             content_type += "; charset=utf-8"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         if not head_only:

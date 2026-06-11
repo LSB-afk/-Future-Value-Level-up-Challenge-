@@ -286,6 +286,16 @@ main > .workspace.is-active-view {
   border-color: var(--accent);
 }
 
+.text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 /* ---------- 조건 입력 ---------- */
 
 .field {
@@ -321,6 +331,16 @@ legend {
 }
 
 select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+}
+
+input[type="text"] {
   width: 100%;
   min-height: 40px;
   padding: 0 10px;
@@ -468,6 +488,20 @@ input[type="range"] {
 .area-marker:hover span,
 .area-marker.is-selected span {
   display: block;
+}
+
+.fallback-route-line {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 48%;
+  z-index: 2;
+  padding-top: 8px;
+  border-top: 4px dashed var(--blue);
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
 }
 
 .leaflet-container {
@@ -766,6 +800,143 @@ input[type="range"] {
   color: var(--muted);
   font-size: 13px;
   line-height: 1.6;
+}
+
+/* ---------- 통근 루트 ---------- */
+
+.route-planner {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.compact-title {
+  margin-bottom: 0;
+}
+
+.compact-title h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.route-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.route-form .field {
+  margin-bottom: 0;
+}
+
+.route-form .field:first-child,
+.route-form .field:nth-child(2) {
+  grid-column: 1 / -1;
+}
+
+.route-action {
+  margin-top: 0;
+}
+
+.route-action.primary {
+  border-style: solid;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.route-result {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.route-result.is-loading,
+.route-result.is-error {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.route-result.is-error {
+  border-color: rgba(201, 77, 47, 0.35);
+  color: var(--accent-2);
+  background: #fff8f5;
+}
+
+.route-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.route-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.route-summary-grid .metric {
+  padding: 10px;
+}
+
+.route-summary-grid .metric strong {
+  font-size: 15px;
+}
+
+.route-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.route-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.route-steps li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.route-mode {
+  grid-row: span 3;
+  align-self: start;
+  min-width: 46px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.route-steps strong {
+  font-size: 13px;
+}
+
+.route-steps span:not(.route-mode),
+.route-steps em {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
 }
 
 /* ---------- 데이터 근거 ---------- */
@@ -1123,11 +1294,16 @@ input[type="range"] {
 
   .chain,
   .metric-grid,
+  .route-form,
   .api-grid,
   .biz-grid,
   .submission-grid,
   .evidence-foot {
     grid-template-columns: 1fr;
+  }
+
+  .route-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .app-footer {
