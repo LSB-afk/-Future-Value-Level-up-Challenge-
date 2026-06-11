@@ -36,12 +36,12 @@ AREA_ADDRESSES = {
     "konkuk": "서울 광진구 화양동",
     "sillim": "서울 관악구 신림동",
     "cheongnyangni": "서울 동대문구 청량리동",
-    "guroDigital": "서울 구로구 구로동",
     "wangsimni": "서울 성동구 행당동",
-    "gimpoAirport": "서울 강서구 공항동",
+    "guro": "서울 구로구 구로동",
+    "gongdeok": "서울 마포구 공덕동",
     "magok": "서울 강서구 마곡동",
     "sangam": "서울 마포구 상암동",
-    "yeongdeungpo": "서울 영등포구 영등포동",
+    "gimpoairport": "서울 강서구 공항동",
 }
 
 DEFAULT_WEIGHTS = {"commute": 35, "cost": 30, "service": 20, "safety": 15}
@@ -50,6 +50,12 @@ PERSONA_BOOST = {
     "commuter": {"commute": 7, "transit": 3},
     "newlywed": {"safety": 5, "service": 5},
     "senior": {"safety": 7, "service": 4},
+}
+PERSONA_LABELS = {
+    "single": "1인 청년",
+    "commuter": "직장인",
+    "newlywed": "신혼",
+    "senior": "교통약자",
 }
 
 
@@ -85,6 +91,23 @@ def estimate_commute_minutes(area: dict, destination: str) -> int:
     km = haversine_km(float(area["lat"]), float(area["lng"]), dest["lat"], dest["lng"])
     transfer_penalty = max(2, 10 - float(area.get("transitScore", 70)) / 15)
     return int(round(10 + km * 2.65 + transfer_penalty))
+
+
+def recommendation_reason(area: dict, minutes: int, query: Query) -> str:
+    evidence = area.get("evidence", {})
+    soc_counts = evidence.get("socCounts") or area.get("socSummary", {}).get("counts", {})
+    safety_counts = evidence.get("safetyEnvCounts") or area.get("safetyEnvSummary", {}).get("counts", {})
+    monthly_rent = round(float(area.get("rentMonthly10k") or 0))
+    budget_delta = round(float(query.budget) - monthly_rent)
+    destination_label = DESTINATIONS[query.destination]["label"]
+    persona_label = PERSONA_LABELS.get(query.persona, "사용자")
+    budget_text = "예산 내" if budget_delta >= 0 else f"예산 {abs(budget_delta)}만원 초과"
+    return (
+        f"{destination_label}까지 {minutes}분, 월세 중앙값 {monthly_rent}만원, "
+        f"병원 {soc_counts.get('hospital', 0)}개·학교 {soc_counts.get('school', 0)}개·공원 {soc_counts.get('park', 0)}개, "
+        f"치안시설 {safety_counts.get('police', 0)}개·CCTV {safety_counts.get('cctv', 0)}대 근거로 "
+        f"{persona_label}에게 {budget_text} 생활권입니다."
+    )
 
 
 def normalize_query(raw: dict[str, list[str]]) -> Query:
@@ -138,6 +161,7 @@ def decorate_dataset(dataset: dict) -> dict:
     decorated["meta"] = {
         **dataset.get("meta", {}),
         "destinationAddresses": destination_addresses(),
+        "integrations": credential_status(),
     }
     decorated["areas"] = [
         {
@@ -210,6 +234,7 @@ def score_area(area: dict, query: Query) -> dict:
             "destinationLabel": DESTINATIONS[query.destination]["label"],
             "destinationAddress": DESTINATIONS[query.destination]["address"],
             "representativeAddress": AREA_ADDRESSES.get(area["id"], f"{area.get('district', '')} {area.get('station', '')}".strip()),
+            "reasonText": recommendation_reason(area, minutes, query),
         }
     )
     return result
@@ -231,6 +256,7 @@ def recommendations(query: Query) -> dict:
             "weights": query.weights,
             "returned": min(query.limit, len(scored)),
             "totalCandidates": len(scored),
+            "integrations": credential_status(),
         },
         "results": scored[: query.limit],
     }

@@ -88,12 +88,12 @@
               <output id="serviceWeightOutput">20</output>
               <input id="serviceWeight" type="range" min="5" max="40" value="20">
             </label>
-            <label class="field compact" title="안전·대기·녹지 환경 점수입니다. (MVP 프록시)">
+            <label class="field compact" title="치안시설·CCTV 집계점·도시대기 측정망·공원 접근성을 결합한 안전·환경 점수입니다.">
               <span>안전·환경</span>
               <output id="safetyWeightOutput">15</output>
               <input id="safetyWeight" type="range" min="5" max="35" value="15">
             </label>
-            <p class="field-hint">주거비와 생활 SOC는 실제 공공데이터 기반, 통근은 경로 API 어댑터 우선·키 없을 때 테이블 폴백, 안전·환경은 MVP 프록시입니다.</p>
+            <p class="field-hint">주거비·생활 SOC·안전환경은 공공데이터 스냅샷 기반, 통근은 경로 API 어댑터 우선·키 없을 때 테이블 폴백입니다.</p>
           </div>
         </section>
 
@@ -146,7 +146,7 @@
         <p class="section-lead">
           주거비 지표는 가공 샘플이 아니라 <strong>서울시 부동산 전월세가 정보 2025년 파일</strong>에서
           15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다. 생활권 좌표는
-          서울시 역사마스터 정보로 검증했습니다.
+          서울시 역사마스터 정보로 검증했고, 안전·환경은 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성을 결합했습니다.
         </p>
         <div class="table-wrap">
           <table class="data-table" aria-label="생활권별 실데이터 집계">
@@ -159,10 +159,11 @@
                 <th scope="col">보증금 중앙값</th>
                 <th scope="col">전세 중앙값</th>
                 <th scope="col">SOC 근거</th>
+                <th scope="col">안전·환경</th>
               </tr>
             </thead>
             <tbody id="evidenceTableBody">
-              <tr><td colspan="7" class="muted">데이터 로딩 중…</td></tr>
+              <tr><td colspan="8" class="muted">데이터 로딩 중…</td></tr>
             </tbody>
           </table>
         </div>
@@ -175,7 +176,7 @@
           <div class="callout warn">
             <p><strong>정직한 한계</strong><br>
               통근시간은 대중교통 경로 API 어댑터를 먼저 사용하되 API 키가 없으면 MVP 테이블로 폴백합니다.
-              안전·환경 점수는 MVP 프록시이며, 선정 후 안전·대기·녹지 공공데이터 어댑터로 고도화합니다.</p>
+              안전·환경은 공공데이터 스냅샷 기반 점수이며, 선정 후 원천 API 자동 갱신과 CCTV·대기질 전체 행정동 커버리지로 고도화합니다.</p>
           </div>
         </div>
       </section>
@@ -231,6 +232,12 @@
         <div class="section-title">
           <h2>사업모델</h2>
           <span class="muted">하나의 엔진, 세 개의 수익 채널</span>
+        </div>
+        <div class="callout">
+          <p><strong>경쟁 서비스 대비 차별점</strong><br>
+            네이버부동산·다방·직방이 매물 검색과 필터링에 강하다면, MoveValue는 주거비·통근·생활 SOC·안전환경을
+            통합 점수화해 먼저 생활권을 추천하고, 그 안에서 실제 전월세 예시와 통근 루트를 검증합니다.
+            이 구조는 개인 화면을 넘어 부동산 플랫폼 점수 API와 지자체 B2G 생활권 리포트로 확장됩니다.</p>
         </div>
         <div class="biz-grid">
           <article class="biz-card">

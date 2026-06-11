@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generatedAt": "2026-06-11T08:25:02.700583+00:00",
+    "generatedAt": "2026-06-11T10:13:56.183147+00:00",
     "scope": "서울 주요 환승·업무 생활권 MVP",
     "housingSource": {
       "name": "서울시 부동산 전월세가 정보",
@@ -35,7 +35,25 @@
         }
       ]
     },
-    "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다. 통근시간은 대중교통 경로 API 어댑터가 우선이며, API 키가 없으면 MVP 테이블로 폴백합니다. 생활 SOC는 병원·학교·공원 좌표 반경 집계 기반입니다."
+    "safetyEnvSource": {
+      "name": "서울시 안전·환경 공공데이터 스냅샷",
+      "radiusMeters": 1800,
+      "datasets": [
+        {
+          "name": "서울시 생활안전 CCTV 및 치안시설 위치/집계 데이터",
+          "url": "https://data.seoul.go.kr/"
+        },
+        {
+          "name": "서울시 도시대기 측정망",
+          "url": "https://data.seoul.go.kr/"
+        },
+        {
+          "name": "서울시 주요 공원현황",
+          "url": "https://data.seoul.go.kr/dataList/OA-394/S/1/datasetView.do"
+        }
+      ]
+    },
+    "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다. 통근시간은 대중교통 경로 API 어댑터가 우선이며, API 키가 없으면 MVP 테이블로 폴백합니다. 생활 SOC는 병원·학교·공원 좌표 반경 집계 기반입니다. 안전·환경은 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷을 결합합니다."
   },
   "areas": [
     {
@@ -51,9 +69,9 @@
       "transitScore": 80,
       "serviceScore": 83,
       "socScore": 83,
-      "safetyScore": 74,
-      "carbonScore": 78,
-      "dataReadiness": 95,
+      "safetyScore": 85,
+      "carbonScore": 87,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 24,
         "yeouido": 44,
@@ -121,6 +139,95 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 62,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "화양지구대",
+            "distanceMeters": 290
+          },
+          "cctv": {
+            "name": "화양동 생활안전 CCTV 집계점",
+            "distanceMeters": 127,
+            "count": 62
+          },
+          "park": {
+            "name": "뚝섬한강공원",
+            "distanceMeters": 1110
+          }
+        },
+        "airStation": "광진구 대기측정소",
+        "airQualityScore": 77,
+        "greenScore": 79,
+        "nightSafetyIndex": 76,
+        "facilityRecords": 3,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "화양동 생활안전 CCTV 집계점",
+            "distanceMeters": 127,
+            "count": 62
+          },
+          {
+            "category": "police",
+            "name": "화양지구대",
+            "distanceMeters": 290
+          },
+          {
+            "category": "police",
+            "name": "광진경찰서",
+            "distanceMeters": 1297
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.12",
+          "dong": "화양동",
+          "rentType": "월세",
+          "areaM2": 18.0,
+          "deposit10k": 500,
+          "monthlyRent10k": 58,
+          "buildingUse": "단독다가구",
+          "floor": ""
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "화양동",
+          "rentType": "월세",
+          "areaM2": 18.0,
+          "deposit10k": 1000,
+          "monthlyRent10k": 58,
+          "buildingUse": "단독다가구",
+          "floor": ""
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "화양동",
+          "rentType": "월세",
+          "areaM2": 16.9,
+          "deposit10k": 10000,
+          "monthlyRent10k": 58,
+          "buildingUse": "오피스텔",
+          "floor": "13"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "자양동",
+          "rentType": "전세",
+          "areaM2": 76.4,
+          "deposit10k": 28350,
+          "monthlyRent10k": 0,
+          "buildingUse": "연립다세대",
+          "floor": "3"
+        }
+      ],
       "recommendedFor": [
         "single",
         "commuter"
@@ -134,6 +241,8 @@
           "자양동"
         ],
         "matchedRentRecords": 19486,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -172,7 +281,33 @@
             "distanceMeters": 1110
           }
         },
-        "socFacilityRecords": 7
+        "socFacilityRecords": 7,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 62,
+          "park": 2
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "화양지구대",
+            "distanceMeters": 290
+          },
+          "cctv": {
+            "name": "화양동 생활안전 CCTV 집계점",
+            "distanceMeters": 127,
+            "count": 62
+          },
+          "park": {
+            "name": "뚝섬한강공원",
+            "distanceMeters": 1110
+          }
+        },
+        "safetyEnvFacilityRecords": 3,
+        "airStation": "광진구 대기측정소"
       }
     },
     {
@@ -188,9 +323,9 @@
       "transitScore": 80,
       "serviceScore": 77,
       "socScore": 77,
-      "safetyScore": 74,
-      "carbonScore": 78,
-      "dataReadiness": 95,
+      "safetyScore": 81,
+      "carbonScore": 90,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 29,
         "yeouido": 24,
@@ -248,6 +383,90 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 78,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "신림지구대",
+            "distanceMeters": 57
+          },
+          "cctv": {
+            "name": "신림동 생활안전 CCTV 집계점",
+            "distanceMeters": 91,
+            "count": 78
+          },
+          "park": {
+            "name": "도림천",
+            "distanceMeters": 199
+          }
+        },
+        "airStation": "관악구 대기측정소",
+        "airQualityScore": 74,
+        "greenScore": 84,
+        "nightSafetyIndex": 73,
+        "facilityRecords": 2,
+        "sampleFacilities": [
+          {
+            "category": "police",
+            "name": "신림지구대",
+            "distanceMeters": 57
+          },
+          {
+            "category": "cctv",
+            "name": "신림동 생활안전 CCTV 집계점",
+            "distanceMeters": 91,
+            "count": 78
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.12",
+          "dong": "신림동",
+          "rentType": "월세",
+          "areaM2": 20.0,
+          "deposit10k": 3000,
+          "monthlyRent10k": 50,
+          "buildingUse": "단독다가구",
+          "floor": ""
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "신림동",
+          "rentType": "월세",
+          "areaM2": 57.2,
+          "deposit10k": 18000,
+          "monthlyRent10k": 50,
+          "buildingUse": "연립다세대",
+          "floor": "4"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "신림동",
+          "rentType": "월세",
+          "areaM2": 15.0,
+          "deposit10k": 1000,
+          "monthlyRent10k": 50,
+          "buildingUse": "단독다가구",
+          "floor": ""
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "신림동",
+          "rentType": "전세",
+          "areaM2": 20.1,
+          "deposit10k": 19000,
+          "monthlyRent10k": 0,
+          "buildingUse": "오피스텔",
+          "floor": "7"
+        }
+      ],
       "recommendedFor": [
         "single",
         "commuter"
@@ -260,6 +479,8 @@
           "신림동"
         ],
         "matchedRentRecords": 24654,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -298,7 +519,33 @@
             "distanceMeters": 199
           }
         },
-        "socFacilityRecords": 5
+        "socFacilityRecords": 5,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 78,
+          "park": 2
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "신림지구대",
+            "distanceMeters": 57
+          },
+          "cctv": {
+            "name": "신림동 생활안전 CCTV 집계점",
+            "distanceMeters": 91,
+            "count": 78
+          },
+          "park": {
+            "name": "도림천",
+            "distanceMeters": 199
+          }
+        },
+        "safetyEnvFacilityRecords": 2,
+        "airStation": "관악구 대기측정소"
       }
     },
     {
@@ -314,9 +561,9 @@
       "transitScore": 92,
       "serviceScore": 70,
       "socScore": 70,
-      "safetyScore": 78,
-      "carbonScore": 84,
-      "dataReadiness": 95,
+      "safetyScore": 87,
+      "carbonScore": 80,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 35,
         "yeouido": 46,
@@ -369,6 +616,95 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 58,
+          "park": 1
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "청량리파출소",
+            "distanceMeters": 133
+          },
+          "cctv": {
+            "name": "청량리동 생활안전 CCTV 집계점",
+            "distanceMeters": 48,
+            "count": 58
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 1393
+          }
+        },
+        "airStation": "동대문구 대기측정소",
+        "airQualityScore": 75,
+        "greenScore": 76,
+        "nightSafetyIndex": 75,
+        "facilityRecords": 3,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "청량리동 생활안전 CCTV 집계점",
+            "distanceMeters": 48,
+            "count": 58
+          },
+          {
+            "category": "police",
+            "name": "청량리파출소",
+            "distanceMeters": 133
+          },
+          {
+            "category": "police",
+            "name": "동대문경찰서",
+            "distanceMeters": 545
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.12",
+          "dong": "전농동",
+          "rentType": "월세",
+          "areaM2": 16.6,
+          "deposit10k": 1000,
+          "monthlyRent10k": 65,
+          "buildingUse": "오피스텔",
+          "floor": "3"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "전농동",
+          "rentType": "월세",
+          "areaM2": 23.7,
+          "deposit10k": 3000,
+          "monthlyRent10k": 65,
+          "buildingUse": "연립다세대",
+          "floor": "4"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "용두동",
+          "rentType": "월세",
+          "areaM2": 20.0,
+          "deposit10k": 1000,
+          "monthlyRent10k": 65,
+          "buildingUse": "단독다가구",
+          "floor": ""
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "전농동",
+          "rentType": "전세",
+          "areaM2": 59.8,
+          "deposit10k": 31500,
+          "monthlyRent10k": 0,
+          "buildingUse": "아파트",
+          "floor": "5"
+        }
+      ],
       "recommendedFor": [
         "single",
         "senior"
@@ -383,6 +719,8 @@
           "용두동"
         ],
         "matchedRentRecords": 11306,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -421,7 +759,33 @@
             "distanceMeters": 1393
           }
         },
-        "socFacilityRecords": 4
+        "socFacilityRecords": 4,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 58,
+          "park": 1
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "청량리파출소",
+            "distanceMeters": 133
+          },
+          "cctv": {
+            "name": "청량리동 생활안전 CCTV 집계점",
+            "distanceMeters": 48,
+            "count": 58
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 1393
+          }
+        },
+        "safetyEnvFacilityRecords": 3,
+        "airStation": "동대문구 대기측정소"
       }
     },
     {
@@ -437,9 +801,9 @@
       "transitScore": 92,
       "serviceScore": 81,
       "socScore": 81,
-      "safetyScore": 82,
-      "carbonScore": 84,
-      "dataReadiness": 95,
+      "safetyScore": 86,
+      "carbonScore": 88,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 27,
         "yeouido": 36,
@@ -502,6 +866,85 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 55,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "왕십리지구대",
+            "distanceMeters": 190
+          },
+          "cctv": {
+            "name": "행당동 생활안전 CCTV 집계점",
+            "distanceMeters": 119,
+            "count": 55
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 947
+          }
+        },
+        "airStation": "성동구 대기측정소",
+        "airQualityScore": 78,
+        "greenScore": 82,
+        "nightSafetyIndex": 78,
+        "facilityRecords": 3,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "행당동 생활안전 CCTV 집계점",
+            "distanceMeters": 119,
+            "count": 55
+          },
+          {
+            "category": "police",
+            "name": "왕십리지구대",
+            "distanceMeters": 190
+          },
+          {
+            "category": "police",
+            "name": "성동경찰서",
+            "distanceMeters": 253
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.11",
+          "dong": "도선동",
+          "rentType": "월세",
+          "areaM2": 16.5,
+          "deposit10k": 1000,
+          "monthlyRent10k": 75,
+          "buildingUse": "연립다세대",
+          "floor": "3"
+        },
+        {
+          "contractMonth": "2025.11",
+          "dong": "하왕십리동",
+          "rentType": "월세",
+          "areaM2": 23.0,
+          "deposit10k": 1000,
+          "monthlyRent10k": 75,
+          "buildingUse": "오피스텔",
+          "floor": "14"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "행당동",
+          "rentType": "전세",
+          "areaM2": 60.0,
+          "deposit10k": 59000,
+          "monthlyRent10k": 0,
+          "buildingUse": "아파트",
+          "floor": "22"
+        }
+      ],
       "recommendedFor": [
         "commuter",
         "newlywed"
@@ -517,6 +960,8 @@
           "상왕십리동"
         ],
         "matchedRentRecords": 9721,
+        "rentExampleCount": 3,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -555,7 +1000,33 @@
             "distanceMeters": 947
           }
         },
-        "socFacilityRecords": 6
+        "socFacilityRecords": 6,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 55,
+          "park": 2
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "왕십리지구대",
+            "distanceMeters": 190
+          },
+          "cctv": {
+            "name": "행당동 생활안전 CCTV 집계점",
+            "distanceMeters": 119,
+            "count": 55
+          },
+          "park": {
+            "name": "청계천",
+            "distanceMeters": 947
+          }
+        },
+        "safetyEnvFacilityRecords": 3,
+        "airStation": "성동구 대기측정소"
       }
     },
     {
@@ -571,9 +1042,9 @@
       "transitScore": 74,
       "serviceScore": 69,
       "socScore": 69,
-      "safetyScore": 72,
-      "carbonScore": 75,
-      "dataReadiness": 95,
+      "safetyScore": 88,
+      "carbonScore": 84,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 37,
         "yeouido": 20,
@@ -626,6 +1097,95 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 84,
+          "park": 1
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "구로디지털단지파출소",
+            "distanceMeters": 178
+          },
+          "cctv": {
+            "name": "구로동 생활안전 CCTV 집계점",
+            "distanceMeters": 130,
+            "count": 84
+          },
+          "park": {
+            "name": "도림천 구로디지털단지 구간",
+            "distanceMeters": 106
+          }
+        },
+        "airStation": "구로구 대기측정소",
+        "airQualityScore": 73,
+        "greenScore": 75,
+        "nightSafetyIndex": 74,
+        "facilityRecords": 3,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "구로동 생활안전 CCTV 집계점",
+            "distanceMeters": 130,
+            "count": 84
+          },
+          {
+            "category": "police",
+            "name": "구로디지털단지파출소",
+            "distanceMeters": 178
+          },
+          {
+            "category": "police",
+            "name": "구로경찰서",
+            "distanceMeters": 1652
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.12",
+          "dong": "구로동",
+          "rentType": "월세",
+          "areaM2": 25.9,
+          "deposit10k": 2000,
+          "monthlyRent10k": 55,
+          "buildingUse": "오피스텔",
+          "floor": "2"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "구로동",
+          "rentType": "월세",
+          "areaM2": 15.1,
+          "deposit10k": 2000,
+          "monthlyRent10k": 55,
+          "buildingUse": "아파트",
+          "floor": "5"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "구로동",
+          "rentType": "월세",
+          "areaM2": 16.9,
+          "deposit10k": 1000,
+          "monthlyRent10k": 53,
+          "buildingUse": "연립다세대",
+          "floor": "3"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "구로동",
+          "rentType": "전세",
+          "areaM2": 30.9,
+          "deposit10k": 28000,
+          "monthlyRent10k": 0,
+          "buildingUse": "오피스텔",
+          "floor": "18"
+        }
+      ],
       "recommendedFor": [
         "single",
         "commuter"
@@ -638,6 +1198,8 @@
           "구로동"
         ],
         "matchedRentRecords": 13397,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -676,7 +1238,33 @@
             "distanceMeters": 106
           }
         },
-        "socFacilityRecords": 4
+        "socFacilityRecords": 4,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 84,
+          "park": 1
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "구로디지털단지파출소",
+            "distanceMeters": 178
+          },
+          "cctv": {
+            "name": "구로동 생활안전 CCTV 집계점",
+            "distanceMeters": 130,
+            "count": 84
+          },
+          "park": {
+            "name": "도림천 구로디지털단지 구간",
+            "distanceMeters": 106
+          }
+        },
+        "safetyEnvFacilityRecords": 3,
+        "airStation": "구로구 대기측정소"
       }
     },
     {
@@ -692,9 +1280,9 @@
       "transitScore": 92,
       "serviceScore": 80,
       "socScore": 80,
-      "safetyScore": 78,
-      "carbonScore": 84,
-      "dataReadiness": 95,
+      "safetyScore": 89,
+      "carbonScore": 89,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 38,
         "yeouido": 15,
@@ -752,6 +1340,95 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 66,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "공덕지구대",
+            "distanceMeters": 245
+          },
+          "cctv": {
+            "name": "공덕동 생활안전 CCTV 집계점",
+            "distanceMeters": 111,
+            "count": 66
+          },
+          "park": {
+            "name": "경의선숲길공원",
+            "distanceMeters": 679
+          }
+        },
+        "airStation": "마포구 대기측정소",
+        "airQualityScore": 76,
+        "greenScore": 83,
+        "nightSafetyIndex": 77,
+        "facilityRecords": 3,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "공덕동 생활안전 CCTV 집계점",
+            "distanceMeters": 111,
+            "count": 66
+          },
+          {
+            "category": "police",
+            "name": "공덕지구대",
+            "distanceMeters": 245
+          },
+          {
+            "category": "police",
+            "name": "마포경찰서",
+            "distanceMeters": 1023
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.11",
+          "dong": "염리동",
+          "rentType": "월세",
+          "areaM2": 19.7,
+          "deposit10k": 1000,
+          "monthlyRent10k": 80,
+          "buildingUse": "아파트",
+          "floor": "2"
+        },
+        {
+          "contractMonth": "2025.11",
+          "dong": "염리동",
+          "rentType": "월세",
+          "areaM2": 84.5,
+          "deposit10k": 60000,
+          "monthlyRent10k": 80,
+          "buildingUse": "아파트",
+          "floor": "2"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "공덕동",
+          "rentType": "월세",
+          "areaM2": 32.1,
+          "deposit10k": 10000,
+          "monthlyRent10k": 80,
+          "buildingUse": "오피스텔",
+          "floor": "12"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "염리동",
+          "rentType": "전세",
+          "areaM2": 58.7,
+          "deposit10k": 48300,
+          "monthlyRent10k": 0,
+          "buildingUse": "아파트",
+          "floor": "10"
+        }
+      ],
       "recommendedFor": [
         "commuter",
         "public"
@@ -766,6 +1443,8 @@
           "염리동"
         ],
         "matchedRentRecords": 8524,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -804,7 +1483,33 @@
             "distanceMeters": 679
           }
         },
-        "socFacilityRecords": 5
+        "socFacilityRecords": 5,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 2,
+          "cctvClusters": 1,
+          "cctv": 66,
+          "park": 2
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "공덕지구대",
+            "distanceMeters": 245
+          },
+          "cctv": {
+            "name": "공덕동 생활안전 CCTV 집계점",
+            "distanceMeters": 111,
+            "count": 66
+          },
+          "park": {
+            "name": "경의선숲길공원",
+            "distanceMeters": 679
+          }
+        },
+        "safetyEnvFacilityRecords": 3,
+        "airStation": "마포구 대기측정소"
       }
     },
     {
@@ -820,9 +1525,9 @@
       "transitScore": 80,
       "serviceScore": 82,
       "socScore": 82,
-      "safetyScore": 78,
-      "carbonScore": 78,
-      "dataReadiness": 95,
+      "safetyScore": 75,
+      "carbonScore": 91,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 55,
         "yeouido": 31,
@@ -890,6 +1595,90 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 49,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "마곡지구대",
+            "distanceMeters": 133
+          },
+          "cctv": {
+            "name": "마곡동 생활안전 CCTV 집계점",
+            "distanceMeters": 89,
+            "count": 49
+          },
+          "park": {
+            "name": "마곡나루근린공원",
+            "distanceMeters": 196
+          }
+        },
+        "airStation": "강서구 대기측정소",
+        "airQualityScore": 77,
+        "greenScore": 86,
+        "nightSafetyIndex": 76,
+        "facilityRecords": 2,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "마곡동 생활안전 CCTV 집계점",
+            "distanceMeters": 89,
+            "count": 49
+          },
+          {
+            "category": "police",
+            "name": "마곡지구대",
+            "distanceMeters": 133
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.12",
+          "dong": "마곡동",
+          "rentType": "월세",
+          "areaM2": 18.0,
+          "deposit10k": 500,
+          "monthlyRent10k": 65,
+          "buildingUse": "오피스텔",
+          "floor": "3"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "마곡동",
+          "rentType": "월세",
+          "areaM2": 23.8,
+          "deposit10k": 500,
+          "monthlyRent10k": 65,
+          "buildingUse": "오피스텔",
+          "floor": "4"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "마곡동",
+          "rentType": "월세",
+          "areaM2": 20.8,
+          "deposit10k": 5000,
+          "monthlyRent10k": 65,
+          "buildingUse": "오피스텔",
+          "floor": "9"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "마곡동",
+          "rentType": "전세",
+          "areaM2": 44.0,
+          "deposit10k": 32000,
+          "monthlyRent10k": 0,
+          "buildingUse": "오피스텔",
+          "floor": "3"
+        }
+      ],
       "recommendedFor": [
         "newlywed",
         "public"
@@ -902,6 +1691,8 @@
           "마곡동"
         ],
         "matchedRentRecords": 15082,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -940,7 +1731,33 @@
             "distanceMeters": 196
           }
         },
-        "socFacilityRecords": 7
+        "socFacilityRecords": 7,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 49,
+          "park": 2
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "마곡지구대",
+            "distanceMeters": 133
+          },
+          "cctv": {
+            "name": "마곡동 생활안전 CCTV 집계점",
+            "distanceMeters": 89,
+            "count": 49
+          },
+          "park": {
+            "name": "마곡나루근린공원",
+            "distanceMeters": 196
+          }
+        },
+        "safetyEnvFacilityRecords": 2,
+        "airStation": "강서구 대기측정소"
       }
     },
     {
@@ -957,8 +1774,8 @@
       "serviceScore": 81,
       "socScore": 81,
       "safetyScore": 76,
-      "carbonScore": 81,
-      "dataReadiness": 95,
+      "carbonScore": 88,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 53,
         "yeouido": 29,
@@ -1021,6 +1838,90 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 46,
+          "park": 2
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "상암파출소",
+            "distanceMeters": 179
+          },
+          "cctv": {
+            "name": "상암동 생활안전 CCTV 집계점",
+            "distanceMeters": 76,
+            "count": 46
+          },
+          "park": {
+            "name": "월드컵공원",
+            "distanceMeters": 750
+          }
+        },
+        "airStation": "마포구 대기측정소",
+        "airQualityScore": 76,
+        "greenScore": 83,
+        "nightSafetyIndex": 77,
+        "facilityRecords": 2,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "상암동 생활안전 CCTV 집계점",
+            "distanceMeters": 76,
+            "count": 46
+          },
+          {
+            "category": "police",
+            "name": "상암파출소",
+            "distanceMeters": 179
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.12",
+          "dong": "상암동",
+          "rentType": "월세",
+          "areaM2": 24.2,
+          "deposit10k": 1000,
+          "monthlyRent10k": 65,
+          "buildingUse": "오피스텔",
+          "floor": "9"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "상암동",
+          "rentType": "월세",
+          "areaM2": 20.3,
+          "deposit10k": 4000,
+          "monthlyRent10k": 65,
+          "buildingUse": "오피스텔",
+          "floor": "5"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "상암동",
+          "rentType": "월세",
+          "areaM2": 19.9,
+          "deposit10k": 500,
+          "monthlyRent10k": 65,
+          "buildingUse": "오피스텔",
+          "floor": "8"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "상암동",
+          "rentType": "전세",
+          "areaM2": 60.0,
+          "deposit10k": 47000,
+          "monthlyRent10k": 0,
+          "buildingUse": "오피스텔",
+          "floor": "10"
+        }
+      ],
       "recommendedFor": [
         "commuter",
         "public"
@@ -1033,6 +1934,8 @@
           "상암동"
         ],
         "matchedRentRecords": 4402,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -1071,7 +1974,33 @@
             "distanceMeters": 750
           }
         },
-        "socFacilityRecords": 6
+        "socFacilityRecords": 6,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 46,
+          "park": 2
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "상암파출소",
+            "distanceMeters": 179
+          },
+          "cctv": {
+            "name": "상암동 생활안전 CCTV 집계점",
+            "distanceMeters": 76,
+            "count": 46
+          },
+          "park": {
+            "name": "월드컵공원",
+            "distanceMeters": 750
+          }
+        },
+        "safetyEnvFacilityRecords": 2,
+        "airStation": "마포구 대기측정소"
       }
     },
     {
@@ -1087,9 +2016,9 @@
       "transitScore": 98,
       "serviceScore": 80,
       "socScore": 80,
-      "safetyScore": 80,
-      "carbonScore": 87,
-      "dataReadiness": 95,
+      "safetyScore": 78,
+      "carbonScore": 82,
+      "dataReadiness": 96,
       "commuteMinutes": {
         "gangnam": 62,
         "yeouido": 33,
@@ -1152,6 +2081,90 @@
           }
         ]
       },
+      "safetyEnvSummary": {
+        "radiusMeters": 1800,
+        "counts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 42,
+          "park": 1
+        },
+        "nearestFacilities": {
+          "police": {
+            "name": "공항지구대",
+            "distanceMeters": 401
+          },
+          "cctv": {
+            "name": "공항동 생활안전 CCTV 집계점",
+            "distanceMeters": 78,
+            "count": 42
+          },
+          "park": {
+            "name": "개화산공원",
+            "distanceMeters": 1148
+          }
+        },
+        "airStation": "강서구 대기측정소",
+        "airQualityScore": 77,
+        "greenScore": 86,
+        "nightSafetyIndex": 76,
+        "facilityRecords": 2,
+        "sampleFacilities": [
+          {
+            "category": "cctv",
+            "name": "공항동 생활안전 CCTV 집계점",
+            "distanceMeters": 78,
+            "count": 42
+          },
+          {
+            "category": "police",
+            "name": "공항지구대",
+            "distanceMeters": 401
+          }
+        ]
+      },
+      "rentExamples": [
+        {
+          "contractMonth": "2025.10",
+          "dong": "공항동",
+          "rentType": "월세",
+          "areaM2": 21.0,
+          "deposit10k": 500,
+          "monthlyRent10k": 50,
+          "buildingUse": "단독다가구",
+          "floor": ""
+        },
+        {
+          "contractMonth": "2025.10",
+          "dong": "공항동",
+          "rentType": "월세",
+          "areaM2": 37.2,
+          "deposit10k": 3000,
+          "monthlyRent10k": 50,
+          "buildingUse": "연립다세대",
+          "floor": "4"
+        },
+        {
+          "contractMonth": "2025.10",
+          "dong": "공항동",
+          "rentType": "월세",
+          "areaM2": 15.7,
+          "deposit10k": 500,
+          "monthlyRent10k": 50,
+          "buildingUse": "연립다세대",
+          "floor": "2"
+        },
+        {
+          "contractMonth": "2025.12",
+          "dong": "방화동",
+          "rentType": "전세",
+          "areaM2": 39.4,
+          "deposit10k": 25000,
+          "monthlyRent10k": 0,
+          "buildingUse": "아파트",
+          "floor": "14"
+        }
+      ],
       "recommendedFor": [
         "public",
         "commuter"
@@ -1165,6 +2178,8 @@
           "방화동"
         ],
         "matchedRentRecords": 7747,
+        "rentExampleCount": 4,
+        "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
         "fallbackUsed": false,
         "rentFallbackUsed": false,
         "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -1203,7 +2218,33 @@
             "distanceMeters": 1148
           }
         },
-        "socFacilityRecords": 6
+        "socFacilityRecords": 6,
+        "safetyEnvSource": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "safetyEnvMode": "public_snapshot_scoring",
+        "safetyEnvRadiusMeters": 1800,
+        "safetyEnvCounts": {
+          "police": 1,
+          "cctvClusters": 1,
+          "cctv": 42,
+          "park": 1
+        },
+        "safetyEnvNearestFacilities": {
+          "police": {
+            "name": "공항지구대",
+            "distanceMeters": 401
+          },
+          "cctv": {
+            "name": "공항동 생활안전 CCTV 집계점",
+            "distanceMeters": 78,
+            "count": 42
+          },
+          "park": {
+            "name": "개화산공원",
+            "distanceMeters": 1148
+          }
+        },
+        "safetyEnvFacilityRecords": 2,
+        "airStation": "강서구 대기측정소"
       }
     }
   ]

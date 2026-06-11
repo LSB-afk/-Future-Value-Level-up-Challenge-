@@ -12,7 +12,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from movevalue_adapters import adapter_source_meta, build_commute_minutes, build_soc_metrics
+from movevalue_adapters import adapter_source_meta, build_commute_minutes, build_safety_env_metrics, build_soc_metrics
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +20,7 @@ RAW_DIR = ROOT / "data" / "raw"
 OUT = ROOT / "data" / "areas.actual.json"
 SEOUL_RENT_ZIP = RAW_DIR / "seoul_rent_2025.zip"
 SEOUL_RENT_URL = "https://datafile.seoul.go.kr/bigfile/iot/inf/nio_download.do?&useCache=false"
+MAX_RENT_EXAMPLES_PER_BUCKET = 160
 
 
 AREA_DEFINITIONS = [
@@ -188,9 +189,29 @@ def median(values: list[float]) -> float:
     return round(statistics.median(values), 1)
 
 
+def contract_month(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 6 and text[:6].isdigit():
+        return f"{text[:4]}.{text[4:6]}"
+    return text
+
+
+def compact_rent_example(row: dict, *, dong: str, area: float, deposit: float, monthly: float) -> dict:
+    return {
+        "contractMonth": contract_month(row.get("계약일", "")),
+        "dong": dong,
+        "rentType": row.get("전월세구분") or "",
+        "areaM2": round(area, 1),
+        "deposit10k": round(deposit),
+        "monthlyRent10k": round(monthly),
+        "buildingUse": row.get("건물용도") or "",
+        "floor": row.get("층") or "",
+    }
+
+
 def build_rent_index() -> dict:
-    index: dict[tuple[str, str], dict[str, list[float] | int]] = {}
-    district_index: dict[str, dict[str, list[float] | int]] = {}
+    index: dict[tuple[str, str], dict[str, list[float] | list[dict] | int]] = {}
+    district_index: dict[str, dict[str, list[float] | list[dict] | int]] = {}
 
     for row in read_rent_rows():
         district = row.get("자치구명", "")
@@ -204,15 +225,68 @@ def build_rent_index() -> dict:
         if area < 15 or area > 85:
             continue
 
-        for target in (index.setdefault((district, dong), {"monthly": [], "deposit": [], "jeonse": [], "count": 0}), district_index.setdefault(district, {"monthly": [], "deposit": [], "jeonse": [], "count": 0})):
+        example = compact_rent_example(row, dong=dong, area=area, deposit=deposit, monthly=monthly)
+        for target in (
+            index.setdefault((district, dong), {"monthly": [], "deposit": [], "jeonse": [], "examples": [], "count": 0}),
+            district_index.setdefault(district, {"monthly": [], "deposit": [], "jeonse": [], "examples": [], "count": 0}),
+        ):
             target["count"] = int(target["count"]) + 1
             if rent_type == "월세" and monthly > 0:
                 target["monthly"].append(monthly)
                 target["deposit"].append(deposit)
             elif rent_type == "전세" and deposit > 0:
                 target["jeonse"].append(deposit)
+            if len(target["examples"]) < MAX_RENT_EXAMPLES_PER_BUCKET:
+                target["examples"].append(example)
 
     return {"dong": index, "district": district_index}
+
+
+def select_rent_examples(rows: list[dict], rent_monthly: float, jeonse: float, limit: int = 4) -> list[dict]:
+    examples = [example for data in rows for example in data.get("examples", [])]
+    if not examples:
+        return []
+
+    monthly_examples = [
+        item for item in examples if item.get("rentType") == "월세" and float(item.get("monthlyRent10k") or 0) > 0
+    ]
+    jeonse_examples = [
+        item for item in examples if item.get("rentType") == "전세" and float(item.get("deposit10k") or 0) > 0
+    ]
+
+    monthly_examples.sort(key=lambda item: (abs(float(item["monthlyRent10k"]) - rent_monthly), item.get("contractMonth", "")))
+    jeonse_examples.sort(key=lambda item: (abs(float(item["deposit10k"]) - jeonse), item.get("contractMonth", "")))
+
+    selected = monthly_examples[:3] + jeonse_examples[:1]
+    if len(selected) < limit:
+        fallback = sorted(
+            examples,
+            key=lambda item: (
+                0 if item.get("rentType") == "월세" else 1,
+                abs(float(item.get("monthlyRent10k") or 0) - rent_monthly),
+                item.get("contractMonth", ""),
+            ),
+        )
+        selected.extend(fallback)
+
+    unique = []
+    seen = set()
+    for item in selected:
+        key = (
+            item.get("contractMonth"),
+            item.get("dong"),
+            item.get("rentType"),
+            item.get("areaM2"),
+            item.get("deposit10k"),
+            item.get("monthlyRent10k"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+        if len(unique) >= limit:
+            break
+    return unique
 
 
 def build_areas() -> list[dict]:
@@ -247,12 +321,16 @@ def build_areas() -> list[dict]:
         commute_minutes, commute_evidence = build_commute_minutes(area_def)
         soc_metrics = build_soc_metrics(area_def)
         service_score = soc_metrics["score"]
-        safety_score = round(70 + min(14, area_def["lineCount"] * 2) + (4 if "newlywed" in area_def["recommendedFor"] else 0))
-        carbon_score = round(72 + min(18, area_def["lineCount"] * 3))
+        safety_env_metrics = build_safety_env_metrics(area_def, soc_metrics)
+        safety_score = safety_env_metrics["safetyScore"]
+        carbon_score = safety_env_metrics["environmentScore"]
+        rent_examples = select_rent_examples(rows, rent_monthly, jeonse)
         data_readiness = 94 if not fallback_used else 88
         if commute_evidence["commuteProvider"] == "odsay" and not commute_evidence["fallbackUsed"]:
             data_readiness += 2
         if soc_metrics["facilityRecords"] >= 3:
+            data_readiness += 1
+        if safety_env_metrics["facilityRecords"] >= 2:
             data_readiness += 1
 
         areas.append(
@@ -280,6 +358,18 @@ def build_areas() -> list[dict]:
                     "facilityRecords": soc_metrics["facilityRecords"],
                     "sampleFacilities": soc_metrics["sampleFacilities"],
                 },
+                "safetyEnvSummary": {
+                    "radiusMeters": safety_env_metrics["radiusMeters"],
+                    "counts": safety_env_metrics["counts"],
+                    "nearestFacilities": safety_env_metrics["nearestFacilities"],
+                    "airStation": safety_env_metrics["airStation"],
+                    "airQualityScore": safety_env_metrics["airQualityScore"],
+                    "greenScore": safety_env_metrics["greenScore"],
+                    "nightSafetyIndex": safety_env_metrics["nightSafetyIndex"],
+                    "facilityRecords": safety_env_metrics["facilityRecords"],
+                    "sampleFacilities": safety_env_metrics["sampleFacilities"],
+                },
+                "rentExamples": rent_examples,
                 "recommendedFor": area_def["recommendedFor"],
                 "insight": area_def["insight"],
                 "evidence": {
@@ -287,6 +377,8 @@ def build_areas() -> list[dict]:
                     "rentDistrict": area_def["rentDistrict"],
                     "rentDongs": matched_dongs or area_def["rentDongs"],
                     "matchedRentRecords": matched_records,
+                    "rentExampleCount": len(rent_examples),
+                    "rentExamplePrivacy": "공개 전월세 파일에서 상세 지번·건물명은 제외하고 계약월·법정동·면적·보증금·월세·건물용도만 표시",
                     "fallbackUsed": fallback_used,
                     "rentFallbackUsed": fallback_used,
                     "stationCoordinateSource": "서울시 역사마스터 정보 및 공개 좌표 검증",
@@ -303,6 +395,13 @@ def build_areas() -> list[dict]:
                     "socCounts": soc_metrics["counts"],
                     "socNearestFacilities": soc_metrics["nearestFacilities"],
                     "socFacilityRecords": soc_metrics["facilityRecords"],
+                    "safetyEnvSource": safety_env_metrics["source"],
+                    "safetyEnvMode": safety_env_metrics["mode"],
+                    "safetyEnvRadiusMeters": safety_env_metrics["radiusMeters"],
+                    "safetyEnvCounts": safety_env_metrics["counts"],
+                    "safetyEnvNearestFacilities": safety_env_metrics["nearestFacilities"],
+                    "safetyEnvFacilityRecords": safety_env_metrics["facilityRecords"],
+                    "airStation": safety_env_metrics["airStation"],
                 },
             }
         )
@@ -326,7 +425,7 @@ def main() -> None:
                 "url": "https://data.seoul.go.kr/dataList/OA-21232/S/1/datasetView.do",
             },
             **source_meta,
-            "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다. 통근시간은 대중교통 경로 API 어댑터가 우선이며, API 키가 없으면 MVP 테이블로 폴백합니다. 생활 SOC는 병원·학교·공원 좌표 반경 집계 기반입니다.",
+            "note": "주거비는 2025년 서울시 전월세 전체 파일에서 15~85㎡ 거래를 생활권 법정동 기준으로 집계한 중앙값입니다. 통근시간은 대중교통 경로 API 어댑터가 우선이며, API 키가 없으면 MVP 테이블로 폴백합니다. 생활 SOC는 병원·학교·공원 좌표 반경 집계 기반입니다. 안전·환경은 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷을 결합합니다.",
         },
         "areas": areas,
     }

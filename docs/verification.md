@@ -1,15 +1,17 @@
 # Verification Log
 
-확인일: 2026-06-11 (데이터 정밀도 1차 + 사용자 통근 루트 검증 반영)
+확인일: 2026-06-11 (데이터 정밀도 2차 + 매물 예시·안전환경·추천 사유 보완)
 
 ## 데이터 재생성
 
 - `python3 scripts/build_real_dataset.py` 실행 성공
 - `data/areas.actual.json` 생활권 9개 생성
 - 서울시 2025 전월세 매칭 거래 합계 114,319건 유지
-- 모든 생활권에 `socSummary`, `evidence.socCounts`, `evidence.socRadiusMeters`, `evidence.commuteMode` 생성
+- 모든 생활권에 `socSummary`, `safetyEnvSummary`, `rentExamples`, `evidence.socCounts`, `evidence.safetyEnvCounts`, `evidence.commuteMode` 생성
 - 현재 로컬 환경에는 `ODSAY_API_KEY`가 없어 통근시간은 9개 생활권 모두 `table_fallback`으로 기록
 - 생활 SOC 집계 예시: 건대입구 병원 2·학교 3·공원 2, 마곡나루 병원 1·학교 4·공원 2, 상암DMC 병원 1·학교 3·공원 2
+- 안전·환경 집계 예시: 건대입구 치안시설 2·CCTV 62대·공원 2, 신림 치안시설 1·CCTV 78대·공원 2
+- 전월세 예시: 생활권별 4건 생성. 상세 지번·건물명 없이 계약월·법정동·면적·보증금·월세·건물용도·층만 저장
 
 ## 정적 검사
 
@@ -20,8 +22,10 @@
 ## API 검증
 
 - API 서버 실행: `python3 api/movevalue_api.py --port 5173`
-- `GET /api/health`: `ok=true`, 생활권 9개, 2025 서울시 전월세 출처, ODsay 경로 API 어댑터 메타, 생활 SOC 데이터셋 메타 포함
-- `GET /api/recommendations?...&limit=9`: 9개 랭킹 반환, `meta.totalCandidates=9`, 1위 건대입구 89점(기본 조건), `evidence.socCounts={hospital:2, school:3, park:2}`, `evidence.commuteMode=table_fallback`
+- `GET /api/health`: `ok=true`, 생활권 9개, 2025 서울시 전월세 출처, ODsay 경로 API 어댑터 메타, 생활 SOC 데이터셋 메타, 안전환경 데이터셋 메타 포함
+- `GET /api/recommendations?...&limit=9`: 9개 랭킹 반환, `meta.totalCandidates=9`, 1위 건대입구 91점(기본 조건), `reasonText`에 강남 24분·월세 57만원·병원 2·학교 3·공원 2·치안시설 2·CCTV 62대 표시
+- 1위 건대입구 응답: `rentExamples` 4건, `evidence.safetyEnvCounts={police:2, cctvClusters:1, cctv:62, park:2}`, `evidence.commuteMode=table_fallback`
+- `GET /api/areas`: `meta.integrations={odsay:false,tmap:false,kakao:false}`, 생활권 ID 9개, `guro/gongdeok/gimpoairport` 대표 주소 정상 반환
 - `GET /api/geocode?query=konkuk`: 건대입구 로컬 좌표(`source=known_location`) 반환
 - `GET /api/geocode?query=서울%20광진구%20화양동`: 생활권 대표 주소 로컬 좌표(`source=known_address`) 반환
 - `GET /api/commute-route?origin=서울%20광진구%20화양동&destinationQuery=서울%20강남구%20역삼동&provider=auto`: ODsay/TMAP 키 미설정 환경에서 `provider=fallback`, `mode=estimated_fallback`, 주소 라벨 유지, 총 27분, 요금 1,550원, 단계 3개 반환
@@ -31,6 +35,9 @@
 ## 브라우저 검증 (데스크톱)
 
 - 초기 `추천` 화면: `main > .anchor-target` 중 `recommend`만 표시, 추천 카드 6개, 데이터 근거 표 10행 렌더링
+- 추천 카드 문장: "강남 업무지구까지 24분, 월세 중앙값 57만원, 병원 2개·학교 3개·공원 2개, 치안시설 2개·CCTV 62대..." 형태의 숫자 기반 사유 표시
+- 상세 근거 패널: `실거래 예시`, `안전·환경 근거`, 구체 추천 사유 표시
+- 데이터 근거 표: SOC 근거와 안전·환경 컬럼 표시
 - 상단 메뉴 6개 클릭 검증: `추천`, `지도`, `데이터 근거`, `API`, `사업모델`, `제출자료` 각각 클릭 시 해당 섹션 1개만 표시
 - OpenStreetMap 실제 지도 타일 표시 확인, `#map` 화면 단독 표시
 - 생활권 마커 9개 표시, 점수별 색상(상위권 녹색/검토권 금색/미달 적색)·크기 구분
@@ -40,17 +47,20 @@
 - `상세 근거` 패널 내부에서 통근 루트 UI가 제거되고, 별도 `통근 루트 검증` 패널로 분리된 것 확인
 - 통근 루트 검증 기본값: 집 주소 `서울 광진구 화양동`, 회사 주소 `서울 강남구 역삼동` 표시. 좌표 문자열 대신 실제 주소 입력 중심으로 변경
 - 통근 루트 계산 클릭: 폴백 결과 카드 렌더링, 주소 라벨 `서울 광진구 화양동 → 서울 강남구 역삼동`, 요약 지표 4개(총 소요·환승·도보·요금), 단계 3개, 키 미설정 notice 표시, 에러 상태 없음
+- 통근 루트 검증 패널: ODsay/TMAP 키 미설정 안내 표시. 키는 환경변수로만 감지하며 저장소에는 기록하지 않음
 - `지도에서 보기` 클릭: `지도` 섹션만 표시, 마커 9개 유지, Leaflet SVG 경로 3개(점선 경로 1개 + 출발/도착점 2개), 폴백 경로선 `#b4872a` stroke 확인
 - "전체 후보 9개 중 상위 6개" 표기와 전체 보기 토글 동작
-- 추천 카드별 한 줄 근거 표시 ("주거비·생활 SOC 강점 · 예산 내 후보 · 1인 청년 적합" 등)
-- 데이터 근거 표: 생활권 9개 + 합계 114,319건, 월세·보증금·전세 중앙값(억 단위 변환 포함), SOC 근거 컬럼 표시
+- 추천 카드별 한 줄 근거 표시
+- 데이터 근거 표: 생활권 9개 + 합계 114,319건, 월세·보증금·전세 중앙값(억 단위 변환 포함), SOC 근거, 안전환경 근거 컬럼 표시
 - API/사업모델/제출자료 섹션 렌더링 확인
+- 사업모델 섹션: 경쟁 서비스 대비 차별점 문구 표시. 매물 검색 중심 서비스와 달리 생활권 추천/API/B2G 리포트 엔진임을 명시
 - 브라우저 콘솔 오류·경고: 없음
 
 ## 브라우저 검증 (모바일 375px)
 
 - 초기 `추천` 화면: `recommend`만 표시, 카드 6개 렌더링
 - `document.documentElement.scrollWidth == 375`, 페이지 가로 오버플로 없음
+- 상세 패널 내 `실거래 예시`, `안전·환경 근거` 표시
 - 별도 `통근 루트 검증` 패널 표시, 주소 기본값 유지, 상세 근거 내부 중첩 없음
 - 통근 루트 계산 후 결과 에러 없음, 주소 라벨 유지, 요약 지표 4개·단계 3개 표시
 - 상단 메뉴는 가로 스크롤 내비게이션으로 유지
@@ -67,6 +77,9 @@
 - 사용자 통근 루트 계산을 API 키 없는 환경에서도 실패 화면이 아닌 명확한 거리 기반 폴백 결과로 표시하도록 수정.
 - 통근 루트 입력 기본값이 좌표 문자열이라 사용자가 이해하기 어려웠던 문제를 대표 주소 기본값으로 수정.
 - 통근 루트 검증 UI가 `상세 근거` 안에 들어가 화면 맥락이 섞이던 문제를 별도 패널로 분리.
+- 안전·환경이 MVP 프록시로 남아 있던 약점을 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷 점수로 교체.
+- 생활권 추천이 추상적인 강점 문구에 머물던 문제를 통근시간·월세·SOC·안전환경 수치 기반 문장으로 교체.
+- 생활권 단위 추천만 있고 후보 매물 설득력이 부족했던 문제를 개인정보성 상세주소 제외 전월세 실거래 예시로 보강.
 - 브라우저가 이전 `app.js`를 캐시해 새 UI가 늦게 반영될 수 있어 정적 파일 응답에 `Cache-Control: no-store`를 추가.
 
 ## 확인된 제한
@@ -76,7 +89,7 @@
 - 사용자 통근 루트는 Kakao 주소 검색, ODsay, TMAP 런타임 어댑터가 구현되어 있다. 이번 검증에서는 API 키를 환경변수로 주입하지 않아 실제 외부 호출은 수행하지 않았고, 로컬 대표 주소/후보명 해석과 거리 기반 폴백을 검증했다.
 - 채팅으로 전달된 API 키는 저장소·문서·커밋에 기록하지 않았다. 실제 live API 검증은 `KAKAO_REST_API_KEY`, `ODSAY_API_KEY`, `TMAP_APP_KEY`를 로컬 환경변수로 설정한 별도 실행에서 수행해야 한다.
 - 생활 SOC는 서울 열린데이터광장 병의원·학교·공원 좌표 스냅샷 기반이다. 운영 단계에서는 API 키 기반 전체 자동 갱신과 편의시설 카테고리 확장이 필요하다.
-- 안전, 환경 점수는 MVP 프록시다. 추후 안전·대기·녹지 공공데이터 어댑터를 추가해야 한다.
+- 안전·환경 점수는 공공데이터 스냅샷 기반으로 교체했다. 다만 원천 API 자동 갱신과 행정동 전체 커버리지는 추후 구현이 필요하다.
 - 지도 타일은 OpenStreetMap 공개 타일을 사용하며, 운영 배포 시 VWorld 등으로 교체를 권장한다 (`docs/api-development.md` 참고).
 - 전화번호, 서명, 개인정보 수집·이용 동의 체크는 신청자가 제출 전 직접 기재해야 한다.
 

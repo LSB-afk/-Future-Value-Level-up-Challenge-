@@ -810,6 +810,12 @@ input[type="range"] {
   line-height: 1.6;
 }
 
+.rent-example-list {
+  display: grid;
+  gap: 6px;
+  padding-left: 16px;
+}
+
 /* ---------- 통근 루트 ---------- */
 
 .route-planner {
@@ -851,6 +857,11 @@ input[type="range"] {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+.route-live-ready {
+  color: var(--accent);
+  font-weight: 800;
 }
 
 .route-result.is-loading,
@@ -945,7 +956,7 @@ input[type="range"] {
 
 .data-table {
   width: 100%;
-  min-width: 780px;
+  min-width: 940px;
   border-collapse: collapse;
   font-size: 13.5px;
 }

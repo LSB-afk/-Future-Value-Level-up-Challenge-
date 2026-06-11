@@ -21,7 +21,7 @@ python3 api/movevalue_api.py --port 5173
 
 ## 데이터 파이프라인
 
-`scripts/build_real_dataset.py`는 서울시 열린데이터광장의 `서울시 부동산 전월세가 정보` 2025년 파일을 내려받고, 15~85㎡ 거래를 생활권 법정동 기준으로 집계한다. 통근시간과 생활 SOC는 `scripts/movevalue_adapters.py`의 어댑터가 채운다.
+`scripts/build_real_dataset.py`는 서울시 열린데이터광장의 `서울시 부동산 전월세가 정보` 2025년 파일을 내려받고, 15~85㎡ 거래를 생활권 법정동 기준으로 집계한다. 통근시간, 생활 SOC, 안전·환경은 `scripts/movevalue_adapters.py`의 어댑터가 채운다.
 
 ```bash
 python3 scripts/build_real_dataset.py
@@ -35,7 +35,9 @@ python3 scripts/build_real_dataset.py
 ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 ```
 
-생활 SOC는 병의원·학교·공원 좌표 스냅샷을 생활권 대표역 기준 반경 1.6km로 집계해 `serviceScore`, `socSummary`, `evidence.socCounts`에 저장한다.
+생활 SOC는 병의원·학교·공원 좌표 스냅샷을 생활권 대표역 기준 반경 1.6km로 집계해 `serviceScore`, `socSummary`, `evidence.socCounts`에 저장한다. 안전·환경은 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성을 반경 1.8km 기준으로 결합해 `safetyScore`, `carbonScore`, `safetyEnvSummary`, `evidence.safetyEnvCounts`에 저장한다.
+
+주거 데이터는 생활권별 중앙값뿐 아니라 `rentExamples`도 만든다. 각 생활권은 월세 중앙값에 가까운 월세 예시 3건과 전세 중앙값에 가까운 전세 예시 1건을 포함하며, 상세 지번·건물명 없이 계약월·법정동·면적·보증금·월세·건물용도·층만 제공한다.
 
 웹 실행 중 사용자가 입력하는 집/회사 경로 검증은 `api/route_adapters.py`가 담당한다. 이 런타임 어댑터는 Kakao 주소 검색, ODsay 대중교통 경로, TMAP 대중교통 경로, 거리 기반 폴백을 같은 응답 형식으로 정규화한다.
 
@@ -48,6 +50,15 @@ ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 ### `GET /api/areas`
 
 정규화된 생활권 후보 전체를 반환한다. 웹앱은 초기 지도 범위와 데이터 출처 표시를 위해 이 엔드포인트를 먼저 호출한다.
+
+주요 추가 필드:
+
+| 필드 | 설명 |
+| --- | --- |
+| `rentExamples` | 생활권 안의 실제 전월세 공개파일 기반 후보 거래 예시 |
+| `socSummary` | 병원·학교·공원 반경 집계 |
+| `safetyEnvSummary` | 치안시설·CCTV·대기측정망·공원 접근성 집계 |
+| `representativeAddress` | 통근 루트 검증 기본값으로 쓰는 생활권 대표 주소 |
 
 ### `GET /api/recommendations`
 
@@ -71,6 +82,8 @@ ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 ```bash
 curl 'http://127.0.0.1:5173/api/recommendations?budget=70&destination=gangnam&persona=single&commuteWeight=35&costWeight=30&serviceWeight=20&safetyWeight=15&limit=9'
 ```
+
+응답의 각 결과에는 `reasonText`가 포함된다. 예: `강남 업무지구까지 24분, 월세 중앙값 57만원, 병원 2개·학교 3개·공원 2개, 치안시설 2개·CCTV 62대 근거로 1인 청년에게 예산 내 생활권입니다.`
 
 ### `GET /api/geocode`
 
@@ -140,6 +153,7 @@ API 키가 필요한 제공자는 키를 코드에 하드코딩하지 않고 환
 
 - 교통: 현재는 ODsay/TMAP 경로 API 어댑터와 집-회사 통근 루트 검증 UI를 구현했다. API 키가 없으면 주요 업무지구별 통근시간 테이블 또는 거리 기반 폴백으로 동작한다. 배포 단계에서는 키 운영, 호출 캐시, 혼잡도, 첫차·막차, GTFS 기반 라우팅 옵션을 추가한다.
 - 생활 SOC: 현재는 병의원·학교·공원 좌표 스냅샷 반경 집계다. 다음 단계에서는 서울 열린데이터광장 API 키 기반 전체 자동 갱신과 편의시설 카테고리 확장을 추가한다.
-- 주거: 현재는 서울시 2025 전월세 파일 기반이다. 다음 단계에서는 월별 증분 갱신과 국토교통부 실거래가 API를 병행한다.
+- 안전·환경: 현재는 치안시설·CCTV 집계점·도시대기 측정망·공원 접근성 스냅샷 기반이다. 다음 단계에서는 원천 API 자동 갱신, 행정동 전체 커버리지, 범죄안전지수·녹지율 보정치를 추가한다.
+- 주거: 현재는 서울시 2025 전월세 파일 기반 중앙값과 후보 거래 예시를 제공한다. 다음 단계에서는 월별 증분 갱신과 국토교통부 실거래가 API를 병행한다.
 - 클라이언트: iOS Swift 앱은 `/api/areas`와 `/api/recommendations`를 그대로 소비하는 구조로 확장한다.
 - 수익화: 부동산·교통 플랫폼에는 추천 점수 API, 지자체에는 생활권 취약지 리포트 API로 제공한다.

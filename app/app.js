@@ -52,12 +52,12 @@ const areaAddressDefaults = {
   konkuk: "서울 광진구 화양동",
   sillim: "서울 관악구 신림동",
   cheongnyangni: "서울 동대문구 청량리동",
-  guroDigital: "서울 구로구 구로동",
   wangsimni: "서울 성동구 행당동",
-  gimpoAirport: "서울 강서구 공항동",
+  guro: "서울 구로구 구로동",
+  gongdeok: "서울 마포구 공덕동",
   magok: "서울 강서구 마곡동",
   sangam: "서울 마포구 상암동",
-  yeongdeungpo: "서울 영등포구 영등포동"
+  gimpoairport: "서울 강서구 공항동"
 };
 
 const personaLabels = {
@@ -78,7 +78,7 @@ const scoreTips = {
   commute: "대중교통 경로 API 어댑터 기반 통근시간 점수, API 키가 없으면 검증 테이블로 폴백",
   cost: "예산 대비 월세 중앙값(2025 서울 전월세 실데이터) 기반 점수",
   service: "병원·학교·공원 좌표를 생활권 반경으로 집계한 생활 SOC 접근성 점수",
-  safety: "안전·대기·녹지 환경 점수 (MVP 프록시)"
+  safety: "치안시설·CCTV 집계점·대기측정망·공원 접근성을 결합한 안전·환경 점수"
 };
 
 const nodes = {
@@ -245,7 +245,10 @@ function scoreNeighborhood(item) {
       safety: Math.round(adjusted.safety)
     },
     destination: state.destination,
-    destinationLabel: destinationLabels[state.destination]
+    destinationLabel: destinationLabels[state.destination],
+    destinationAddress: destinationAddressFor(),
+    representativeAddress: representativeAddressFor(item),
+    reasonText: buildSpecificReason({ ...item, minutes })
   };
 }
 
@@ -499,20 +502,69 @@ function renderMap() {
 }
 
 function buildReason(item) {
-  const dims = [
-    ["통근", item.adjusted.commute],
-    ["주거비", item.adjusted.cost],
-    ["생활 SOC", item.adjusted.service],
-    ["안전·환경", item.adjusted.safety]
-  ].sort((a, b) => b[1] - a[1]);
+  return item.reasonText || buildSpecificReason(item);
+}
 
-  const parts = [`${dims[0][0]}·${dims[1][0]} 강점`];
-  const overBudget = Math.round(Number(item.rentMonthly10k) - state.budget);
-  parts.push(overBudget > 0 ? `예산 ${overBudget}만원 초과 주의` : "예산 내 후보");
-  if (item.recommendedFor?.includes(state.persona)) {
-    parts.push(`${personaLabels[state.persona]} 적합`);
+function buildSpecificReason(item) {
+  const socCounts = item.evidence?.socCounts || item.socSummary?.counts || {};
+  const safetyCounts = item.evidence?.safetyEnvCounts || item.safetyEnvSummary?.counts || {};
+  const destinationLabel = item.destinationLabel || destinationLabels[state.destination] || "목적지";
+  const monthlyRent = Math.round(Number(item.rentMonthly10k || 0));
+  const budgetDelta = Math.round(state.budget - monthlyRent);
+  const budgetText = budgetDelta >= 0 ? "예산 내" : `예산 ${Math.abs(budgetDelta)}만원 초과`;
+  return `${destinationLabel} ${formatNumber(item.minutes)}분 · 월세 중앙값 ${formatNumber(monthlyRent)}만원 · 병원 ${socCounts.hospital || 0}개·학교 ${socCounts.school || 0}개·공원 ${socCounts.park || 0}개 · 치안시설 ${safetyCounts.police || 0}개·CCTV ${formatNumber(safetyCounts.cctv || 0)}대 · ${personaLabels[state.persona]} ${budgetText}`;
+}
+
+function formatRentExample(example) {
+  const rentType = example.rentType || "거래";
+  const monthly = Number(example.monthlyRent10k || 0);
+  const price = rentType === "월세"
+    ? `보증금 ${formatMoney10k(example.deposit10k)} / 월 ${formatMoney10k(monthly)}`
+    : `전세 ${formatMoney10k(example.deposit10k)}`;
+  const floor = example.floor ? `${escapeHtml(example.floor)}층` : "층 정보 없음";
+  return `${escapeHtml(example.dong)} · ${escapeHtml(example.contractMonth)} · ${escapeHtml(example.buildingUse || rentType)} · ${formatNumber(example.areaM2)}㎡ · ${floor} · ${price}`;
+}
+
+function renderRentExamples(selected) {
+  const examples = Array.isArray(selected.rentExamples) ? selected.rentExamples : [];
+  if (!examples.length) return "";
+  return `
+    <div class="callout">
+      <p><strong>실거래 예시</strong></p>
+      <ul class="evidence-list rent-example-list">
+        ${examples.map((example) => `<li>${formatRentExample(example)}</li>`).join("")}
+      </ul>
+      <p class="score-note">전월세 공개파일에서 상세 지번·건물명은 제외하고 후보 매물 판단에 필요한 금액·면적·용도만 표시합니다.</p>
+    </div>
+  `;
+}
+
+function renderSafetyEnvSummary(selected) {
+  const summary = selected.safetyEnvSummary || {};
+  const counts = summary.counts || selected.evidence?.safetyEnvCounts || {};
+  const nearest = summary.nearestFacilities || {};
+  const police = nearest.police?.name ? `${nearest.police.name} ${formatDistance(nearest.police.distanceMeters)}` : "근접 치안시설 없음";
+  const park = nearest.park?.name ? `${nearest.park.name} ${formatDistance(nearest.park.distanceMeters)}` : "근접 공원 없음";
+  return `
+    <div class="callout">
+      <p><strong>안전·환경 근거</strong><br>
+        반경 ${formatDistance(summary.radiusMeters || selected.evidence?.safetyEnvRadiusMeters || 0)} 내
+        치안시설 ${counts.police || 0}개, CCTV ${formatNumber(counts.cctv || 0)}대, 공원 ${counts.park || 0}개를 반영했습니다.
+        가장 가까운 치안시설은 ${escapeHtml(police)}, 환경 접근성 기준 공원은 ${escapeHtml(park)}입니다.
+        대기 기준은 ${escapeHtml(summary.airStation || selected.evidence?.airStation || "서울시 도시대기 측정망")}을 사용합니다.</p>
+    </div>
+  `;
+}
+
+function renderRouteCredentialHint() {
+  const integrations = state.apiMeta?.integrations || {};
+  const ready = [];
+  if (integrations.odsay) ready.push("ODsay");
+  if (integrations.tmap) ready.push("TMAP");
+  if (ready.length) {
+    return `<p class="field-hint route-live-ready">${ready.join("·")} 키 감지됨. 경로 계산 시 live API를 우선 호출합니다.</p>`;
   }
-  return parts.join(" · ");
+  return `<p class="field-hint">ODsay/TMAP 키가 없으면 거리 기반 폴백을 표시합니다. 키는 환경변수로만 주입하고 코드에는 저장하지 않습니다.</p>`;
 }
 
 function renderCards() {
@@ -660,6 +712,7 @@ function renderRoutePlanner(selected) {
         <button id="routeCalculateButton" class="ghost-button route-action primary" type="button">통근 루트 계산</button>
       </div>
       <p class="field-hint">기본 대표 주소는 로컬 좌표로 바로 변환됩니다. 직접 입력한 상세 주소 검색은 Kakao REST 키가 있을 때 동작합니다.</p>
+      ${renderRouteCredentialHint()}
       ${renderRouteResult(selected)}
     </div>
   `;
@@ -670,7 +723,9 @@ function renderEvidence(selected) {
   const evidence = selected.evidence;
   const rentDongs = Array.isArray(evidence.rentDongs) ? evidence.rentDongs.join("·") : "";
   const socCounts = evidence.socCounts || selected.socSummary?.counts || {};
+  const safetyCounts = evidence.safetyEnvCounts || selected.safetyEnvSummary?.counts || {};
   const socText = `병원 ${socCounts.hospital || 0} · 학교 ${socCounts.school || 0} · 공원 ${socCounts.park || 0}`;
+  const safetyText = `치안시설 ${safetyCounts.police || 0} · CCTV ${formatNumber(safetyCounts.cctv || 0)}대 · 대기측정 ${evidence.airStation || selected.safetyEnvSummary?.airStation || "서울시 도시대기 측정망"}`;
   const commuteSource = evidence.commuteMode === "table_fallback"
     ? `${evidence.commuteSource} (API 키 미설정 폴백)`
     : evidence.commuteSource;
@@ -684,6 +739,8 @@ function renderEvidence(selected) {
         <li>좌표 검증: ${evidence.stationCoordinateSource || "서울시 역사마스터 정보"}</li>
         <li>통근 경로: ${commuteSource}</li>
         <li>생활 SOC: 반경 ${formatDistance(evidence.socRadiusMeters)} ${socText} 집계</li>
+        <li>안전·환경: 반경 ${formatDistance(evidence.safetyEnvRadiusMeters)} ${safetyText}</li>
+        <li>실거래 예시: ${formatNumber(evidence.rentExampleCount || selected.rentExamples?.length || 0)}건 표시용 발췌</li>
       </ul>
     </div>
   `;
@@ -720,11 +777,13 @@ function renderDetail() {
       ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
       ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
       ${scoreRow("안전·환경", selected.adjusted.safety, scoreTips.safety)}
-      <p class="score-note">주거비·생활 SOC는 실제 공공데이터 기반, 통근은 경로 API 어댑터 우선·키 없을 때 테이블 폴백, 안전·환경은 MVP 프록시 점수입니다.</p>
+      <p class="score-note">주거비·생활 SOC·안전환경은 공공데이터 스냅샷 기반, 통근은 경로 API 어댑터 우선·키 없을 때 테이블 폴백입니다.</p>
     </div>
     <div class="callout">
-      <p><strong>추천 근거</strong><br>${selected.insight}</p>
+      <p><strong>추천 근거</strong><br>${buildReason(selected)} ${selected.insight}</p>
     </div>
+    ${renderRentExamples(selected)}
+    ${renderSafetyEnvSummary(selected)}
     ${renderEvidence(selected)}
     <div class="callout">
       <p><strong>사업 적용</strong><br>부동산 플랫폼에는 생활권 점수 API로, 지자체에는 주거-이동 부담 리포트로 제공할 수 있다.</p>
@@ -841,7 +900,9 @@ function renderEvidenceTable() {
       const evidence = item.evidence || {};
       const dongs = Array.isArray(evidence.rentDongs) ? evidence.rentDongs.join(", ") : "-";
       const socCounts = evidence.socCounts || item.socSummary?.counts || {};
+      const safetyCounts = evidence.safetyEnvCounts || item.safetyEnvSummary?.counts || {};
       const socSummary = `병원 ${socCounts.hospital || 0} · 학교 ${socCounts.school || 0} · 공원 ${socCounts.park || 0}`;
+      const safetySummary = `치안 ${safetyCounts.police || 0} · CCTV ${formatNumber(safetyCounts.cctv || 0)}대`;
       return `
         <tr>
           <th scope="row">${item.name}<span class="cell-sub">${item.district}</span></th>
@@ -851,6 +912,7 @@ function renderEvidenceTable() {
           <td class="num">${formatMoney10k(item.deposit10k)}</td>
           <td class="num">${formatMoney10k(item.jeonse10k)}</td>
           <td>${socSummary}<span class="cell-sub">반경 ${formatDistance(evidence.socRadiusMeters)}</span></td>
+          <td>${safetySummary}<span class="cell-sub">${item.safetyEnvSummary?.airStation || evidence.airStation || "도시대기 측정망"}</span></td>
         </tr>
       `;
     });
@@ -864,7 +926,7 @@ function renderEvidenceTable() {
       <th scope="row">합계</th>
       <td>생활권 ${state.neighborhoods.length}개</td>
       <td class="num">${formatNumber(totalRecords)}건</td>
-      <td colspan="4" class="muted">15~85㎡ 거래 중앙값 · 생활 SOC 반경 집계 기준</td>
+      <td colspan="5" class="muted">15~85㎡ 거래 중앙값 · 생활 SOC/안전환경 반경 집계 기준</td>
     </tr>
   `);
 

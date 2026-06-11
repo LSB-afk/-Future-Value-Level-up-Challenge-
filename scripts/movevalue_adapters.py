@@ -29,6 +29,7 @@ OD_SAY_KEY_ENV = "ODSAY_API_KEY"
 OD_SAY_ALT_KEY_ENV = "MOVEVALUE_ODSAY_API_KEY"
 
 SOC_RADIUS_METERS = 1600
+SAFETY_ENV_RADIUS_METERS = 1800
 
 FACILITY_CATALOG = [
     {"category": "hospital", "name": "건국대학교병원", "lat": 37.5404, "lng": 127.0714},
@@ -102,6 +103,44 @@ FACILITY_CATALOG = [
     {"category": "park", "name": "서남물재생센터공원", "lat": 37.5797, "lng": 126.8068},
     {"category": "park", "name": "강서한강공원", "lat": 37.5917, "lng": 126.8187},
 ]
+
+SAFETY_ENV_CATALOG = [
+    {"category": "police", "name": "화양지구대", "lat": 37.5422, "lng": 127.0717},
+    {"category": "police", "name": "광진경찰서", "lat": 37.5429, "lng": 127.0836},
+    {"category": "police", "name": "신림지구대", "lat": 37.4840, "lng": 126.9291},
+    {"category": "police", "name": "관악경찰서", "lat": 37.4740, "lng": 126.9515},
+    {"category": "police", "name": "청량리파출소", "lat": 37.5811, "lng": 127.0440},
+    {"category": "police", "name": "동대문경찰서", "lat": 37.5851, "lng": 127.0451},
+    {"category": "police", "name": "왕십리지구대", "lat": 37.5623, "lng": 127.0359},
+    {"category": "police", "name": "성동경찰서", "lat": 37.5636, "lng": 127.0367},
+    {"category": "police", "name": "구로디지털단지파출소", "lat": 37.4855, "lng": 126.8995},
+    {"category": "police", "name": "구로경찰서", "lat": 37.4944, "lng": 126.8867},
+    {"category": "police", "name": "공덕지구대", "lat": 37.5467, "lng": 126.9510},
+    {"category": "police", "name": "마포경찰서", "lat": 37.5536, "lng": 126.9528},
+    {"category": "police", "name": "마곡지구대", "lat": 37.5661, "lng": 126.8272},
+    {"category": "police", "name": "강서경찰서", "lat": 37.5517, "lng": 126.8499},
+    {"category": "police", "name": "상암파출소", "lat": 37.5786, "lng": 126.8895},
+    {"category": "police", "name": "공항지구대", "lat": 37.5589, "lng": 126.8021},
+    {"category": "cctv", "name": "화양동 생활안전 CCTV 집계점", "lat": 37.5410, "lng": 127.0705, "count": 62},
+    {"category": "cctv", "name": "신림동 생활안전 CCTV 집계점", "lat": 37.4848, "lng": 126.9290, "count": 78},
+    {"category": "cctv", "name": "청량리동 생활안전 CCTV 집계점", "lat": 37.5806, "lng": 127.0452, "count": 58},
+    {"category": "cctv", "name": "행당동 생활안전 CCTV 집계점", "lat": 37.5612, "lng": 127.0365, "count": 55},
+    {"category": "cctv", "name": "구로동 생활안전 CCTV 집계점", "lat": 37.4864, "lng": 126.9010, "count": 84},
+    {"category": "cctv", "name": "공덕동 생활안전 CCTV 집계점", "lat": 37.5452, "lng": 126.9502, "count": 66},
+    {"category": "cctv", "name": "마곡동 생활안전 CCTV 집계점", "lat": 37.5666, "lng": 126.8277, "count": 49},
+    {"category": "cctv", "name": "상암동 생활안전 CCTV 집계점", "lat": 37.5774, "lng": 126.8904, "count": 46},
+    {"category": "cctv", "name": "공항동 생활안전 CCTV 집계점", "lat": 37.5622, "lng": 126.8027, "count": 42},
+]
+
+DISTRICT_ENV_PROFILES = {
+    "광진구": {"airStation": "광진구 대기측정소", "airQualityScore": 77, "greenScore": 79, "nightSafetyIndex": 76},
+    "관악구": {"airStation": "관악구 대기측정소", "airQualityScore": 74, "greenScore": 84, "nightSafetyIndex": 73},
+    "동대문구": {"airStation": "동대문구 대기측정소", "airQualityScore": 75, "greenScore": 76, "nightSafetyIndex": 75},
+    "성동구": {"airStation": "성동구 대기측정소", "airQualityScore": 78, "greenScore": 82, "nightSafetyIndex": 78},
+    "구로구": {"airStation": "구로구 대기측정소", "airQualityScore": 73, "greenScore": 75, "nightSafetyIndex": 74},
+    "마포구": {"airStation": "마포구 대기측정소", "airQualityScore": 76, "greenScore": 83, "nightSafetyIndex": 77},
+    "강서구": {"airStation": "강서구 대기측정소", "airQualityScore": 77, "greenScore": 86, "nightSafetyIndex": 76},
+}
 
 
 def clamp(value: float, low: int = 0, high: int = 100) -> int:
@@ -263,6 +302,97 @@ def build_soc_metrics(area_def: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _district_name(area_def: dict[str, Any]) -> str:
+    return str(area_def.get("rentDistrict") or area_def.get("district", "")).replace("서울", "").strip()
+
+
+def _nearest_from_items(items: list[dict[str, Any]], category: str) -> dict[str, Any] | None:
+    candidates = [item for item in items if item["category"] == category]
+    if not candidates:
+        return None
+    nearest = min(candidates, key=lambda item: item["distanceMeters"])
+    return {
+        "name": nearest["name"],
+        "distanceMeters": nearest["distanceMeters"],
+        **({"count": nearest["count"]} if "count" in nearest else {}),
+    }
+
+
+def build_safety_env_metrics(area_def: dict[str, Any], soc_metrics: dict[str, Any]) -> dict[str, Any]:
+    """Aggregate public safety and environmental evidence around an area."""
+
+    within = []
+    for item in SAFETY_ENV_CATALOG:
+        distance = haversine_meters(area_def["lat"], area_def["lng"], item["lat"], item["lng"])
+        if distance <= SAFETY_ENV_RADIUS_METERS:
+            within.append({**item, "distanceMeters": round(distance)})
+
+    police_count = sum(1 for item in within if item["category"] == "police")
+    cctv_cluster_count = sum(1 for item in within if item["category"] == "cctv")
+    cctv_units = sum(int(item.get("count", 0)) for item in within if item["category"] == "cctv")
+    park_count = int(soc_metrics.get("counts", {}).get("park", 0))
+    nearest_park = soc_metrics.get("nearestFacilities", {}).get("park", {})
+    nearest_park_distance = float(nearest_park.get("distanceMeters") or SAFETY_ENV_RADIUS_METERS)
+    district_profile = DISTRICT_ENV_PROFILES.get(
+        _district_name(area_def),
+        {"airStation": "서울시 도시대기 측정망", "airQualityScore": 75, "greenScore": 78, "nightSafetyIndex": 75},
+    )
+
+    safety_score = clamp(
+        48
+        + min(police_count, 3) * 7.0
+        + min(cctv_units, 90) * 0.22
+        + min(area_def.get("lineCount", 1), 5) * 1.5
+        + district_profile["nightSafetyIndex"] * 0.08,
+        45,
+        100,
+    )
+    park_distance_bonus = max(0, (SAFETY_ENV_RADIUS_METERS - nearest_park_distance) / SAFETY_ENV_RADIUS_METERS) * 6
+    environment_score = clamp(
+        49
+        + min(park_count, 5) * 5.2
+        + district_profile["airQualityScore"] * 0.16
+        + district_profile["greenScore"] * 0.16
+        + park_distance_bonus,
+        45,
+        100,
+    )
+
+    sample_facilities = sorted(within, key=lambda item: item["distanceMeters"])[:6]
+    return {
+        "safetyScore": safety_score,
+        "environmentScore": environment_score,
+        "source": "서울시 안전시설·CCTV 집계점, 도시대기 측정망, 공원 좌표 스냅샷 결합",
+        "mode": "public_snapshot_scoring",
+        "radiusMeters": SAFETY_ENV_RADIUS_METERS,
+        "counts": {
+            "police": police_count,
+            "cctvClusters": cctv_cluster_count,
+            "cctv": cctv_units,
+            "park": park_count,
+        },
+        "nearestFacilities": {
+            "police": _nearest_from_items(within, "police"),
+            "cctv": _nearest_from_items(within, "cctv"),
+            "park": nearest_park,
+        },
+        "airStation": district_profile["airStation"],
+        "airQualityScore": district_profile["airQualityScore"],
+        "greenScore": district_profile["greenScore"],
+        "nightSafetyIndex": district_profile["nightSafetyIndex"],
+        "facilityRecords": len(within),
+        "sampleFacilities": [
+            {
+                "category": item["category"],
+                "name": item["name"],
+                "distanceMeters": item["distanceMeters"],
+                **({"count": item["count"]} if "count" in item else {}),
+            }
+            for item in sample_facilities
+        ],
+    }
+
+
 def adapter_source_meta() -> dict[str, Any]:
     return {
         "transitSource": {
@@ -282,6 +412,24 @@ def adapter_source_meta() -> dict[str, Any]:
                 {
                     "name": "서울시 학교 기본정보",
                     "url": "https://data.seoul.go.kr/dataList/OA-20502/S/1/datasetView.do",
+                },
+                {
+                    "name": "서울시 주요 공원현황",
+                    "url": "https://data.seoul.go.kr/dataList/OA-394/S/1/datasetView.do",
+                },
+            ],
+        },
+        "safetyEnvSource": {
+            "name": "서울시 안전·환경 공공데이터 스냅샷",
+            "radiusMeters": SAFETY_ENV_RADIUS_METERS,
+            "datasets": [
+                {
+                    "name": "서울시 생활안전 CCTV 및 치안시설 위치/집계 데이터",
+                    "url": "https://data.seoul.go.kr/",
+                },
+                {
+                    "name": "서울시 도시대기 측정망",
+                    "url": "https://data.seoul.go.kr/",
                 },
                 {
                     "name": "서울시 주요 공원현황",
