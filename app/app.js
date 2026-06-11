@@ -596,8 +596,6 @@ function renderCards() {
     fragment.querySelector(".name").textContent = `${item.name} · ${item.district}`;
     fragment.querySelector(".meta").textContent = `${destinationLabel} ${item.minutes}분 · 월 ${item.rentMonthly10k}만원 · ${item.station}`;
     fragment.querySelector(".reason").textContent = buildReason(item);
-    fragment.querySelector(".score").textContent = `${item.total}점`;
-    fragment.querySelector(".bar span").style.setProperty("--bar", `${item.total}%`);
     button.addEventListener("click", () => selectArea(item.id, { source: "card" }));
     nodes.cards.append(fragment);
   });
@@ -686,17 +684,31 @@ function renderRouteResult(selected) {
   `;
 }
 
+function renderRouteAreaOptions(selected) {
+  const areas = state.results.length ? state.results : state.neighborhoods;
+  return areas.map((item, index) => {
+    const selectedAttr = item.id === selected.id ? " selected" : "";
+    return `<option value="${escapeHtml(item.id)}"${selectedAttr}>${index + 1}위 ${escapeHtml(item.name)} · ${escapeHtml(item.district)}</option>`;
+  }).join("");
+}
+
 function renderRoutePlanner(selected) {
   const originValue = representativeAddressFor(selected);
   const destinationValue = selected.destinationAddress || destinationAddressFor();
   return `
     <div class="route-planner">
       <div class="route-form">
-        <label class="field compact">
+        <label class="field compact route-area-field">
+          <span>검증 생활권</span>
+          <select id="routeAreaInput">
+            ${renderRouteAreaOptions(selected)}
+          </select>
+        </label>
+        <label class="field compact route-origin-field">
           <span>집 주소</span>
           <input id="routeOriginInput" type="text" value="${escapeHtml(originValue)}" placeholder="예: 서울 광진구 화양동">
         </label>
-        <label class="field compact">
+        <label class="field compact route-destination-field">
           <span>회사 주소</span>
           <input id="routeDestinationInput" type="text" value="${escapeHtml(destinationValue)}" placeholder="예: 서울 강남구 역삼동">
         </label>
@@ -798,7 +810,7 @@ function renderRoutePanel() {
   if (!selected) {
     nodes.routeContent.innerHTML = state.isLoading
       ? `<div class="callout"><p>추천 후보를 불러온 뒤 통근 루트를 계산할 수 있습니다.</p></div>`
-      : `<div class="callout"><p>추천 생활권을 선택하면 집 주소와 회사 주소 기준 통근 루트를 검증할 수 있습니다.</p></div>`;
+      : `<div class="callout"><p>추천 생활권을 선택하거나 추천 조건을 계산하면 집 주소와 회사 주소 기준 통근 루트를 검증할 수 있습니다.</p></div>`;
     return;
   }
 
@@ -864,6 +876,7 @@ async function calculateCommuteRoute(selected) {
 }
 
 function bindRoutePlanner(selected) {
+  const routeAreaInput = document.querySelector("#routeAreaInput");
   const originInput = document.querySelector("#routeOriginInput");
   const providerInput = document.querySelector("#routeProviderInput");
   const useSelectedButton = document.querySelector("#routeUseSelectedButton");
@@ -873,6 +886,10 @@ function bindRoutePlanner(selected) {
   if (providerInput && state.route.selectedId === selected.id && state.route.result?.provider) {
     providerInput.value = state.route.result.provider === "fallback" ? "auto" : state.route.result.provider;
   }
+
+  routeAreaInput?.addEventListener("change", (event) => {
+    selectArea(event.target.value, { source: "route" });
+  });
 
   useSelectedButton?.addEventListener("click", () => {
     if (originInput) {

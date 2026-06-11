@@ -203,8 +203,7 @@ main > .workspace.is-active-view {
   display: grid;
   grid-template-columns: 340px minmax(360px, 1.2fr) minmax(360px, 0.9fr);
   grid-template-areas:
-    "controls results detail"
-    "controls results route";
+    "controls results detail";
   gap: 16px;
 }
 
@@ -234,14 +233,16 @@ main > .workspace.is-active-view {
   padding: 18px;
 }
 
-.route-panel {
-  grid-area: route;
-  align-self: start;
-  padding: 18px;
-}
-
 .section-block {
   padding: 22px;
+}
+
+.route-section {
+  padding: 22px;
+}
+
+.route-section .route-content {
+  max-width: 1060px;
 }
 
 .section-title {
@@ -632,7 +633,7 @@ input[type="range"] {
 
 .card-button {
   display: grid;
-  grid-template-columns: 36px 1fr auto;
+  grid-template-columns: 36px 1fr;
   gap: 12px;
   align-items: center;
   width: 100%;
@@ -661,8 +662,7 @@ input[type="range"] {
   min-width: 0;
 }
 
-.card-main strong,
-.score {
+.card-main strong {
   font-size: 16px;
 }
 
@@ -676,22 +676,6 @@ input[type="range"] {
   color: var(--blue);
   font-size: 12px;
   font-weight: 700;
-}
-
-.score {
-  font-weight: 900;
-}
-
-.bar {
-  height: 5px;
-  background: #edf0e8;
-}
-
-.bar span {
-  display: block;
-  height: 100%;
-  width: var(--bar);
-  background: var(--accent);
 }
 
 .refresh-note {
@@ -834,8 +818,9 @@ input[type="range"] {
   margin-bottom: 0;
 }
 
-.route-form .field:first-child,
-.route-form .field:nth-child(2) {
+.route-area-field,
+.route-origin-field,
+.route-destination-field {
   grid-column: 1 / -1;
 }
 
@@ -1226,7 +1211,7 @@ input[type="range"] {
     grid-template-columns: 320px 1fr;
     grid-template-areas:
       "controls results"
-      "detail route";
+      "detail detail";
   }
 
   .chain,
@@ -1281,8 +1266,7 @@ input[type="range"] {
     grid-template-areas:
       "controls"
       "results"
-      "detail"
-      "route";
+      "detail";
     gap: 12px;
   }
 

@@ -30,6 +30,7 @@
     <nav class="app-nav" aria-label="서비스 메뉴">
       <div class="nav-inner">
         <a href="#recommend" class="nav-link is-active" data-section="recommend">추천</a>
+        <a href="#route" class="nav-link" data-section="route">통근검증</a>
         <a href="#map" class="nav-link" data-section="map">지도</a>
         <a href="#data-evidence" class="nav-link" data-section="data-evidence">데이터 근거</a>
         <a href="#api" class="nav-link" data-section="api">API</a>
@@ -114,14 +115,18 @@
           </div>
           <div id="detailContent" class="detail-content"></div>
         </aside>
+      </section>
 
-        <aside class="panel route-panel" aria-label="통근 루트 검증">
-          <div class="section-title">
-            <h2>통근 루트 검증</h2>
-            <span class="status-pill">ODsay/TMAP</span>
-          </div>
-          <div id="routeContent" class="route-content"></div>
-        </aside>
+      <section id="route" class="panel route-section section-block anchor-target" aria-label="통근 루트 검증">
+        <div class="section-title">
+          <h2>통근 루트 검증</h2>
+          <span class="status-pill">ODsay/TMAP</span>
+        </div>
+        <p class="section-lead">
+          추천 생활권을 고른 뒤 집 주소와 회사 주소를 넣어 실제 통근 경로를 별도로 검증합니다.
+          ODsay/TMAP 키가 있으면 live 경로 API를 우선 사용하고, 키가 없으면 거리 기반 폴백으로 총 소요시간·환승·도보·요금을 확인합니다.
+        </p>
+        <div id="routeContent" class="route-content"></div>
       </section>
 
       <section id="map" class="panel map-panel section-block anchor-target" aria-label="생활권 지도">
@@ -329,9 +334,7 @@
             <span class="meta"></span>
             <span class="reason"></span>
           </span>
-          <span class="score"></span>
         </button>
-        <div class="bar"><span></span></div>
       </article>
     </template>
 
