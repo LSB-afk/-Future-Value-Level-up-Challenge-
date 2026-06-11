@@ -5,5 +5,6 @@ __pycache__/
 .env.*
 .omx/
 node_modules/
+data/raw/
 qa/docx-render/
 qa/screenshots/

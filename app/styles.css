@@ -257,6 +257,21 @@ input[type="range"] {
   border-radius: 48% 52% 43% 57%;
 }
 
+.map-empty,
+.empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.map-empty {
+  position: relative;
+  z-index: 1;
+  height: 320px;
+}
+
 .area-marker {
   position: absolute;
   width: var(--size);
@@ -559,4 +574,3 @@ input[type="range"] {
     grid-template-columns: 1fr;
   }
 }
-

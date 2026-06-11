@@ -1,28 +1,44 @@
 # MoveValue - 국토교통 서비스 발굴 경연 작업공간
 
-`MoveValue`는 주거비, 이동시간, 대중교통 접근성, 생활 SOC 접근성을 함께 계산해 국민이 체감할 수 있는 생활권 선택을 돕는 국토교통 데이터 기반 서비스 모델입니다.
+`MoveValue`는 주거비, 이동시간, 대중교통 접근성, 생활 SOC, 안전·환경 지표를 함께 계산해 국민이 체감할 수 있는 생활권 선택을 돕는 국토교통 데이터 기반 서비스 모델입니다.
 
 ## 현재 산출물
 
-- `app/`: 브라우저에서 실행 가능한 프로토타입
-- `data/`: 프로토타입용 샘플 데이터와 실제 연계 데이터 구조
+- `api/`: 추천 계산과 정적 웹앱 제공을 담당하는 Python API 서버
+- `app/`: API를 호출하는 브라우저 실행 프로토타입
+- `data/areas.actual.json`: 서울시 2025 전월세 스냅샷 기반 생활권 데이터
+- `scripts/build_real_dataset.py`: 실제 공공데이터 다운로드·정규화 파이프라인
 - `docs/competition-brief.md`: 공모전 공고·양식 확인 요약
 - `docs/data-sources.md`: 실제 연계 가능한 공공데이터 근거
+- `docs/api-development.md`: API 구조와 실행 방법
 - `docs/service-model.md`: 사업모델, 밸류체인, 구현계획
 - `docs/application-draft.md`: 참가신청서 및 기획서 작성 초안
 - `deliverables/`: 제출용 문서 산출물 저장 위치
 
-## 프로토타입 실행
+## API 웹 서비스 실행
 
-정적 웹앱이라 별도 패키지 설치 없이 실행됩니다.
+별도 패키지 설치 없이 Python 표준 라이브러리만 사용합니다.
 
 ```bash
-python3 -m http.server 5173
+python3 api/movevalue_api.py --port 5173
 ```
 
-그 다음 브라우저에서 `http://localhost:5173/app/`를 엽니다.
+그 다음 브라우저에서 `http://127.0.0.1:5173/`를 엽니다.
+
+## 실제 데이터 갱신
+
+서울시 열린데이터광장 전월세 파일을 내려받아 생활권별 월세·보증금·전세 중앙값을 다시 계산합니다. 원천 ZIP은 `data/raw/`에 저장되며 Git에는 포함하지 않습니다.
+
+```bash
+python3 scripts/build_real_dataset.py
+```
+
+## 주요 API
+
+- `GET /api/health`: 데이터 로딩 상태 확인
+- `GET /api/areas`: 실제 기반 생활권 데이터 전체 조회
+- `GET /api/recommendations`: 예산, 목적지, 가구 유형, 가중치 기반 추천 랭킹 조회
 
 ## 제출 전 확인 필요
 
 신청서에는 개인정보, 전화번호, 서명, 개인정보 수집·이용 동의가 포함됩니다. 이 항목은 사용자가 직접 확인하고 서명해야 하므로 초안에서는 `제출 전 기재`로 표시했습니다.
-
