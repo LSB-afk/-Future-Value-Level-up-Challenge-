@@ -147,8 +147,9 @@
           <span><i class="dot mid"></i>검토권</span>
           <span><i class="dot low"></i>조건 미달</span>
           <span><i class="dot apt"></i>아파트 단지</span>
-          <span class="legend-note">마커 숫자 = 종합점수, 크기 = 점수 비례</span>
+          <span class="legend-note">생활권 마커 숫자 = 종합점수, 단지 라벨 = 추정 매매가</span>
         </div>
+        <div id="propertyDashboard" class="property-dashboard" aria-live="polite"></div>
       </section>
 
       <section id="data-evidence" class="panel section-block anchor-target" aria-label="데이터 근거">
@@ -228,6 +229,14 @@
             <header><span class="method">GET</span><code>/api/apartments</code></header>
             <p>서울시 공동주택 아파트 정보 기반 단지 레이어를 반환합니다. 서울 열린데이터광장 키가 있으면 전체 단지를, 없으면 제한 스냅샷을 사용합니다.</p>
           </article>
+          <article class="api-card">
+            <header><span class="method">GET</span><code>/api/property-detail</code></header>
+            <p>지도에서 선택한 단지의 기본 정보, 가격 추정, 거래 추이, 전세 위험 신호, 생활권 정보, AI 요약을 반환합니다.</p>
+          </article>
+          <article class="api-card">
+            <header><span class="method">GET</span><code>/api/property-agent</code></header>
+            <p>선택 단지에 대해 전세 안전성, 추천 이유, 더 안전한 비교 후보를 데이터 근거와 함께 설명합니다.</p>
+          </article>
         </div>
         <div class="code-block" aria-label="추천 API 호출 예시">
           <span class="code-label">추천 API 호출 예시</span>
@@ -240,6 +249,10 @@
         <div class="code-block" aria-label="아파트 단지 API 호출 예시">
           <span class="code-label">아파트 단지 API 호출 예시</span>
           <pre><code>curl 'http://127.0.0.1:5173/api/apartments?bounds=37.45,126.80,37.70,127.18&amp;zoom=11&amp;cluster=true'</code></pre>
+        </div>
+        <div class="code-block" aria-label="부동산 상세 API 호출 예시">
+          <span class="code-label">부동산 상세 API 호출 예시</span>
+          <pre><code>curl 'http://127.0.0.1:5173/api/property-detail?id=A15275101'</code></pre>
         </div>
         <div class="callout">
           <p><strong>B2B·B2G 확장</strong><br>

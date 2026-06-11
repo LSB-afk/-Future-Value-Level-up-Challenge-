@@ -649,10 +649,11 @@ input[type="range"] {
 .apt-cluster {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  min-width: 58px;
+  height: 42px;
+  padding: 4px 8px;
   border: 3px solid #fff;
-  border-radius: 50%;
+  border-radius: 8px;
   background: #6f4aa8;
   color: #fff;
   box-shadow: 0 7px 18px rgba(25, 20, 32, 0.26);
@@ -660,6 +661,72 @@ input[type="range"] {
 
 .apt-cluster strong {
   font-size: 11px;
+  line-height: 1;
+}
+
+.apt-cluster small {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.property-price-wrapper {
+  background: transparent;
+  border: 0;
+}
+
+.property-price-marker {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  min-width: 82px;
+  padding: 6px 8px;
+  border: 2px solid #fff;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 7px 18px rgba(20, 32, 29, 0.24);
+  text-align: center;
+}
+
+.property-price-marker::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  transform: translateX(-50%) rotate(45deg);
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  background: inherit;
+}
+
+.property-price-marker.safe {
+  border-color: rgba(47, 143, 88, 0.72);
+}
+
+.property-price-marker.warn {
+  border-color: rgba(180, 135, 42, 0.82);
+}
+
+.property-price-marker.danger {
+  border-color: rgba(201, 77, 47, 0.82);
+}
+
+.property-price-marker.is-selected {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.property-price-marker strong {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.property-price-marker small {
+  color: var(--muted);
+  font-size: 10px;
   line-height: 1;
 }
 
@@ -700,6 +767,427 @@ input[type="range"] {
 
 .dot.apt {
   background: #6f4aa8;
+}
+
+/* ---------- 부동산 상세 대시보드 ---------- */
+
+.property-dashboard {
+  margin-top: 16px;
+}
+
+.property-empty {
+  display: grid;
+  gap: 4px;
+  padding: 18px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+  color: var(--muted);
+}
+
+.property-empty strong {
+  color: var(--ink);
+}
+
+.property-empty.is-error {
+  border-color: rgba(201, 77, 47, 0.35);
+  background: #fff8f5;
+  color: var(--accent-2);
+}
+
+.property-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.property-head h3 {
+  margin: 0 0 6px;
+  font-size: 24px;
+}
+
+.property-head p {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.property-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.property-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.property-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.property-card.wide {
+  grid-column: 1 / -1;
+}
+
+.property-card-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.property-card-title h4 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.property-card-title span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.property-metrics {
+  display: grid;
+  gap: 8px;
+}
+
+.property-metrics.two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.property-metric {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.property-metric span,
+.property-metric small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.property-metric strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 17px;
+  line-height: 1.25;
+}
+
+.risk-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f6faf7;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.risk-pill.safe {
+  border-color: rgba(47, 143, 88, 0.35);
+  background: #effaf2;
+  color: var(--green);
+}
+
+.risk-pill.warn {
+  border-color: rgba(180, 135, 42, 0.35);
+  background: #fbf6ea;
+  color: var(--gold);
+}
+
+.risk-pill.danger {
+  border-color: rgba(201, 77, 47, 0.35);
+  background: #fff2ed;
+  color: var(--accent-2);
+}
+
+.property-trend-chart {
+  width: 100%;
+  height: auto;
+  min-height: 170px;
+}
+
+.property-trend-chart line {
+  stroke: var(--line);
+  stroke-width: 1.5;
+}
+
+.property-trend-chart polyline {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.property-trend-chart text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.sale-line {
+  stroke: var(--blue);
+}
+
+.jeonse-line {
+  stroke: var(--gold);
+}
+
+.chart-legend {
+  display: flex;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chart-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 50%;
+}
+
+.chart-dot.sale {
+  background: var(--blue);
+}
+
+.chart-dot.jeonse {
+  background: var(--gold);
+}
+
+.risk-summary,
+.ai-headline,
+.recommendation-text,
+.property-note {
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.risk-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.risk-signal {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.risk-signal.safe {
+  border-color: rgba(47, 143, 88, 0.28);
+}
+
+.risk-signal.warn {
+  border-color: rgba(180, 135, 42, 0.36);
+  background: #fffaf0;
+}
+
+.risk-signal.danger {
+  border-color: rgba(201, 77, 47, 0.36);
+  background: #fff7f3;
+}
+
+.risk-signal strong,
+.risk-signal span {
+  display: block;
+}
+
+.risk-signal span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.risk-signal em {
+  flex: 0 0 auto;
+  color: var(--ink);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 900;
+  text-align: right;
+}
+
+.ai-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-summary-grid div {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.ai-summary-grid strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.ai-summary-grid ul,
+.agent-answer ul {
+  margin: 0;
+  padding-left: 17px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.property-compare-table {
+  overflow-x: auto;
+}
+
+.property-compare-table table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+
+.property-compare-table th,
+.property-compare-table td {
+  padding: 9px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: 13px;
+}
+
+.property-compare-table th {
+  color: var(--ink);
+}
+
+.compare-empty,
+.chart-empty {
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #fbfcf8;
+  font-size: 13px;
+}
+
+.text-button,
+.chip-button {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.agent-form {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.agent-form input {
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.agent-answer {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.agent-answer p {
+  margin-bottom: 0;
+  color: var(--ink);
+}
+
+.agent-answer small {
+  font-size: 12px;
+}
+
+.agent-answer.is-error {
+  color: var(--accent-2);
+  background: #fff8f5;
+}
+
+.agent-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-button {
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.data-status dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.data-status dl div {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.data-status dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.data-status dd {
+  margin: 4px 0 0;
+  font-weight: 800;
+  line-height: 1.4;
 }
 
 /* ---------- 추천 카드 ---------- */
@@ -1320,6 +1808,12 @@ input[type="range"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .property-grid,
+  .ai-summary-grid,
+  .data-status dl {
+    grid-template-columns: 1fr;
+  }
+
   .chain div::after {
     display: none;
   }
@@ -1389,6 +1883,28 @@ input[type="range"] {
     justify-content: center;
     white-space: normal;
     text-align: center;
+  }
+
+  .property-head {
+    flex-direction: column;
+  }
+
+  .property-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .property-metrics.two,
+  .agent-form {
+    grid-template-columns: 1fr;
+  }
+
+  .risk-signal {
+    flex-direction: column;
+  }
+
+  .risk-signal em {
+    text-align: left;
   }
 
   .chain,

@@ -10,6 +10,8 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
+from property_model import build_property_preview
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT_PATH = ROOT / "data" / "apartments.seoul.snapshot.json"
@@ -184,7 +186,26 @@ def cluster_step(zoom: int) -> float:
 
 
 def apartment_feature(item: dict) -> dict:
-    return {"type": "apartment", **item}
+    return {"type": "apartment", "pricePreview": build_property_preview(item), **item}
+
+
+def cluster_price_preview(members: list[dict]) -> dict:
+    previews = [build_property_preview(item) for item in members]
+    if not previews:
+        return {}
+    avg_sale = sum(float(item.get("sale10k") or 0) for item in previews) / len(previews)
+    avg_jeonse_ratio = sum(float(item.get("jeonseRatio") or 0) for item in previews) / len(previews)
+    risk_counts = {"high": 0, "warning": 0, "low": 0}
+    for item in previews:
+        key = item.get("riskLevelKey") or "low"
+        risk_counts[key] = risk_counts.get(key, 0) + 1
+    dominant = max(risk_counts.items(), key=lambda pair: pair[1])[0]
+    return {
+        "sale10k": round(avg_sale),
+        "jeonseRatio": round(avg_jeonse_ratio, 1),
+        "riskLevelKey": dominant,
+        "riskCounts": risk_counts,
+    }
 
 
 def cluster_apartments(apartments: list[dict], zoom: int) -> list[dict]:
@@ -215,6 +236,7 @@ def cluster_apartments(apartments: list[dict], zoom: int) -> list[dict]:
                 "households": total_households,
                 "districts": districts[:4],
                 "sampleNames": sample_names,
+                "pricePreview": cluster_price_preview(members),
             }
         )
     return features

@@ -48,6 +48,8 @@ ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 SEOUL_OPEN_API_KEY=발급키 python3 scripts/build_apartment_snapshot.py
 ```
 
+부동산 상세 대시보드는 `api/property_model.py`와 `api/property_adapters.py`가 담당한다. OpenAptInfo 실데이터 필드와 서울시 2025 전월세 생활권 집계를 결합해 단지 상세, 가격 추정, 전세 위험 신호, AI 요약을 생성한다. 매매 실거래가·공시가격은 국토교통부/공동주택 공시가격 API 키 연계 전까지 `dataStatus`에 추정으로 표시한다.
+
 ## 엔드포인트
 
 ### `GET /api/health`
@@ -171,12 +173,62 @@ curl 'http://127.0.0.1:5173/api/commute-route?origin=서울%20광진구%20화양
 | `meta.availableRecords` | 현재 서버가 좌표와 함께 보유한 단지 수 |
 | `features[].type` | `apartment` 또는 `cluster` |
 | `features[].households` | 단지 또는 클러스터 총 세대수 |
+| `features[].pricePreview` | 지도 가격 라벨용 추정 매매가, 전세가율, 위험 신호 등급 |
 
 예시:
 
 ```bash
 curl 'http://127.0.0.1:5173/api/apartments?bounds=37.45,126.80,37.70,127.18&zoom=11&cluster=true'
 ```
+
+### `GET /api/property-detail`
+
+지도에서 선택한 단지의 상세 대시보드 데이터를 반환한다.
+
+쿼리 파라미터:
+
+| 이름 | 예시 | 설명 |
+| --- | --- | --- |
+| `id` | `A15275101` | OpenAptInfo 단지 ID |
+| `q` | `개봉건영` | 단지명·주소 검색. `id`가 없을 때 사용 |
+
+응답 핵심 필드:
+
+| 필드 | 설명 |
+| --- | --- |
+| `detail.name`, `detail.address` | 단지명과 주소 |
+| `detail.approvalYear`, `detail.households`, `detail.areaOptions` | 사용승인연도, 세대수, 면적 옵션 |
+| `detail.price` | 최근 매매가·전세가·월세·공시가격·주변 평균·전세가율 |
+| `detail.transactions` | 최근 12개월 매매/전세 추이 |
+| `detail.risk` | 전세 위험 신호 점수, 등급, 항목별 근거 |
+| `detail.lifestyle` | 생활권 교통/SOC/안전/환경 정보 |
+| `detail.aiSummary` | 장점, 단점, 주의사항, 추천 여부 |
+| `detail.dataStatus` | 실데이터, 추정, 연계 예정 필드 구분 |
+
+예시:
+
+```bash
+curl 'http://127.0.0.1:5173/api/property-detail?id=A15275101'
+```
+
+### `GET /api/property-agent`
+
+선택 단지와 질문을 받아 데이터 근거 기반 답변을 반환한다. 외부 LLM 호출 없이 프로토타입 내부 규칙으로 전세 안전성, 추천 이유, 더 안전한 비교 후보를 설명한다.
+
+쿼리 파라미터:
+
+| 이름 | 예시 | 설명 |
+| --- | --- | --- |
+| `id` | `A15275101` | OpenAptInfo 단지 ID |
+| `question` | `비슷한 가격대의 더 안전한 지역을 찾아줘` | 사용자 질문 |
+
+예시:
+
+```bash
+curl 'http://127.0.0.1:5173/api/property-agent?id=A15275101&question=비슷한%20가격대의%20더%20안전한%20지역을%20찾아줘'
+```
+
+응답은 `agent.answer`, `agent.basis`, `agent.suggestedComparisons`, `agent.disclaimer`를 포함한다. 전세 위험 신호 결과는 법적 판정이 아니라 계약 전 확인 체크리스트로 표현한다.
 
 ## 지도 구현과 제공자 교체
 

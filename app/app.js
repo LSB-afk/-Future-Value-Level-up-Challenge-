@@ -32,6 +32,18 @@ const state = {
     requestId: 0,
     timer: null
   },
+  property: {
+    selectedId: null,
+    isLoading: false,
+    detail: null,
+    error: "",
+    requestId: 0,
+    comparison: [],
+    agentQuestion: "이 아파트 전세 들어가도 괜찮아?",
+    agentAnswer: null,
+    agentLoading: false,
+    agentError: ""
+  },
   showAllCards: false,
   evidenceRendered: false,
   weights: {
@@ -113,6 +125,7 @@ const nodes = {
   routeContent: document.querySelector("#routeContent"),
   apartmentLayerToggle: document.querySelector("#apartmentLayerToggle"),
   apartmentLayerStatus: document.querySelector("#apartmentLayerStatus"),
+  propertyDashboard: document.querySelector("#propertyDashboard"),
   selectedBadge: document.querySelector("#selectedBadge"),
   rankBadge: document.querySelector("#rankBadge"),
   candidateCount: document.querySelector("#candidateCount"),
@@ -162,6 +175,17 @@ function formatDistance(value) {
 function formatFare(value) {
   const fare = Number(value || 0);
   return fare ? `${formatNumber(fare)}원` : "-";
+}
+
+function formatPercent(value, digits = 1) {
+  const number = Number(value || 0);
+  return `${number.toFixed(digits)}%`;
+}
+
+function riskTone(key) {
+  if (key === "high") return "danger";
+  if (key === "warning" || key === "unknown") return "warn";
+  return "safe";
 }
 
 function destinationAddressFor() {
@@ -530,20 +554,27 @@ function renderApartmentLayerStatus() {
 function apartmentPopup(feature) {
   const approval = feature.approvalDate || (feature.approvalYear ? `${feature.approvalYear}년` : "사용승인일 없음");
   const parking = feature.parkingCount ? ` · 주차 ${formatNumber(feature.parkingCount)}대` : "";
+  const preview = feature.pricePreview || {};
+  const price = preview.saleLabel ? `추정 매매 ${escapeHtml(preview.saleLabel)} · 전세가율 ${formatPercent(preview.jeonseRatio)}` : "가격 미리보기 준비 중";
   return `
     <strong>${escapeHtml(feature.name)}</strong><br>
     ${escapeHtml(feature.address || `${feature.district || ""} ${feature.dong || ""}`.trim())}<br>
     ${formatNumber(feature.households)}세대 · ${formatNumber(feature.buildingCount)}개동 · ${escapeHtml(approval)}${parking}<br>
-    <span class="popup-muted">${escapeHtml(feature.housingType || "공동주택")} · ${escapeHtml(feature.heating || "난방 정보 없음")}</span>
+    <span class="popup-muted">${escapeHtml(feature.housingType || "공동주택")} · ${escapeHtml(feature.heating || "난방 정보 없음")}</span><br>
+    <span class="popup-muted">${price}</span><br>
+    <span class="popup-muted">클릭한 단지의 상세 대시보드가 아래에 열립니다.</span>
   `;
 }
 
 function clusterPopup(feature) {
   const districts = Array.isArray(feature.districts) && feature.districts.length ? feature.districts.join(", ") : "서울";
   const samples = Array.isArray(feature.sampleNames) ? feature.sampleNames.join(", ") : "";
+  const preview = feature.pricePreview || {};
+  const sale = preview.sale10k ? `평균 추정 매매 ${formatMoney10k(preview.sale10k)} · 전세가율 ${formatPercent(preview.jeonseRatio)}` : "";
   return `
     <strong>아파트 단지 ${formatNumber(feature.count)}개</strong><br>
     ${escapeHtml(districts)} · ${formatNumber(feature.households)}세대<br>
+    ${sale ? `<span class="popup-muted">${sale}</span><br>` : ""}
     <span class="popup-muted">${escapeHtml(samples)}</span><br>
     <span class="popup-muted">확대하면 개별 단지로 표시됩니다.</span>
   `;
@@ -561,13 +592,15 @@ function renderApartmentLayer() {
 
   state.apartments.features.forEach((feature) => {
     if (feature.type === "cluster") {
+      const preview = feature.pricePreview || {};
+      const priceLabel = preview.sale10k ? formatMoney10k(preview.sale10k).replace(" ", "") : `${formatNumber(feature.count)}개`;
       const marker = L.marker([feature.lat, feature.lng], {
         title: `아파트 단지 ${feature.count}개`,
         icon: L.divIcon({
           className: "apt-cluster-wrapper",
-          html: `<span class="apt-cluster"><strong>${formatNumber(feature.count)}</strong></span>`,
-          iconSize: [44, 44],
-          iconAnchor: [22, 22],
+          html: `<span class="apt-cluster"><strong>${formatNumber(feature.count)}</strong><small>${priceLabel}</small></span>`,
+          iconSize: [74, 50],
+          iconAnchor: [37, 25],
           popupAnchor: [0, -18]
         })
       });
@@ -580,15 +613,27 @@ function renderApartmentLayer() {
       return;
     }
 
-    L.circleMarker([feature.lat, feature.lng], {
-      radius: 4,
-      color: "#ffffff",
-      weight: 1.5,
-      fillColor: "#6f4aa8",
-      fillOpacity: 0.82
-    })
+    const preview = feature.pricePreview || {};
+    const selected = feature.id === state.property.selectedId;
+    const marker = L.marker([feature.lat, feature.lng], {
+      title: feature.name,
+      icon: L.divIcon({
+        className: "property-price-wrapper",
+        html: `
+          <span class="property-price-marker ${riskTone(preview.riskLevelKey)}${selected ? " is-selected" : ""}">
+            <strong>${preview.saleLabel ? escapeHtml(preview.saleLabel.replace(" ", "")) : "단지"}</strong>
+            <small>${preview.jeonseRatio ? `전세 ${formatPercent(preview.jeonseRatio)}` : "상세 보기"}</small>
+          </span>
+        `,
+        iconSize: [94, 48],
+        iconAnchor: [47, 24],
+        popupAnchor: [0, -22]
+      })
+    });
+    marker
       .bindPopup(apartmentPopup(feature))
       .bindTooltip(feature.name, { direction: "top", offset: [0, -4] })
+      .on("click", () => selectProperty(feature.id))
       .addTo(layer);
   });
   renderApartmentLayerStatus();
@@ -691,6 +736,382 @@ function renderMap() {
 
   if (!renderLeafletMap()) {
     renderFallbackMap();
+  }
+}
+
+function propertyMetric(label, value, note = "") {
+  return `
+    <div class="property-metric">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${note ? `<small>${escapeHtml(note)}</small>` : ""}
+    </div>
+  `;
+}
+
+function statusText(status) {
+  if (status === "high") return "집중 확인";
+  if (status === "warning") return "주의";
+  if (status === "unknown") return "미확인";
+  return "양호";
+}
+
+function renderTrendChart(rows) {
+  if (!Array.isArray(rows) || rows.length < 2) {
+    return `<div class="chart-empty">거래 추이 데이터 준비 중</div>`;
+  }
+  const values = rows.flatMap((row) => [Number(row.sale10k || 0), Number(row.jeonse10k || 0)]).filter(Boolean);
+  const min = Math.min(...values) * 0.96;
+  const max = Math.max(...values) * 1.04;
+  const width = 420;
+  const height = 170;
+  const left = 34;
+  const right = 14;
+  const top = 18;
+  const bottom = 32;
+  const usableWidth = width - left - right;
+  const usableHeight = height - top - bottom;
+  const y = (value) => top + usableHeight - ((Number(value) - min) / (max - min || 1)) * usableHeight;
+  const x = (index) => left + (index / (rows.length - 1)) * usableWidth;
+  const salePoints = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.sale10k).toFixed(1)}`).join(" ");
+  const jeonsePoints = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.jeonse10k).toFixed(1)}`).join(" ");
+  const first = rows[0]?.month || "";
+  const last = rows[rows.length - 1]?.month || "";
+  return `
+    <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 거래 추이 그래프">
+      <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" />
+      <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" />
+      <polyline class="sale-line" points="${salePoints}" />
+      <polyline class="jeonse-line" points="${jeonsePoints}" />
+      <text x="${left}" y="${height - 10}">${escapeHtml(first)}</text>
+      <text x="${width - right}" y="${height - 10}" text-anchor="end">${escapeHtml(last)}</text>
+      <text x="${left}" y="12">${escapeHtml(formatMoney10k(max))}</text>
+      <text x="${width - right}" y="12" text-anchor="end">매매 / 전세</text>
+    </svg>
+    <div class="chart-legend">
+      <span><i class="chart-dot sale"></i>매매 추정</span>
+      <span><i class="chart-dot jeonse"></i>전세 추정</span>
+    </div>
+  `;
+}
+
+function renderRiskSignals(risk) {
+  const signals = Array.isArray(risk?.signals) ? risk.signals : [];
+  return signals.map((item) => `
+    <li class="risk-signal ${riskTone(item.status)}">
+      <div>
+        <strong>${escapeHtml(item.label)}</strong>
+        <span>${escapeHtml(item.evidence)}</span>
+      </div>
+      <em>${escapeHtml(item.value)} · ${statusText(item.status)}</em>
+    </li>
+  `).join("");
+}
+
+function renderCompareTable() {
+  const rows = state.property.comparison;
+  if (!rows.length) {
+    return `<div class="compare-empty">비교에 추가한 단지가 없습니다. 상세 패널에서 최대 3개까지 추가할 수 있습니다.</div>`;
+  }
+  return `
+    <div class="property-compare-table">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">단지</th>
+            <th scope="col">매매</th>
+            <th scope="col">전세가율</th>
+            <th scope="col">위험 신호</th>
+            <th scope="col">생활권</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.map((item) => `
+            <tr>
+              <th scope="row">${escapeHtml(item.name)}</th>
+              <td>${formatMoney10k(item.price.recentSale10k)}</td>
+              <td>${formatPercent(item.price.jeonseRatio)}</td>
+              <td><span class="risk-pill ${riskTone(item.risk.levelKey)}">${escapeHtml(item.risk.level)}</span></td>
+              <td>${escapeHtml(item.lifestyle.livingAreaName)} · SOC ${formatNumber(item.lifestyle.serviceScore)}</td>
+              <td><button class="text-button" type="button" data-compare-remove="${escapeHtml(item.id)}">제거</button></td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAgentAnswer() {
+  const answer = state.property.agentAnswer;
+  if (state.property.agentLoading) {
+    return `<div class="agent-answer is-loading">데이터 근거를 정리하는 중입니다.</div>`;
+  }
+  if (state.property.agentError) {
+    return `<div class="agent-answer is-error">${escapeHtml(state.property.agentError)}</div>`;
+  }
+  if (!answer) {
+    return `<div class="agent-answer">질문을 입력하면 가격·생활권·전세 위험 신호 근거를 함께 답변합니다.</div>`;
+  }
+  return `
+    <div class="agent-answer">
+      <p>${escapeHtml(answer.answer)}</p>
+      <ul>
+        ${(answer.basis || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
+      </ul>
+      ${(answer.suggestedComparisons || []).length ? `
+        <div class="agent-suggestions">
+          ${(answer.suggestedComparisons || []).map((item) => `
+            <button type="button" class="chip-button" data-agent-property-id="${escapeHtml(item.id)}">
+              ${escapeHtml(item.name)} · ${escapeHtml(item.saleLabel)} · ${escapeHtml(item.riskLevel)}
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+      <small>${escapeHtml(answer.disclaimer || "")}</small>
+    </div>
+  `;
+}
+
+function addPropertyToCompare(detail) {
+  if (!detail) return;
+  const existing = state.property.comparison.find((item) => item.id === detail.id);
+  if (existing) return;
+  state.property.comparison = [...state.property.comparison, detail].slice(-3);
+  renderPropertyDashboard();
+}
+
+function removePropertyFromCompare(id) {
+  state.property.comparison = state.property.comparison.filter((item) => item.id !== id);
+  renderPropertyDashboard();
+}
+
+async function askPropertyAgent(event) {
+  event?.preventDefault();
+  const detail = state.property.detail;
+  if (!detail) return;
+  const input = document.querySelector("#propertyAgentQuestion");
+  const question = input?.value?.trim() || state.property.agentQuestion;
+  state.property.agentQuestion = question;
+  state.property.agentLoading = true;
+  state.property.agentError = "";
+  renderPropertyDashboard();
+  try {
+    const params = new URLSearchParams({ id: detail.id, question });
+    const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
+    state.property.agentAnswer = payload.agent || null;
+  } catch (error) {
+    state.property.agentError = `AI Agent 응답 실패: ${error.message}`;
+  } finally {
+    state.property.agentLoading = false;
+    renderPropertyDashboard();
+  }
+}
+
+function bindPropertyDashboardEvents() {
+  document.querySelector("#addCompareButton")?.addEventListener("click", () => {
+    addPropertyToCompare(state.property.detail);
+  });
+  document.querySelectorAll("[data-compare-remove]").forEach((button) => {
+    button.addEventListener("click", () => removePropertyFromCompare(button.dataset.compareRemove));
+  });
+  document.querySelector("#propertyAgentForm")?.addEventListener("submit", askPropertyAgent);
+  document.querySelectorAll("[data-agent-property-id]").forEach((button) => {
+    button.addEventListener("click", () => selectProperty(button.dataset.agentPropertyId));
+  });
+}
+
+function renderPropertyDashboard() {
+  if (!nodes.propertyDashboard) return;
+
+  if (state.property.isLoading) {
+    nodes.propertyDashboard.innerHTML = `
+      <div class="property-empty">
+        <strong>단지 상세 정보를 불러오는 중입니다.</strong>
+        <span>실거래·공시가격 연계 구조와 전세 위험 신호를 계산합니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  if (state.property.error) {
+    nodes.propertyDashboard.innerHTML = `<div class="property-empty is-error">${escapeHtml(state.property.error)}</div>`;
+    return;
+  }
+
+  const detail = state.property.detail;
+  if (!detail) {
+    nodes.propertyDashboard.innerHTML = `
+      <div class="property-empty">
+        <strong>지도에서 아파트 단지를 선택하세요.</strong>
+        <span>단지 가격, 전세 위험 신호, 생활권 정보, AI 요약을 한 화면에서 확인할 수 있습니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const price = detail.price || {};
+  const risk = detail.risk || {};
+  const lifestyle = detail.lifestyle || {};
+  const ai = detail.aiSummary || {};
+  const areaText = (detail.areaOptions || []).map((item) => `${item.exclusiveM2}㎡`).join(" / ");
+  const compareExists = state.property.comparison.some((item) => item.id === detail.id);
+  nodes.propertyDashboard.innerHTML = `
+    <div class="property-head">
+      <div>
+        <p class="eyebrow">부동산 상세 대시보드</p>
+        <h3>${escapeHtml(detail.name)}</h3>
+        <p>${escapeHtml(detail.address || "")}</p>
+      </div>
+      <div class="property-actions">
+        <span class="risk-pill ${riskTone(risk.levelKey)}">${escapeHtml(risk.level || "점검 필요")} · ${formatNumber(risk.score)}점</span>
+        <button id="addCompareButton" class="ghost-button" type="button" ${compareExists ? "disabled" : ""}>
+          ${compareExists ? "비교 추가됨" : "비교에 추가"}
+        </button>
+      </div>
+    </div>
+
+    <div class="property-grid">
+      <section class="property-card">
+        <div class="property-card-title">
+          <h4>기본 정보</h4>
+          <span>OpenAptInfo</span>
+        </div>
+        <div class="property-metrics two">
+          ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
+          ${propertyMetric("주택 유형", detail.housingType || "확인 필요")}
+          ${propertyMetric("준공/사용승인", detail.approvalYear ? `${detail.approvalYear}년` : "확인 필요", `${formatNumber(detail.buildingAge)}년 경과`)}
+          ${propertyMetric("세대/동수", `${formatNumber(detail.households)}세대`, `${formatNumber(detail.buildingCount)}개동`)}
+          ${propertyMetric("면적 옵션", areaText || "확인 필요")}
+          ${propertyMetric("용도지역", detail.landUse || "연계 예정")}
+        </div>
+      </section>
+
+      <section class="property-card">
+        <div class="property-card-title">
+          <h4>가격 정보</h4>
+          <span>${escapeHtml(price.sourceLabel || "공공 데이터 기반")}</span>
+        </div>
+        <div class="property-metrics two">
+          ${propertyMetric("최근 매매가", formatMoney10k(price.recentSale10k), "실거래 API 연계 전 추정")}
+          ${propertyMetric("최근 전세가", formatMoney10k(price.recentJeonse10k), `전세가율 ${formatPercent(price.jeonseRatio)}`)}
+          ${propertyMetric("월세", `${formatMoney10k(price.monthlyDeposit10k)} / 월 ${formatMoney10k(price.monthlyRent10k)}`, "생활권 월세 중앙값 기반")}
+          ${propertyMetric("공시가격", formatMoney10k(price.officialPrice10k), "공시가격 API 연계 전 추정")}
+          ${propertyMetric("주변 평균 매매", formatMoney10k(price.surroundingAverageSale10k), `${price.saleGapPercent > 0 ? "+" : ""}${formatPercent(price.saleGapPercent)} 차이`)}
+          ${propertyMetric("최근 변동률", `${price.priceChangeRate > 0 ? "+" : ""}${formatPercent(price.priceChangeRate)}`, "최근 1년 추정")}
+        </div>
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>거래 추이</h4>
+          <span>최근 12개월</span>
+        </div>
+        ${renderTrendChart(detail.transactions)}
+      </section>
+
+      <section class="property-card">
+        <div class="property-card-title">
+          <h4>전세 위험 신호 점검</h4>
+          <span>법적 판정 아님</span>
+        </div>
+        <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
+        <ul class="risk-list">${renderRiskSignals(risk)}</ul>
+        <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
+      </section>
+
+      <section class="property-card">
+        <div class="property-card-title">
+          <h4>생활권 정보</h4>
+          <span>${escapeHtml(lifestyle.livingAreaName || "")}</span>
+        </div>
+        <div class="property-metrics two">
+          ${propertyMetric("대중교통", `${formatNumber(lifestyle.transitScore)}점`, lifestyle.station || "")}
+          ${propertyMetric("생활 SOC", `${formatNumber(lifestyle.serviceScore)}점`, `병원 ${formatNumber(lifestyle.counts?.hospital)} · 학교 ${formatNumber(lifestyle.counts?.school)} · 공원 ${formatNumber(lifestyle.counts?.park)}`)}
+          ${propertyMetric("안전", `${formatNumber(lifestyle.safetyScore)}점`, `치안시설 ${formatNumber(lifestyle.counts?.police)} · CCTV ${formatNumber(lifestyle.counts?.cctv)}`)}
+          ${propertyMetric("환경", `${formatNumber(lifestyle.carbonScore)}점`, "대기질·녹지 접근성")}
+        </div>
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>AI 요약</h4>
+          <span>데이터 근거 기반</span>
+        </div>
+        <p class="ai-headline">${escapeHtml(ai.headline || "")}</p>
+        <div class="ai-summary-grid">
+          <div><strong>장점</strong><ul>${(ai.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+          <div><strong>단점</strong><ul>${(ai.weaknesses || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+          <div><strong>주의사항</strong><ul>${(ai.cautions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
+        </div>
+        <p class="recommendation-text">${escapeHtml(ai.recommendation || "")}</p>
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>단지 비교</h4>
+          <span>최대 3개</span>
+        </div>
+        ${renderCompareTable()}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>AI Agent 질의응답</h4>
+          <span>가격·이동·위험 신호 통합</span>
+        </div>
+        <form id="propertyAgentForm" class="agent-form">
+          <input id="propertyAgentQuestion" type="text" value="${escapeHtml(state.property.agentQuestion)}" aria-label="AI Agent 질문">
+          <button class="primary-button" type="submit">질문</button>
+        </form>
+        ${renderAgentAnswer()}
+      </section>
+
+      <section class="property-card wide data-status">
+        <div class="property-card-title">
+          <h4>데이터 연계 상태</h4>
+          <span>실데이터와 추정 구분</span>
+        </div>
+        <dl>
+          ${Object.entries(detail.dataStatus || {}).map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
+        </dl>
+      </section>
+    </div>
+  `;
+  bindPropertyDashboardEvents();
+}
+
+async function selectProperty(id) {
+  if (!id) return;
+  state.property.selectedId = id;
+  state.property.isLoading = true;
+  state.property.error = "";
+  state.property.agentAnswer = null;
+  state.property.agentError = "";
+  state.property.requestId += 1;
+  const requestId = state.property.requestId;
+  renderApartmentLayer();
+  renderPropertyDashboard();
+
+  try {
+    const payload = await fetchJson(`/api/property-detail?id=${encodeURIComponent(id)}`);
+    if (requestId !== state.property.requestId) return;
+    state.property.detail = payload.detail || null;
+    if (state.property.detail) {
+      state.property.agentQuestion = `${state.property.detail.name} 전세 들어가도 괜찮아?`;
+      addPropertyToCompare(state.property.detail);
+    }
+  } catch (error) {
+    if (requestId !== state.property.requestId) return;
+    state.property.detail = null;
+    state.property.error = `단지 상세 정보를 불러오지 못했습니다: ${error.message}`;
+  } finally {
+    if (requestId === state.property.requestId) {
+      state.property.isLoading = false;
+      renderApartmentLayer();
+      renderPropertyDashboard();
+    }
   }
 }
 
@@ -1195,6 +1616,7 @@ function render() {
   renderControls();
   renderApiStatus();
   renderMap();
+  renderPropertyDashboard();
   renderCards();
   renderDetail();
   renderRoutePanel();

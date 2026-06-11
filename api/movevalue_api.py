@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
+from property_adapters import property_agent_response, property_detail_response
 from route_adapters import build_commute_route, credential_status, resolve_location
 
 
@@ -377,6 +378,12 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/apartments":
                 self.send_json(HTTPStatus.OK, apartments_response(parse_qs(parsed.query)))
+                return
+            if path == "/api/property-detail":
+                self.send_json(HTTPStatus.OK, property_detail_response(parse_qs(parsed.query)))
+                return
+            if path == "/api/property-agent":
+                self.send_json(HTTPStatus.OK, property_agent_response(parse_qs(parsed.query)))
                 return
             if path == "/api/recommendations":
                 query = normalize_query(parse_qs(parsed.query))
