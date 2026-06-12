@@ -35,6 +35,7 @@
 - `docs/worklog.md`: 작업 일지, 다음 작업 우선순위, 이어서 작업용 프롬프트
 - `docs/verification.md`: 실행·브라우저·데이터 검증 로그
 - `docs/application-draft.md`: 참가신청서 및 기획서 작성 초안
+- `architecture/`: 시스템 아키텍처, 데이터 흐름, 사용자 플로우, API 시퀀스, 배포·보안 다이어그램
 - `deliverables/`: 제출용 문서 산출물 저장 위치
 
 ## API 웹 서비스 실행
