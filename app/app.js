@@ -1,10 +1,11 @@
-const CARD_PREVIEW_COUNT = 6;
+const CARD_PREVIEW_COUNT = 5;
 
 const state = {
   neighborhoods: [],
   results: [],
   selectedId: null,
   destination: "gangnam",
+  destinationQuery: "",
   budget: 70,
   persona: "single",
   apiMeta: null,
@@ -20,7 +21,8 @@ const state = {
     selectedId: null,
     isLoading: false,
     result: null,
-    error: ""
+    error: "",
+    focusMap: false
   },
   apartments: {
     enabled: true,
@@ -48,11 +50,12 @@ const state = {
   },
   showAllCards: false,
   evidenceRendered: false,
+  detailPanelOpen: false,
   weights: {
-    commute: 35,
-    cost: 30,
-    service: 20,
-    safety: 15
+    commute: 25,
+    cost: 25,
+    service: 25,
+    safety: 25
   }
 };
 
@@ -71,6 +74,39 @@ const destinationAddresses = {
   digital: "서울 구로구 구로동",
   pangyo: "경기도 성남시 분당구 삼평동"
 };
+
+const destinationSearchOptions = [
+  {
+    key: "gangnam",
+    label: "강남역 · 테헤란로",
+    address: "서울 강남구 역삼동",
+    keywords: ["강남", "역삼", "선릉", "삼성", "테헤란", "강남역"]
+  },
+  {
+    key: "yeouido",
+    label: "여의도 · 금융권",
+    address: "서울 영등포구 여의도동",
+    keywords: ["여의도", "국회의사당", "ifc", "더현대", "금융"]
+  },
+  {
+    key: "seoulStation",
+    label: "서울역 · 도심권",
+    address: "서울 중구 봉래동2가",
+    keywords: ["서울역", "중구", "시청", "광화문", "종로", "을지로", "도심"]
+  },
+  {
+    key: "digital",
+    label: "구로디지털단지",
+    address: "서울 구로구 구로동",
+    keywords: ["구로", "가산", "디지털", "구디", "가디"]
+  },
+  {
+    key: "pangyo",
+    label: "판교테크노밸리",
+    address: "경기도 성남시 분당구 삼평동",
+    keywords: ["판교", "삼평", "분당", "성남", "테크노밸리"]
+  }
+];
 
 const areaAddressDefaults = {
   konkuk: "서울 광진구 화양동",
@@ -118,6 +154,7 @@ const nodes = {
   costWeightOutput: document.querySelector("#costWeightOutput"),
   serviceWeightOutput: document.querySelector("#serviceWeightOutput"),
   safetyWeightOutput: document.querySelector("#safetyWeightOutput"),
+  refreshButton: document.querySelector("#refreshButton"),
   resetButton: document.querySelector("#resetButton"),
   cards: document.querySelector("#cards"),
   toggleCards: document.querySelector("#toggleCards"),
@@ -130,18 +167,11 @@ const nodes = {
   socRadiusToggle: document.querySelector("#socRadiusToggle"),
   apartmentLayerStatus: document.querySelector("#apartmentLayerStatus"),
   propertyDashboard: document.querySelector("#propertyDashboard"),
-  mapBudgetValue: document.querySelector("#mapBudgetValue"),
-  mapDestinationValue: document.querySelector("#mapDestinationValue"),
-  mapPersonaValue: document.querySelector("#mapPersonaValue"),
-  mapRankCount: document.querySelector("#mapRankCount"),
-  mapRankCaption: document.querySelector("#mapRankCaption"),
-  mapRankingList: document.querySelector("#mapRankingList"),
-  mapApartmentCount: document.querySelector("#mapApartmentCount"),
-  mapApartmentList: document.querySelector("#mapApartmentList"),
-  mapScaleBadge: document.querySelector("#mapScaleBadge"),
-  mapLegendNote: document.querySelector("#mapLegendNote"),
+  detailSubpanel: document.querySelector("#detailSubpanel"),
+  closeSubpanelButton: document.querySelector("#closeSubpanelButton"),
+  subpanelCloseXButton: document.querySelector("#subpanelCloseXButton"),
+  subpanelMeta: document.querySelector("#subpanelMeta"),
   selectedBadge: document.querySelector("#selectedBadge"),
-  rankBadge: document.querySelector("#rankBadge"),
   candidateCount: document.querySelector("#candidateCount"),
   updatedAt: document.querySelector("#updatedAt"),
   apiStatusPill: document.querySelector("#apiStatusPill"),
@@ -243,27 +273,46 @@ function clusterLabel(feature) {
   return preview.sale10k ? formatMoney10k(preview.sale10k).replace(" ", "") : `${formatNumber(feature.count)}개`;
 }
 
-function mapScaleText(zoom) {
-  if (zoom >= 17) return "건물 단위 검토 · 폴리곤 연계 예정";
-  if (zoom >= 15) return "단지 단위 가격 라벨";
-  if (zoom >= 13) return "동 단위 단지 묶음";
-  return "구 단위 생활권 요약";
+function updateMapScaleUI() {
 }
 
-function updateMapScaleUI() {
-  if (!nodes.mapScaleBadge || !state.map?.instance) return;
-  const zoom = state.map.instance.getZoom();
-  nodes.mapScaleBadge.textContent = `${mapScaleText(zoom)} · zoom ${zoom}`;
-  if (nodes.mapLegendNote) {
-    nodes.mapLegendNote.textContent = `생활권 마커 숫자 = 종합점수, 단지 라벨 = ${labelModeName(state.apartments.labelMode)}`;
-  }
+function normalizeSearchText(value = "") {
+  return String(value).replace(/\s+/g, "").toLowerCase();
+}
+
+function inferDestinationKey(value = "") {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return state.destination || "gangnam";
+
+  const directMatch = destinationSearchOptions.find((option) => (
+    normalizeSearchText(option.address) === normalized
+    || normalizeSearchText(destinationLabels[option.key]) === normalized
+    || normalizeSearchText(option.label) === normalized
+  ));
+  if (directMatch) return directMatch.key;
+
+  const keywordMatch = destinationSearchOptions.find((option) => (
+    option.keywords.some((keyword) => normalized.includes(normalizeSearchText(keyword)))
+  ));
+  return keywordMatch?.key || state.destination || "gangnam";
+}
+
+function destinationDisplayLabel() {
+  const query = state.destinationQuery?.trim();
+  return query || destinationLabels[state.destination] || "목적지";
 }
 
 function destinationAddressFor() {
-  return state.apiMeta?.destinationAddresses?.[state.destination]
+  const query = state.destinationQuery?.trim();
+  return query
+    || state.apiMeta?.destinationAddresses?.[state.destination]
     || destinationAddresses[state.destination]
     || destinationLabels[state.destination]
     || "";
+}
+
+function destinationScoringLabel() {
+  return destinationLabels[state.destination] || "목적지";
 }
 
 function representativeAddressFor(item) {
@@ -352,10 +401,25 @@ function scoreNeighborhood(item) {
       safety: Math.round(adjusted.safety)
     },
     destination: state.destination,
-    destinationLabel: destinationLabels[state.destination],
+    destinationLabel: destinationDisplayLabel(),
+    destinationScoringLabel: destinationScoringLabel(),
     destinationAddress: destinationAddressFor(),
     representativeAddress: representativeAddressFor(item),
     reasonText: buildSpecificReason({ ...item, minutes })
+  };
+}
+
+function enrichRecommendationResult(item) {
+  const enriched = {
+    ...item,
+    destination: state.destination,
+    destinationLabel: destinationDisplayLabel(),
+    destinationScoringLabel: destinationScoringLabel(),
+    destinationAddress: destinationAddressFor()
+  };
+  return {
+    ...enriched,
+    reasonText: buildSpecificReason(enriched)
   };
 }
 
@@ -390,7 +454,7 @@ async function refreshRecommendations() {
       const payload = await fetchJson(`/api/recommendations?${buildRecommendationQuery().toString()}`);
       if (requestId !== state.requestId) return;
       state.apiMeta = payload.meta || state.apiMeta;
-      state.results = Array.isArray(payload.results) ? payload.results : [];
+      state.results = Array.isArray(payload.results) ? payload.results.map(enrichRecommendationResult) : [];
       state.lastError = "";
     } else {
       state.results = calculateFallback();
@@ -435,6 +499,141 @@ function markerTone(score) {
   return "low";
 }
 
+function routeModeKey(mode = "") {
+  const text = String(mode).toLowerCase();
+  if (text.includes("지하철") || text.includes("metro") || text.includes("subway")) return "subway";
+  if (text.includes("버스") || text.includes("bus")) return "bus";
+  if (text.includes("도보") || text.includes("walk")) return "walk";
+  if (text.includes("철도") || text.includes("train")) return "rail";
+  return "transit";
+}
+
+function subwayRouteColor(route = "") {
+  const text = String(route);
+  if (text.includes("1")) return "#0052A4";
+  if (text.includes("2")) return "#00A84D";
+  if (text.includes("3")) return "#EF7C1C";
+  if (text.includes("4")) return "#00A5DE";
+  if (text.includes("5")) return "#996CAC";
+  if (text.includes("6")) return "#CD7C2F";
+  if (text.includes("7")) return "#747F00";
+  if (text.includes("8")) return "#E6186C";
+  if (text.includes("9")) return "#BDB092";
+  if (text.includes("분당")) return "#F5A200";
+  if (text.includes("신분당")) return "#D4003B";
+  if (text.includes("공항")) return "#0090D2";
+  return "#00A84D";
+}
+
+function routeModeColor(step = {}) {
+  const key = routeModeKey(step.mode);
+  if (key === "subway") return subwayRouteColor(step.route);
+  if (key === "bus") return "#386DE8";
+  if (key === "walk") return "#64748B";
+  if (key === "rail") return "#6D5DFC";
+  return "#03C75A";
+}
+
+function routeModeIcon(mode = "") {
+  const key = routeModeKey(mode);
+  if (key === "subway") return "M";
+  if (key === "bus") return "B";
+  if (key === "walk") return "W";
+  if (key === "rail") return "R";
+  return "T";
+}
+
+function validRoutePoints(coordinates) {
+  return (Array.isArray(coordinates) ? coordinates : [])
+    .filter((point) => point?.lat != null && point?.lng != null)
+    .map((point) => ({ lat: Number(point.lat), lng: Number(point.lng) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lng));
+}
+
+function buildSyntheticRouteAnchors(route, steps) {
+  const origin = route.origin;
+  const destination = route.destination;
+  if (!origin?.lat || !origin?.lng || !destination?.lat || !destination?.lng) return [];
+
+  const start = { lat: Number(origin.lat), lng: Number(origin.lng) };
+  const end = { lat: Number(destination.lat), lng: Number(destination.lng) };
+  const count = steps.length + 1;
+  const points = [];
+  for (let index = 0; index < count; index += 1) {
+    const ratio = index / (count - 1);
+    const bend = Math.sin(Math.PI * ratio) * 0.016;
+    points.push({
+      lat: start.lat + (end.lat - start.lat) * ratio + bend,
+      lng: start.lng + (end.lng - start.lng) * ratio - bend * 0.55
+    });
+  }
+  return points;
+}
+
+function bendSegment(start, end, index) {
+  if (!start || !end) return [];
+  const offset = 0.0045 * (index % 2 === 0 ? 1 : -1);
+  const midA = {
+    lat: start.lat + (end.lat - start.lat) * 0.45 + offset,
+    lng: start.lng + (end.lng - start.lng) * 0.35
+  };
+  const midB = {
+    lat: start.lat + (end.lat - start.lat) * 0.65 + offset,
+    lng: start.lng + (end.lng - start.lng) * 0.72
+  };
+  return [start, midA, midB, end];
+}
+
+function splitGlobalCoordinatesByStep(points, steps) {
+  if (points.length < 3 || !steps.length) return [];
+  const segments = [];
+  const usableSteps = Math.max(1, steps.length);
+  for (let index = 0; index < usableSteps; index += 1) {
+    const startIndex = Math.floor((index / usableSteps) * (points.length - 1));
+    const endIndex = Math.max(startIndex + 1, Math.floor(((index + 1) / usableSteps) * (points.length - 1)));
+    segments.push({
+      step: steps[index] || { mode: "대중교통" },
+      points: points.slice(startIndex, endIndex + 1),
+      actual: true
+    });
+  }
+  return segments;
+}
+
+function buildRouteSegments(route) {
+  const steps = Array.isArray(route.steps) && route.steps.length ? route.steps : [{ mode: "대중교통", route: "" }];
+  const explicitSegments = (Array.isArray(route.segments) ? route.segments : [])
+    .map((segment, index) => ({
+      step: segment.step || steps[index] || segment,
+      points: validRoutePoints(segment.coordinates),
+      actual: true
+    }))
+    .filter((segment) => segment.points.length >= 2);
+  if (explicitSegments.length) return explicitSegments;
+
+  const stepSegments = steps
+    .map((step) => ({
+      step,
+      points: validRoutePoints(step.coordinates),
+      actual: true
+    }))
+    .filter((segment) => segment.points.length >= 2);
+  if (stepSegments.length) return stepSegments;
+
+  const globalPoints = validRoutePoints(route.coordinates);
+  const globalSegments = splitGlobalCoordinatesByStep(globalPoints, steps);
+  if (globalSegments.length) return globalSegments;
+
+  const anchors = buildSyntheticRouteAnchors(route, steps);
+  return steps
+    .map((step, index) => ({
+      step,
+      points: bendSegment(anchors[index], anchors[index + 1], index),
+      actual: false
+    }))
+    .filter((segment) => segment.points.length >= 2);
+}
+
 function initializeLeafletMap() {
   if (state.map || !window.L) return;
 
@@ -443,7 +642,7 @@ function initializeLeafletMap() {
 
   const instance = L.map(nodes.mapCanvas, {
     zoomControl: true,
-    scrollWheelZoom: false
+    scrollWheelZoom: true
   }).setView([37.54, 126.98], 11);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -477,39 +676,87 @@ function drawRouteLine(bounds) {
   const route = state.route.result;
   if (!route || route.origin?.lat == null || route.destination?.lat == null) return;
 
-  const coordinates = Array.isArray(route.coordinates) && route.coordinates.length >= 2
-    ? route.coordinates
-    : [route.origin, route.destination];
-  const latLngs = coordinates
-    .filter((point) => point?.lat != null && point?.lng != null)
-    .map((point) => [Number(point.lat), Number(point.lng)]);
-  if (latLngs.length < 2) return;
+  const segments = buildRouteSegments(route);
+  const allLatLngs = segments.flatMap((segment) => (
+    segment.points.map((point) => [Number(point.lat), Number(point.lng)])
+  ));
+  if (allLatLngs.length < 2) return;
 
-  const isFallback = route.mode !== "live_api";
-  L.polyline(latLngs, {
-    color: isFallback ? "#b4872a" : "#356c9c",
-    weight: 5,
-    opacity: 0.78,
-    dashArray: isFallback ? "8 8" : null
-  }).addTo(state.map.routeLayer);
+  segments.forEach((segment, index) => {
+    const step = segment.step || {};
+    const latLngs = segment.points.map((point) => [Number(point.lat), Number(point.lng)]);
+    const color = routeModeColor(step);
+    const weight = 6;
+    const dashArray = null;
 
-  L.circleMarker(latLngs[0], {
+    L.polyline(latLngs, {
+      color: "rgba(15, 23, 42, 0.22)",
+      weight: weight + 8,
+      opacity: 1,
+      dashArray,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(state.map.routeLayer);
+
+    L.polyline(latLngs, {
+      color: "#ffffff",
+      weight: weight + 4,
+      opacity: 0.92,
+      dashArray,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(state.map.routeLayer);
+
+    L.polyline(latLngs, {
+      color,
+      weight,
+      opacity: segment.actual ? 0.92 : 0.78,
+      dashArray,
+      lineCap: "round",
+      lineJoin: "round"
+    }).addTo(state.map.routeLayer);
+
+    const start = latLngs[0];
+    if (index > 0 && start) {
+      L.marker(start, {
+        title: `${step.mode || "이동"} ${step.route || ""}`.trim(),
+        icon: L.divIcon({
+          className: "route-step-icon-wrapper",
+          html: `<span class="route-step-node" style="--route-color:${color}">${routeModeIcon(step.mode)}</span>`,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        })
+      }).addTo(state.map.routeLayer);
+    }
+  });
+
+  L.circleMarker(allLatLngs[0], {
     radius: 7,
     color: "#ffffff",
     weight: 2,
-    fillColor: "#356c9c",
+    fillColor: "#03C75A",
     fillOpacity: 1
-  }).bindTooltip(route.origin.label || "출발지").addTo(state.map.routeLayer);
+  }).bindTooltip(route.origin.label || "출발지", { direction: "top" }).addTo(state.map.routeLayer);
 
-  L.circleMarker(latLngs[latLngs.length - 1], {
+  L.circleMarker(allLatLngs[allLatLngs.length - 1], {
     radius: 7,
     color: "#ffffff",
     weight: 2,
-    fillColor: "#c94d2f",
+    fillColor: "#EF4444",
     fillOpacity: 1
-  }).bindTooltip(route.destination.label || "도착지").addTo(state.map.routeLayer);
+  }).bindTooltip(route.destination.label || "도착지", { direction: "top" }).addTo(state.map.routeLayer);
 
-  latLngs.forEach((point) => bounds.push(point));
+  allLatLngs.forEach((point) => bounds.push(point));
+  if (state.route.focusMap && state.map.instance) {
+    state.map.instance.flyToBounds(L.latLngBounds(allLatLngs), {
+      paddingTopLeft: [72, 108],
+      paddingBottomRight: [360, 190],
+      maxZoom: 14,
+      duration: 0.75
+    });
+    state.route.focusMap = false;
+    state.map.fitted = true;
+  }
 }
 
 function renderLeafletMap() {
@@ -536,7 +783,7 @@ function renderLeafletMap() {
 
     marker.bindPopup(`
       <strong>${item.name}</strong> <span class="popup-rank">${index + 1}위</span><br>
-      ${item.destinationLabel || destinationLabels[state.destination]} ${item.minutes}분<br>
+      ${item.destinationLabel || destinationDisplayLabel()} ${item.minutes}분<br>
       월세 중앙값 ${formatNumber(item.rentMonthly10k)}만원<br>
       종합점수 <strong>${item.total}점</strong>
     `);
@@ -570,6 +817,20 @@ function focusSelectedMarker(pan) {
     state.map.instance.panTo(marker.getLatLng());
   }
   marker.openPopup();
+}
+
+function focusRouteOnMap() {
+  if (!state.map?.instance || !state.route.result) return;
+  const latLngs = buildRouteSegments(state.route.result).flatMap((segment) => (
+    segment.points.map((point) => [Number(point.lat), Number(point.lng)])
+  ));
+  if (latLngs.length < 2) return;
+  state.map.instance.flyToBounds(L.latLngBounds(latLngs), {
+    paddingTopLeft: [72, 108],
+    paddingBottomRight: [360, 190],
+    maxZoom: 14,
+    duration: 0.75
+  });
 }
 
 function apartmentLayerKey() {
@@ -840,60 +1101,27 @@ function drawPropertySocRadius() {
 }
 
 function renderMapSidebar() {
-  if (!nodes.mapRankingList) return;
+  // Map-side list panels were removed; sidebar cards are the single ranking surface.
+}
 
-  nodes.mapBudgetValue.textContent = `${formatNumber(state.budget)}만원`;
-  nodes.mapDestinationValue.textContent = destinationLabels[state.destination] || "-";
-  nodes.mapPersonaValue.textContent = personaLabels[state.persona] || "-";
-  nodes.mapRankCount.textContent = state.results.length ? `${Math.min(5, state.results.length)}개 표시` : "-";
-  nodes.mapRankCaption.textContent = `${destinationLabels[state.destination] || "목적지"} 기준 종합 점수`;
+function renderMapRouteChip() {
+  // Route details stay in the subpanel; the map keeps only the route geometry.
+}
 
-  if (!state.results.length) {
-    nodes.mapRankingList.innerHTML = `<div class="map-list-empty">추천 계산 중</div>`;
-  } else {
-    nodes.mapRankingList.innerHTML = state.results.slice(0, 5).map((item, index) => `
-      <button class="map-list-item ranking-item${item.id === state.selectedId ? " is-selected" : ""}" type="button" data-map-area-id="${escapeHtml(item.id)}">
-        <span class="map-item-rank">${index + 1}</span>
-        <span class="map-item-main">
-          <strong>${escapeHtml(item.name)}</strong>
-          <small>${escapeHtml(item.reasonText || buildSpecificReason(item))}</small>
-        </span>
-        <em>${formatNumber(item.total)}점</em>
-      </button>
-    `).join("");
+function renderDetailSubpanelState() {
+  const selected = state.results.find((item) => item.id === state.selectedId);
+  const open = Boolean(state.detailPanelOpen && selected);
+  document.querySelector(".workspace")?.classList.toggle("has-subpanel", open);
+
+  if (!nodes.detailSubpanel) return;
+  nodes.detailSubpanel.hidden = !open;
+  nodes.detailSubpanel.setAttribute("aria-hidden", open ? "false" : "true");
+
+  if (nodes.subpanelMeta) {
+    nodes.subpanelMeta.textContent = selected
+      ? `${selected.district} · ${selected.station} 중심`
+      : "매칭 결과를 선택하세요";
   }
-
-  const apartmentFeatures = state.apartments.features.filter((feature) => feature.type === "apartment");
-  const apartmentCount = state.apartments.meta?.filteredRecords ?? apartmentFeatures.length;
-  nodes.mapApartmentCount.textContent = apartmentCount ? `${formatNumber(apartmentCount)}개` : "-";
-  if (!state.apartments.enabled) {
-    nodes.mapApartmentList.innerHTML = `<div class="map-list-empty">아파트 레이어 꺼짐</div>`;
-  } else if (state.apartments.isLoading) {
-    nodes.mapApartmentList.innerHTML = `<div class="map-list-empty">단지 불러오는 중</div>`;
-  } else if (!apartmentFeatures.length) {
-    nodes.mapApartmentList.innerHTML = `<div class="map-list-empty">현재 화면에 표시할 단지가 없습니다.</div>`;
-  } else {
-    nodes.mapApartmentList.innerHTML = apartmentFeatures.slice(0, 6).map((item) => {
-      const preview = item.pricePreview || {};
-      const label = propertyLabel(item);
-      return `
-        <button class="map-list-item apartment-item${item.id === state.property.selectedId ? " is-selected" : ""}" type="button" data-map-property-id="${escapeHtml(item.id)}">
-          <span class="map-item-main">
-            <strong>${escapeHtml(item.name)}</strong>
-            <small>${escapeHtml(item.district || "")} ${escapeHtml(item.dong || "")} · ${formatNumber(item.households)}세대</small>
-          </span>
-          <em>${label.primary}</em>
-        </button>
-      `;
-    }).join("");
-  }
-
-  document.querySelectorAll("[data-map-area-id]").forEach((button) => {
-    button.addEventListener("click", () => selectArea(button.dataset.mapAreaId, { source: "map" }));
-  });
-  document.querySelectorAll("[data-map-property-id]").forEach((button) => {
-    button.addEventListener("click", () => selectProperty(button.dataset.mapPropertyId));
-  });
 }
 
 function propertyMetric(label, value, note = "") {
@@ -1434,13 +1662,10 @@ function renderCards() {
     const fragment = nodes.cardTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".result-card");
     const button = fragment.querySelector(".card-button");
-    const destinationLabel = item.destinationLabel || destinationLabels[state.destination];
     card.classList.toggle("is-selected", item.id === state.selectedId);
     fragment.querySelector(".rank").textContent = index + 1;
     fragment.querySelector(".name").textContent = `${item.name} · ${item.district}`;
-    fragment.querySelector(".meta").textContent = `${destinationLabel} ${item.minutes}분 · 월 ${item.rentMonthly10k}만원 · ${item.station}`;
-    fragment.querySelector(".reason").textContent = buildReason(item);
-    button.addEventListener("click", () => selectArea(item.id, { source: "card" }));
+    button.addEventListener("click", () => selectArea(item.id, { source: "card", autoRoute: true, openDetailPanel: true }));
     nodes.cards.append(fragment);
   });
 
@@ -1448,7 +1673,7 @@ function renderCards() {
   nodes.toggleCards.hidden = total <= CARD_PREVIEW_COUNT;
   nodes.toggleCards.textContent = state.showAllCards
     ? `상위 ${CARD_PREVIEW_COUNT}개만 보기`
-    : `전체 ${total}개 후보 보기`;
+    : "더보기";
 }
 
 function metric(label, value) {
@@ -1485,12 +1710,13 @@ function renderRouteSteps(route) {
       ${steps.map((step) => {
         const mode = step.mode || "이동";
         const title = step.route || (mode === "도보" ? "도보 이동" : "구간 이동");
+        const color = routeModeColor(step);
         return `
-          <li>
-            <span class="route-mode">${escapeHtml(mode)}</span>
+          <li style="--route-color:${color}">
+            <span class="route-mode">${routeModeIcon(mode)}</span>
             <strong>${escapeHtml(title)}</strong>
             <span>${escapeHtml(step.startName || "출발")} → ${escapeHtml(step.endName || "도착")}</span>
-            <em>${formatNumber(step.minutes || 0)}분 · ${formatDistance(step.distanceMeters || 0)}</em>
+            <em>${escapeHtml(mode)} · ${formatNumber(step.minutes || 0)}분 · ${formatDistance(step.distanceMeters || 0)}</em>
           </li>
         `;
       }).join("")}
@@ -1513,7 +1739,7 @@ function renderRouteResult(selected) {
     <div class="route-result">
       <div class="route-result-head">
         <strong>${routeProviderLabel(route.provider)} · ${routeModeLabel(route.mode)}</strong>
-        <button class="text-button" type="button" data-route-map>지도에서 보기</button>
+        <button class="text-button" type="button" data-route-map>지도 중심 이동</button>
       </div>
       <div class="route-summary-grid">
         ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
@@ -1604,21 +1830,17 @@ function renderEvidence(selected) {
 
 function renderDetail() {
   const selected = state.results.find((item) => item.id === state.selectedId);
-  const rank = state.results.findIndex((item) => item.id === state.selectedId) + 1;
 
   if (!selected) {
     nodes.selectedBadge.textContent = "선택 없음";
-    nodes.rankBadge.textContent = "-";
     nodes.detailContent.innerHTML = state.isLoading ? `<div class="callout"><p>추천 결과를 계산하고 있습니다.</p></div>` : "";
     return;
   }
 
   nodes.selectedBadge.textContent = selected.name;
-  nodes.rankBadge.textContent = `${rank}위 / ${state.results.length}개`;
   nodes.detailContent.innerHTML = `
     <div>
       <h3>${selected.name} · ${selected.district}</h3>
-      <p class="muted">${selected.station} 중심 생활권, 데이터 준비도 ${selected.dataReadiness}점</p>
     </div>
     <div class="metric-grid">
       ${metric("종합점수", `${selected.total}점`)}
@@ -1633,7 +1855,6 @@ function renderDetail() {
       ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
       ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
       ${scoreRow("안전·환경", selected.adjusted.safety, scoreTips.safety)}
-      <p class="score-note">주거비·생활 SOC·안전환경은 공공데이터 스냅샷 기반, 통근은 경로 API 어댑터 우선·키 없을 때 테이블 폴백입니다.</p>
     </div>
     <div class="callout">
       <p><strong>추천 근거</strong><br>${buildReason(selected)} ${selected.insight}</p>
@@ -1667,10 +1888,45 @@ function resetRouteState() {
     selectedId: null,
     isLoading: false,
     result: null,
-    error: ""
+    error: "",
+    focusMap: false
   };
   if (state.map?.routeLayer) {
     state.map.routeLayer.clearLayers();
+  }
+}
+
+async function calculateRouteForSelected(selected, provider = "auto") {
+  if (!selected) return;
+  const origin = representativeAddressFor(selected);
+  const destinationText = selected.destinationAddress || destinationAddressFor();
+  const params = new URLSearchParams({
+    origin,
+    provider,
+    destinationQuery: destinationText
+  });
+
+  state.route = { selectedId: selected.id, isLoading: true, result: null, error: "", focusMap: false };
+  renderRoutePanel();
+
+  try {
+    const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
+    if (state.selectedId !== selected.id) return;
+    state.route = { selectedId: selected.id, isLoading: false, result: payload, error: "", focusMap: true };
+    if (state.map) {
+      state.map.fitted = false;
+    }
+    render();
+  } catch (error) {
+    if (state.selectedId !== selected.id) return;
+    state.route = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: null,
+      error: `경로 계산 실패: ${error.message}`,
+      focusMap: false
+    };
+    renderRoutePanel();
   }
 }
 
@@ -1688,7 +1944,7 @@ async function calculateCommuteRoute(selected) {
   });
 
   if (!origin) {
-    state.route = { selectedId: selected.id, isLoading: false, result: null, error: "집 위치를 입력하세요." };
+    state.route = { selectedId: selected.id, isLoading: false, result: null, error: "집 위치를 입력하세요.", focusMap: false };
     renderRoutePanel();
     return;
   }
@@ -1698,12 +1954,12 @@ async function calculateCommuteRoute(selected) {
     params.set("destination", state.destination);
   }
 
-  state.route = { selectedId: selected.id, isLoading: true, result: null, error: "" };
+  state.route = { selectedId: selected.id, isLoading: true, result: null, error: "", focusMap: false };
   renderRoutePanel();
 
   try {
     const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
-    state.route = { selectedId: selected.id, isLoading: false, result: payload, error: "" };
+    state.route = { selectedId: selected.id, isLoading: false, result: payload, error: "", focusMap: true };
     if (state.map) {
       state.map.fitted = false;
     }
@@ -1713,7 +1969,8 @@ async function calculateCommuteRoute(selected) {
       selectedId: selected.id,
       isLoading: false,
       result: null,
-      error: `경로 계산 실패: ${error.message}`
+      error: `경로 계산 실패: ${error.message}`,
+      focusMap: false
     };
     renderRoutePanel();
   }
@@ -1744,10 +2001,8 @@ function bindRoutePlanner(selected) {
   calculateButton?.addEventListener("click", () => calculateCommuteRoute(selected));
 
   mapButton?.addEventListener("click", () => {
-    activateSection("map", { updateHash: true });
     if (state.map) {
-      state.map.fitted = false;
-      renderMap();
+      focusRouteOnMap();
     }
   });
 }
@@ -1796,18 +2051,24 @@ function renderEvidenceTable() {
 }
 
 function renderApiStatus() {
-  if (!nodes.apiStatusPill) return;
-  if (state.apiOnline) {
-    nodes.apiStatusPill.textContent = "API 연결됨";
-    nodes.apiStatusPill.className = "nav-status is-online";
-    nodes.apiStatusPill.title = "추천이 서버 API에서 계산됩니다.";
-  } else {
-    nodes.apiStatusPill.textContent = "로컬 계산";
-    nodes.apiStatusPill.className = "nav-status is-offline";
-    nodes.apiStatusPill.title = state.lastError || "API 미연결 시 브라우저에서 동일 로직으로 계산합니다.";
+  if (nodes.apiStatusPill) {
+    if (state.apiOnline) {
+      nodes.apiStatusPill.textContent = "API 연결됨";
+      nodes.apiStatusPill.className = "nav-status is-online";
+      nodes.apiStatusPill.title = "추천이 서버 API에서 계산됩니다.";
+    } else {
+      nodes.apiStatusPill.textContent = "로컬 계산";
+      nodes.apiStatusPill.className = "nav-status is-offline";
+      nodes.apiStatusPill.title = state.lastError || "API 미연결 시 브라우저에서 동일 로직으로 계산합니다.";
+    }
   }
   if (nodes.apiStatusLabel) {
     nodes.apiStatusLabel.textContent = state.apiOnline ? "API" : "로컬";
+  }
+  if (nodes.refreshButton) {
+    nodes.refreshButton.title = state.apiOnline
+      ? "API 데이터로 추천 새로고침"
+      : "로컬 데이터로 추천 새로고침";
   }
 }
 
@@ -1816,21 +2077,42 @@ function renderLoadingHint() {
   nodes.cards.setAttribute("aria-busy", state.isLoading ? "true" : "false");
 }
 
+function syncRangeProgress(input) {
+  if (!input) return;
+  const min = Number(input.min || 0);
+  const max = Number(input.max || 100);
+  const value = Number(input.value || 0);
+  const progress = max === min ? 0 : ((value - min) / (max - min)) * 100;
+  input.style.setProperty("--range-progress", `${clamp(progress)}%`);
+}
+
+function syncAllRangeProgress() {
+  [
+    nodes.budgetInput,
+    nodes.commuteWeight,
+    nodes.costWeight,
+    nodes.serviceWeight,
+    nodes.safetyWeight
+  ].forEach(syncRangeProgress);
+}
+
 function renderControls() {
   const sourceYear = state.apiMeta?.housingSource?.year;
   const modeLabel = state.apiOnline ? "API" : "로컬";
   nodes.budgetOutput.textContent = `${state.budget}만원`;
-  nodes.commuteWeightOutput.textContent = state.weights.commute;
-  nodes.costWeightOutput.textContent = state.weights.cost;
-  nodes.serviceWeightOutput.textContent = state.weights.service;
-  nodes.safetyWeightOutput.textContent = state.weights.safety;
-  nodes.candidateCount.textContent = state.apiMeta?.totalCandidates || state.neighborhoods.length;
+  nodes.commuteWeightOutput.textContent = `${state.weights.commute}%`;
+  nodes.costWeightOutput.textContent = `${state.weights.cost}%`;
+  nodes.serviceWeightOutput.textContent = `${state.weights.service}%`;
+  nodes.safetyWeightOutput.textContent = `${state.weights.safety}%`;
+  if (nodes.candidateCount) {
+    nodes.candidateCount.textContent = state.apiMeta?.totalCandidates || state.neighborhoods.length;
+  }
+  if (nodes.destinationInput && nodes.destinationInput.value !== state.destinationQuery) {
+    nodes.destinationInput.value = state.destinationQuery;
+  }
+  syncAllRangeProgress();
 
-  const total = state.results.length || state.neighborhoods.length;
-  const shown = state.results.length
-    ? (state.showAllCards ? state.results.length : Math.min(CARD_PREVIEW_COUNT, state.results.length))
-    : 0;
-  nodes.resultSummary.textContent = total ? `전체 후보 ${total}개 중 상위 ${shown}개` : "";
+  nodes.resultSummary.textContent = "";
 
   const stamp = state.lastUpdated
     ? state.lastUpdated.toLocaleTimeString("ko-KR", { hour12: false })
@@ -1847,10 +2129,12 @@ function render() {
   renderApiStatus();
   renderMap();
   renderMapSidebar();
+  renderMapRouteChip();
   renderPropertyDashboard();
   renderCards();
   renderDetail();
   renderRoutePanel();
+  renderDetailSubpanelState();
   renderEvidenceTable();
 }
 
@@ -1865,8 +2149,17 @@ function selectArea(id, options = {}) {
     state.showAllCards = true;
   }
 
+  if (options.openDetailPanel) {
+    state.detailPanelOpen = true;
+  }
+
   render();
   focusSelectedMarker(options.source === "card");
+  const selected = state.results.find((item) => item.id === id);
+  const shouldAutoRoute = options.autoRoute ?? ["card", "map"].includes(options.source);
+  if (shouldAutoRoute && selected && state.route.selectedId !== id && !state.route.isLoading) {
+    calculateRouteForSelected(selected);
+  }
 }
 
 function setActiveNav(sectionId) {
@@ -1913,20 +2206,92 @@ function initNavigation() {
   activateSection(window.location.hash.replace("#", "") || "recommend");
 }
 
+function resetUserSettings() {
+  state.budget = 70;
+  state.destination = "gangnam";
+  state.destinationQuery = "";
+  state.persona = "single";
+  state.weights = { commute: 25, cost: 25, service: 25, safety: 25 };
+  state.selectedId = null;
+  state.showAllCards = false;
+  state.detailPanelOpen = false;
+  state.apartments.enabled = true;
+  state.apartments.labelMode = "sale";
+  state.apartments.showSocRadius = true;
+  state.apartments.lastKey = "";
+  state.property.selectedId = null;
+  state.property.detail = null;
+  state.property.error = "";
+  state.evidenceRendered = false;
+
+  nodes.budgetInput.value = state.budget;
+  nodes.destinationInput.value = state.destinationQuery;
+  document.querySelector("input[name='persona'][value='single']").checked = true;
+  nodes.commuteWeight.value = state.weights.commute;
+  nodes.costWeight.value = state.weights.cost;
+  nodes.serviceWeight.value = state.weights.service;
+  nodes.safetyWeight.value = state.weights.safety;
+  if (nodes.apartmentLayerToggle) nodes.apartmentLayerToggle.checked = true;
+  if (nodes.mapLabelModeInput) nodes.mapLabelModeInput.value = "sale";
+  if (nodes.socRadiusToggle) nodes.socRadiusToggle.checked = true;
+  resetRouteState();
+  if (state.map) {
+    state.map.fitted = false;
+  }
+}
+
+async function refreshAllData() {
+  if (nodes.refreshButton) {
+    nodes.refreshButton.disabled = true;
+    nodes.refreshButton.classList.add("is-loading");
+  }
+
+  window.clearTimeout(state.refreshTimer);
+  resetUserSettings();
+  render();
+
+  try {
+    await loadAreas();
+    await refreshRecommendations();
+    if (state.apartments.enabled) {
+      scheduleApartmentLayerLoad(true);
+    }
+  } finally {
+    if (nodes.refreshButton) {
+      nodes.refreshButton.disabled = false;
+      nodes.refreshButton.classList.remove("is-loading");
+    }
+    renderApiStatus();
+  }
+}
+
 function bindEvents() {
   nodes.budgetInput.addEventListener("input", (event) => {
     state.budget = Number(event.target.value);
     scheduleRefresh();
   });
 
-  nodes.destinationInput.addEventListener("change", (event) => {
-    state.destination = event.target.value;
+  const updateDestinationFromInput = (value, delay = 180) => {
+    const query = String(value || "");
+    const normalizedQuery = query.trim();
+    state.destinationQuery = query;
+    if (normalizedQuery) {
+      state.destination = inferDestinationKey(normalizedQuery);
+    }
     state.apartments.lastKey = "";
     resetRouteState();
-    scheduleRefresh(0);
+    scheduleRefresh(delay);
     if (state.apartments.enabled) {
       scheduleApartmentLayerLoad(true);
     }
+  };
+
+  nodes.destinationInput.addEventListener("input", (event) => {
+    updateDestinationFromInput(event.target.value, 220);
+  });
+
+  nodes.destinationInput.addEventListener("change", (event) => {
+    updateDestinationFromInput(event.target.value, 0);
   });
 
   document.querySelectorAll("input[name='persona']").forEach((radio) => {
@@ -1956,26 +2321,19 @@ function bindEvents() {
     renderCards();
   });
 
-  nodes.resetButton.addEventListener("click", () => {
-    state.budget = 70;
-    state.destination = "gangnam";
-    state.persona = "single";
-    state.weights = { commute: 35, cost: 30, service: 20, safety: 15 };
-    nodes.budgetInput.value = state.budget;
-    nodes.destinationInput.value = state.destination;
-    document.querySelector("input[name='persona'][value='single']").checked = true;
-    nodes.commuteWeight.value = state.weights.commute;
-    nodes.costWeight.value = state.weights.cost;
-    nodes.serviceWeight.value = state.weights.service;
-    nodes.safetyWeight.value = state.weights.safety;
-    state.apartments.labelMode = "sale";
-    state.apartments.showSocRadius = true;
-    if (nodes.mapLabelModeInput) nodes.mapLabelModeInput.value = "sale";
-    if (nodes.socRadiusToggle) nodes.socRadiusToggle.checked = true;
-    state.selectedId = null;
-    state.showAllCards = false;
-    state.apartments.lastKey = "";
-    resetRouteState();
+  [nodes.closeSubpanelButton, nodes.subpanelCloseXButton].forEach((button) => {
+    button?.addEventListener("click", () => {
+      state.detailPanelOpen = false;
+      renderDetailSubpanelState();
+    });
+  });
+
+  nodes.refreshButton?.addEventListener("click", () => {
+    refreshAllData();
+  });
+
+  nodes.resetButton?.addEventListener("click", () => {
+    resetUserSettings();
     scheduleRefresh(0);
   });
 

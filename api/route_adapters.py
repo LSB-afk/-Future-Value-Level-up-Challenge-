@@ -158,9 +158,10 @@ def _seconds_to_minutes(value: Any, default: int = 0) -> int:
     return round(seconds / 60) if seconds > 180 else seconds
 
 
-def _append_linestring(coordinates: list[dict[str, Any]], linestring: Any) -> None:
+def _parse_linestring(linestring: Any) -> list[dict[str, Any]]:
+    coordinates: list[dict[str, Any]] = []
     if not isinstance(linestring, str):
-        return
+        return coordinates
     for point in linestring.split(" "):
         parts = point.split(",")
         if len(parts) != 2:
@@ -169,6 +170,11 @@ def _append_linestring(coordinates: list[dict[str, Any]], linestring: Any) -> No
             coordinates.append({"lng": float(parts[0]), "lat": float(parts[1])})
         except ValueError:
             pass
+    return coordinates
+
+
+def _append_linestring(coordinates: list[dict[str, Any]], linestring: Any) -> None:
+    coordinates.extend(_parse_linestring(linestring))
 
 
 def _mode_label(raw_mode: Any, traffic_type: Any = None) -> str:
@@ -284,6 +290,10 @@ def _normalize_tmap(payload: dict[str, Any], origin: dict[str, Any], destination
         mode = _mode_label(leg.get("mode") or leg.get("type"))
         start = leg.get("start", {}) if isinstance(leg.get("start"), dict) else {}
         end = leg.get("end", {}) if isinstance(leg.get("end"), dict) else {}
+        leg_coordinates: list[dict[str, Any]] = []
+        leg_coordinates.extend(_parse_linestring(leg.get("passShape", {}).get("linestring")))
+        for walk_step in leg.get("steps") or []:
+            leg_coordinates.extend(_parse_linestring(walk_step.get("linestring")))
         steps.append(
             {
                 "mode": mode,
@@ -292,11 +302,10 @@ def _normalize_tmap(payload: dict[str, Any], origin: dict[str, Any], destination
                 "endName": end.get("name") or leg.get("endName") or "",
                 "minutes": _seconds_to_minutes(leg.get("sectionTime") or leg.get("duration")),
                 "distanceMeters": _safe_int(leg.get("distance")),
+                "coordinates": leg_coordinates,
             }
         )
-        _append_linestring(coordinates, leg.get("passShape", {}).get("linestring"))
-        for walk_step in leg.get("steps") or []:
-            _append_linestring(coordinates, walk_step.get("linestring"))
+        coordinates.extend(leg_coordinates)
     coordinates.append(destination)
 
     total_time = route.get("totalTime") or route.get("duration")
