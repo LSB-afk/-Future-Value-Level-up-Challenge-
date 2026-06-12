@@ -24,6 +24,8 @@ const state = {
   },
   apartments: {
     enabled: true,
+    labelMode: "sale",
+    showSocRadius: true,
     isLoading: false,
     features: [],
     meta: null,
@@ -124,6 +126,8 @@ const nodes = {
   detailContent: document.querySelector("#detailContent"),
   routeContent: document.querySelector("#routeContent"),
   apartmentLayerToggle: document.querySelector("#apartmentLayerToggle"),
+  mapLabelModeInput: document.querySelector("#mapLabelModeInput"),
+  socRadiusToggle: document.querySelector("#socRadiusToggle"),
   apartmentLayerStatus: document.querySelector("#apartmentLayerStatus"),
   propertyDashboard: document.querySelector("#propertyDashboard"),
   mapBudgetValue: document.querySelector("#mapBudgetValue"),
@@ -134,6 +138,8 @@ const nodes = {
   mapRankingList: document.querySelector("#mapRankingList"),
   mapApartmentCount: document.querySelector("#mapApartmentCount"),
   mapApartmentList: document.querySelector("#mapApartmentList"),
+  mapScaleBadge: document.querySelector("#mapScaleBadge"),
+  mapLegendNote: document.querySelector("#mapLegendNote"),
   selectedBadge: document.querySelector("#selectedBadge"),
   rankBadge: document.querySelector("#rankBadge"),
   candidateCount: document.querySelector("#candidateCount"),
@@ -194,6 +200,63 @@ function riskTone(key) {
   if (key === "high") return "danger";
   if (key === "warning" || key === "unknown") return "warn";
   return "safe";
+}
+
+function labelModeName(mode = state.apartments.labelMode) {
+  if (mode === "jeonse") return "전세가율";
+  if (mode === "risk") return "위험도";
+  if (mode === "commute") return "통근시간";
+  return "매매가";
+}
+
+function propertyLabel(feature) {
+  const preview = feature.pricePreview || {};
+  if (state.apartments.labelMode === "jeonse") {
+    return {
+      primary: preview.jeonseRatio ? `전세 ${formatPercent(preview.jeonseRatio)}` : "전세율",
+      secondary: preview.saleLabel ? escapeHtml(preview.saleLabel.replace(" ", "")) : "매매 추정"
+    };
+  }
+  if (state.apartments.labelMode === "risk") {
+    return {
+      primary: preview.riskLevel ? escapeHtml(preview.riskLevel) : "위험도",
+      secondary: preview.riskScore != null ? `${formatNumber(preview.riskScore)}점` : "점검"
+    };
+  }
+  if (state.apartments.labelMode === "commute") {
+    return {
+      primary: preview.commuteLabel || "통근",
+      secondary: preview.livingAreaName ? escapeHtml(preview.livingAreaName) : "생활권 기준"
+    };
+  }
+  return {
+    primary: preview.saleLabel ? escapeHtml(preview.saleLabel.replace(" ", "")) : "단지",
+    secondary: preview.jeonseRatio ? `전세 ${formatPercent(preview.jeonseRatio)}` : "상세 보기"
+  };
+}
+
+function clusterLabel(feature) {
+  const preview = feature.pricePreview || {};
+  if (state.apartments.labelMode === "jeonse") return preview.jeonseRatio ? `전세 ${formatPercent(preview.jeonseRatio)}` : `${formatNumber(feature.count)}개`;
+  if (state.apartments.labelMode === "risk") return preview.riskLevelKey === "high" ? "위험 높음" : preview.riskLevelKey === "warning" ? "주의" : "위험 낮음";
+  if (state.apartments.labelMode === "commute") return preview.commuteLabel || `${formatNumber(feature.count)}개`;
+  return preview.sale10k ? formatMoney10k(preview.sale10k).replace(" ", "") : `${formatNumber(feature.count)}개`;
+}
+
+function mapScaleText(zoom) {
+  if (zoom >= 17) return "건물 단위 검토 · 폴리곤 연계 예정";
+  if (zoom >= 15) return "단지 단위 가격 라벨";
+  if (zoom >= 13) return "동 단위 단지 묶음";
+  return "구 단위 생활권 요약";
+}
+
+function updateMapScaleUI() {
+  if (!nodes.mapScaleBadge || !state.map?.instance) return;
+  const zoom = state.map.instance.getZoom();
+  nodes.mapScaleBadge.textContent = `${mapScaleText(zoom)} · zoom ${zoom}`;
+  if (nodes.mapLegendNote) {
+    nodes.mapLegendNote.textContent = `생활권 마커 숫자 = 종합점수, 단지 라벨 = ${labelModeName(state.apartments.labelMode)}`;
+  }
 }
 
 function destinationAddressFor() {
@@ -393,15 +456,18 @@ function initializeLeafletMap() {
     markerLayer: L.layerGroup().addTo(instance),
     apartmentLayer: L.layerGroup().addTo(instance),
     routeLayer: L.layerGroup().addTo(instance),
+    socLayer: L.layerGroup().addTo(instance),
     markersById: {},
     fitted: false
   };
 
   instance.on("moveend zoomend", () => {
+    updateMapScaleUI();
     if (state.apartments.enabled) {
       scheduleApartmentLayerLoad();
     }
   });
+  updateMapScaleUI();
 }
 
 function drawRouteLine(bounds) {
@@ -515,7 +581,8 @@ function apartmentLayerKey() {
     bounds.getSouth().toFixed(3),
     bounds.getWest().toFixed(3),
     bounds.getNorth().toFixed(3),
-    bounds.getEast().toFixed(3)
+    bounds.getEast().toFixed(3),
+    state.destination
   ].join(":");
 }
 
@@ -601,8 +668,7 @@ function renderApartmentLayer() {
 
   state.apartments.features.forEach((feature) => {
     if (feature.type === "cluster") {
-      const preview = feature.pricePreview || {};
-      const priceLabel = preview.sale10k ? formatMoney10k(preview.sale10k).replace(" ", "") : `${formatNumber(feature.count)}개`;
+      const priceLabel = clusterLabel(feature);
       const marker = L.marker([feature.lat, feature.lng], {
         title: `아파트 단지 ${feature.count}개`,
         icon: L.divIcon({
@@ -624,14 +690,15 @@ function renderApartmentLayer() {
 
     const preview = feature.pricePreview || {};
     const selected = feature.id === state.property.selectedId;
+    const label = propertyLabel(feature);
     const marker = L.marker([feature.lat, feature.lng], {
       title: feature.name,
       icon: L.divIcon({
         className: "property-price-wrapper",
         html: `
           <span class="property-price-marker ${riskTone(preview.riskLevelKey)}${selected ? " is-selected" : ""}">
-            <strong>${preview.saleLabel ? escapeHtml(preview.saleLabel.replace(" ", "")) : "단지"}</strong>
-            <small>${preview.jeonseRatio ? `전세 ${formatPercent(preview.jeonseRatio)}` : "상세 보기"}</small>
+            <strong>${label.primary}</strong>
+            <small>${label.secondary}</small>
           </span>
         `,
         iconSize: [94, 48],
@@ -646,6 +713,8 @@ function renderApartmentLayer() {
       .addTo(layer);
   });
   renderApartmentLayerStatus();
+  updateMapScaleUI();
+  drawPropertySocRadius();
   renderMapSidebar();
 }
 
@@ -667,6 +736,7 @@ async function loadApartmentsForMap(force = false) {
   const params = new URLSearchParams({
     bounds: apartmentBoundsParam(),
     zoom: state.map.instance.getZoom(),
+    destination: state.destination,
     cluster: "true",
     limit: 5000
   });
@@ -739,6 +809,7 @@ function renderFallbackMap() {
 
 function renderMap() {
   renderApartmentLayerStatus();
+  updateMapScaleUI();
   if (!state.neighborhoods.length) {
     nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
     return;
@@ -747,6 +818,25 @@ function renderMap() {
   if (!renderLeafletMap()) {
     renderFallbackMap();
   }
+}
+
+function drawPropertySocRadius() {
+  if (!state.map?.socLayer) return;
+  state.map.socLayer.clearLayers();
+  const detail = state.property.detail;
+  if (!state.apartments.showSocRadius || !detail?.lat || !detail?.lng) return;
+  const radiusMeters = Number(detail.socRadius?.meters || 1600);
+  L.circle([Number(detail.lat), Number(detail.lng)], {
+    radius: radiusMeters,
+    color: "#23665a",
+    weight: 2,
+    opacity: 0.8,
+    fillColor: "#2f8f58",
+    fillOpacity: 0.08,
+    dashArray: "8 8"
+  })
+    .bindTooltip(`생활 SOC 반경 ${formatDistance(radiusMeters)}`, { direction: "top" })
+    .addTo(state.map.socLayer);
 }
 
 function renderMapSidebar() {
@@ -785,13 +875,14 @@ function renderMapSidebar() {
   } else {
     nodes.mapApartmentList.innerHTML = apartmentFeatures.slice(0, 6).map((item) => {
       const preview = item.pricePreview || {};
+      const label = propertyLabel(item);
       return `
         <button class="map-list-item apartment-item${item.id === state.property.selectedId ? " is-selected" : ""}" type="button" data-map-property-id="${escapeHtml(item.id)}">
           <span class="map-item-main">
             <strong>${escapeHtml(item.name)}</strong>
             <small>${escapeHtml(item.district || "")} ${escapeHtml(item.dong || "")} · ${formatNumber(item.households)}세대</small>
           </span>
-          <em>${preview.saleLabel ? escapeHtml(preview.saleLabel.replace(" ", "")) : "상세"}</em>
+          <em>${label.primary}</em>
         </button>
       `;
     }).join("");
@@ -874,6 +965,46 @@ function renderRiskSignals(risk) {
   `).join("");
 }
 
+function renderPriceLiveStatus(price) {
+  const liveStatus = price?.liveStatus || {};
+  const labels = {
+    molitTrade: "매매 실거래",
+    molitRent: "전월세 실거래",
+    publicPrice: "공시가격"
+  };
+  const entries = Object.entries(labels).map(([key, label]) => ({ key, label, status: liveStatus[key] || {} }));
+  if (!entries.some((entry) => Object.keys(entry.status).length)) return "";
+  return `
+    <div class="price-live-status" aria-label="가격 API 연계 상태">
+      ${entries.map(({ key, label, status }) => `
+        <div class="price-live-status-item ${status.mode === "live_api" ? "is-live" : ""}" data-price-status="${escapeHtml(key)}">
+          <strong>${escapeHtml(label)}</strong>
+          <span>${escapeHtml(status.mode || "not_configured")} · ${formatNumber(status.recordCount || 0)}건</span>
+          <small>${escapeHtml(status.note || "")}</small>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderContractChecklist(risk) {
+  const items = Array.isArray(risk?.contractChecklist) ? risk.contractChecklist : [];
+  if (!items.length) return `<div class="compare-empty">계약 전 확인 체크리스트 준비 중</div>`;
+  return `
+    <ul class="checklist-list">
+      ${items.map((item) => `
+        <li class="checklist-item priority-${escapeHtml(item.priority || "medium")}">
+          <div>
+            <strong>${escapeHtml(item.label)}</strong>
+            <span>${escapeHtml(item.reason)}</span>
+          </div>
+          <em>${escapeHtml(item.status)}</em>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
 function renderCompareTable() {
   const rows = state.property.comparison;
   if (!rows.length) {
@@ -923,9 +1054,7 @@ function renderAgentAnswer() {
   return `
     <div class="agent-answer">
       <p>${escapeHtml(answer.answer)}</p>
-      <ul>
-        ${(answer.basis || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}
-      </ul>
+      ${renderAgentBasisGroups(answer)}
       ${(answer.suggestedComparisons || []).length ? `
         <div class="agent-suggestions">
           ${(answer.suggestedComparisons || []).map((item) => `
@@ -936,6 +1065,23 @@ function renderAgentAnswer() {
         </div>
       ` : ""}
       <small>${escapeHtml(answer.disclaimer || "")}</small>
+    </div>
+  `;
+}
+
+function renderAgentBasisGroups(answer) {
+  const groups = answer?.basisGroups || null;
+  if (!groups) {
+    return `<ul>${(answer?.basis || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+  }
+  return `
+    <div class="agent-basis-grid">
+      ${Object.entries(groups).map(([title, items]) => `
+        <section>
+          <strong>${escapeHtml(title)}</strong>
+          <ul>${(items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </section>
+      `).join("")}
     </div>
   `;
 }
@@ -1005,6 +1151,7 @@ function renderPropertyDashboard() {
   if (state.property.error) {
     nodes.propertyDashboard.classList.add("has-property-detail");
     nodes.propertyDashboard.innerHTML = `<div class="property-empty is-error">${escapeHtml(state.property.error)}</div>`;
+    drawPropertySocRadius();
     return;
   }
 
@@ -1017,6 +1164,7 @@ function renderPropertyDashboard() {
         <span>단지 가격, 전세 위험 신호, 생활권 정보, AI 요약을 한 화면에서 확인할 수 있습니다.</span>
       </div>
     `;
+    drawPropertySocRadius();
     return;
   }
 
@@ -1071,6 +1219,7 @@ function renderPropertyDashboard() {
           ${propertyMetric("주변 평균 매매", formatMoney10k(price.surroundingAverageSale10k), `${price.saleGapPercent > 0 ? "+" : ""}${formatPercent(price.saleGapPercent)} 차이`)}
           ${propertyMetric("최근 변동률", `${price.priceChangeRate > 0 ? "+" : ""}${formatPercent(price.priceChangeRate)}`, "최근 1년 추정")}
         </div>
+        ${renderPriceLiveStatus(price)}
       </section>
 
       <section class="property-card wide">
@@ -1093,6 +1242,14 @@ function renderPropertyDashboard() {
 
       <section class="property-card">
         <div class="property-card-title">
+          <h4>계약 전 확인 체크리스트</h4>
+          <span>전세 위험 보완</span>
+        </div>
+        ${renderContractChecklist(risk)}
+      </section>
+
+      <section class="property-card">
+        <div class="property-card-title">
           <h4>생활권 정보</h4>
           <span>${escapeHtml(lifestyle.livingAreaName || "")}</span>
         </div>
@@ -1101,6 +1258,7 @@ function renderPropertyDashboard() {
           ${propertyMetric("생활 SOC", `${formatNumber(lifestyle.serviceScore)}점`, `병원 ${formatNumber(lifestyle.counts?.hospital)} · 학교 ${formatNumber(lifestyle.counts?.school)} · 공원 ${formatNumber(lifestyle.counts?.park)}`)}
           ${propertyMetric("안전", `${formatNumber(lifestyle.safetyScore)}점`, `치안시설 ${formatNumber(lifestyle.counts?.police)} · CCTV ${formatNumber(lifestyle.counts?.cctv)}`)}
           ${propertyMetric("환경", `${formatNumber(lifestyle.carbonScore)}점`, "대기질·녹지 접근성")}
+          ${propertyMetric("SOC 반경", formatDistance(detail.socRadius?.meters || 1600), "지도 원으로 표시")}
         </div>
       </section>
 
@@ -1150,6 +1308,7 @@ function renderPropertyDashboard() {
     </div>
   `;
   bindPropertyDashboardEvents();
+  drawPropertySocRadius();
 }
 
 async function selectProperty(id) {
@@ -1171,6 +1330,7 @@ async function selectProperty(id) {
     if (state.property.detail) {
       state.property.agentQuestion = `${state.property.detail.name} 전세 들어가도 괜찮아?`;
       addPropertyToCompare(state.property.detail);
+      drawPropertySocRadius();
     }
   } catch (error) {
     if (requestId !== state.property.requestId) return;
@@ -1761,8 +1921,12 @@ function bindEvents() {
 
   nodes.destinationInput.addEventListener("change", (event) => {
     state.destination = event.target.value;
+    state.apartments.lastKey = "";
     resetRouteState();
     scheduleRefresh(0);
+    if (state.apartments.enabled) {
+      scheduleApartmentLayerLoad(true);
+    }
   });
 
   document.querySelectorAll("input[name='persona']").forEach((radio) => {
@@ -1804,8 +1968,13 @@ function bindEvents() {
     nodes.costWeight.value = state.weights.cost;
     nodes.serviceWeight.value = state.weights.service;
     nodes.safetyWeight.value = state.weights.safety;
+    state.apartments.labelMode = "sale";
+    state.apartments.showSocRadius = true;
+    if (nodes.mapLabelModeInput) nodes.mapLabelModeInput.value = "sale";
+    if (nodes.socRadiusToggle) nodes.socRadiusToggle.checked = true;
     state.selectedId = null;
     state.showAllCards = false;
+    state.apartments.lastKey = "";
     resetRouteState();
     scheduleRefresh(0);
   });
@@ -1824,6 +1993,18 @@ function bindEvents() {
 
     scheduleApartmentLayerLoad(true);
     renderApartmentLayerStatus();
+  });
+
+  nodes.mapLabelModeInput?.addEventListener("change", (event) => {
+    state.apartments.labelMode = event.target.value;
+    renderApartmentLayer();
+    renderMapSidebar();
+    updateMapScaleUI();
+  });
+
+  nodes.socRadiusToggle?.addEventListener("change", (event) => {
+    state.apartments.showSocRadius = event.target.checked;
+    drawPropertySocRadius();
   });
 }
 

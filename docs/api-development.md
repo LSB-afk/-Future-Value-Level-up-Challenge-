@@ -17,7 +17,15 @@ export KAKAO_REST_API_KEY="카카오 REST API 키"
 export ODSAY_API_KEY="ODsay API 키"
 export TMAP_APP_KEY="TMAP appKey"
 export SEOUL_OPEN_API_KEY="서울 열린데이터광장 인증키"
+export MOLIT_SERVICE_KEY="공공데이터포털 일반 인증키"
 python3 api/movevalue_api.py --port 5173
+```
+
+실제 키가 주입됐는지, 어느 항목이 live API이고 어느 항목이 폴백인지 한 번에 확인하는 검증 스크립트도 제공한다. 이 스크립트는 키 값을 출력하지 않는다.
+
+```bash
+KAKAO_REST_API_KEY=... ODSAY_API_KEY=... TMAP_APP_KEY=... SEOUL_OPEN_API_KEY=... MOLIT_SERVICE_KEY=... \
+  python3 scripts/verify_live_integrations.py
 ```
 
 ## 데이터 파이프라인
@@ -48,13 +56,13 @@ ODSAY_API_KEY=발급키 python3 scripts/build_real_dataset.py
 SEOUL_OPEN_API_KEY=발급키 python3 scripts/build_apartment_snapshot.py
 ```
 
-부동산 상세 대시보드는 `api/property_model.py`와 `api/property_adapters.py`가 담당한다. OpenAptInfo 실데이터 필드와 서울시 2025 전월세 생활권 집계를 결합해 단지 상세, 가격 추정, 전세 위험 신호, AI 요약을 생성한다. 매매 실거래가·공시가격은 국토교통부/공동주택 공시가격 API 키 연계 전까지 `dataStatus`에 추정으로 표시한다.
+부동산 상세 대시보드는 `api/property_model.py`, `api/property_adapters.py`, `api/real_estate_price_adapters.py`가 담당한다. OpenAptInfo 실데이터 필드와 서울시 2025 전월세 생활권 집계를 결합해 단지 상세, 가격 추정, 전세 위험 신호, AI 요약을 생성한다. `MOLIT_SERVICE_KEY`, `MOLIT_APT_TRADE_KEY`, `MOLIT_APT_RENT_KEY`, `PUBLIC_DATA_API_KEY` 중 사용 가능한 키가 있으면 국토교통부 아파트 매매·전월세 실거래가 API를 법정동 코드와 계약년월로 호출해 단지명 매칭 가격을 live 보정한다. 키가 없거나 최근 9개월 내 매칭 기록이 없으면 기존 생활권 기반 추정값을 유지하고, 상세 화면의 `가격 API 연계 상태`에 폴백 사유를 표시한다. 공동주택 공시가격은 PNU/공시가격 식별자 매핑 전 단계라 키 감지만 표시하고 값은 추정으로 유지한다.
 
 ## 엔드포인트
 
 ### `GET /api/health`
 
-데이터 파일 로딩 상태, 후보 생활권 수, 경로·주소·서울 열린데이터 API 키 설정 여부를 확인한다. 키 값은 반환하지 않고 `true/false`만 반환한다.
+데이터 파일 로딩 상태, 후보 생활권 수, 경로·주소·서울 열린데이터·국토교통부 가격 API 키 설정 여부를 확인한다. 키 값은 반환하지 않고 `true/false`만 반환한다.
 
 ### `GET /api/areas`
 
@@ -173,7 +181,7 @@ curl 'http://127.0.0.1:5173/api/commute-route?origin=서울%20광진구%20화양
 | `meta.availableRecords` | 현재 서버가 좌표와 함께 보유한 단지 수 |
 | `features[].type` | `apartment` 또는 `cluster` |
 | `features[].households` | 단지 또는 클러스터 총 세대수 |
-| `features[].pricePreview` | 지도 가격 라벨용 추정 매매가, 전세가율, 위험 신호 등급 |
+| `features[].pricePreview` | 지도 라벨용 추정 매매가, 전세가율, 위험 신호 등급, 목적지 기준 통근시간 |
 
 예시:
 
@@ -199,9 +207,12 @@ curl 'http://127.0.0.1:5173/api/apartments?bounds=37.45,126.80,37.70,127.18&zoom
 | `detail.name`, `detail.address` | 단지명과 주소 |
 | `detail.approvalYear`, `detail.households`, `detail.areaOptions` | 사용승인연도, 세대수, 면적 옵션 |
 | `detail.price` | 최근 매매가·전세가·월세·공시가격·주변 평균·전세가율 |
+| `detail.price.liveStatus` | 국토교통부 매매·전월세·공시가격 API 키 설정, 조회 모드, 매칭 건수, 폴백 사유 |
 | `detail.transactions` | 최근 12개월 매매/전세 추이 |
 | `detail.risk` | 전세 위험 신호 점수, 등급, 항목별 근거 |
+| `detail.risk.contractChecklist` | 등기부, 보증보험, 체납·신탁, 위반건축물, 전입·확정일자 확인 체크리스트 |
 | `detail.lifestyle` | 생활권 교통/SOC/안전/환경 정보 |
+| `detail.socRadius` | 선택 단지 주변 생활 SOC 반경 지도 표시용 중심 좌표와 반경 |
 | `detail.aiSummary` | 장점, 단점, 주의사항, 추천 여부 |
 | `detail.dataStatus` | 실데이터, 추정, 연계 예정 필드 구분 |
 
@@ -228,7 +239,7 @@ curl 'http://127.0.0.1:5173/api/property-detail?id=A15275101'
 curl 'http://127.0.0.1:5173/api/property-agent?id=A15275101&question=비슷한%20가격대의%20더%20안전한%20지역을%20찾아줘'
 ```
 
-응답은 `agent.answer`, `agent.basis`, `agent.suggestedComparisons`, `agent.disclaimer`를 포함한다. 전세 위험 신호 결과는 법적 판정이 아니라 계약 전 확인 체크리스트로 표현한다.
+응답은 `agent.answer`, `agent.basis`, `agent.basisGroups`, `agent.suggestedComparisons`, `agent.disclaimer`를 포함한다. `basisGroups`는 가격 근거, 통근 근거, 위험 근거, 생활권 근거, 확인 필요 서류로 나뉘며, 전세 위험 신호 결과는 법적 판정이 아니라 계약 전 확인 체크리스트로 표현한다.
 
 ## 지도 구현과 제공자 교체
 

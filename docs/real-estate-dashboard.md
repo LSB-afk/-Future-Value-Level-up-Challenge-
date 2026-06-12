@@ -23,7 +23,9 @@ MoveValue의 지도 기능을 생활권 추천 지도에서 주거 의사결정 
 
 - `/api/apartments` 응답에 `pricePreview`를 추가했다.
 - 낮은 줌에서는 클러스터 마커에 단지 수와 평균 추정 매매가를 표시한다.
-- 높은 줌에서는 개별 단지 마커에 추정 매매가와 전세가율을 표시한다.
+- 높은 줌에서는 개별 단지 마커에 선택한 라벨 기준을 표시한다. 현재 지원 기준은 매매가, 전세가율, 위험도, 목적지 기준 통근시간이다.
+- 줌 단계는 구 단위 생활권 요약, 동 단위 단지 묶음, 단지 단위 가격 라벨, 건물 단위 검토 예정으로 안내한다.
+- 선택한 단지는 생활 SOC 반경 1.6km 원을 지도에 표시해 주변 병원·학교·공원 집계 범위를 직관적으로 보여준다.
 - 단지 마커 클릭 시 `/api/property-detail?id=...`을 호출해 상세 대시보드를 연다.
 
 ### 상세 대시보드
@@ -34,8 +36,10 @@ MoveValue의 지도 기능을 생활권 추천 지도에서 주거 의사결정 
 | --- | --- |
 | 기본 정보 | 단지명, 주소, 건물 유형, 주택 유형, 사용승인연도, 세대수, 동수, 면적 옵션, 용도지역 |
 | 가격 정보 | 최근 매매가, 최근 전세가, 월세, 공시가격, 주변 평균 매매, 최근 변동률 |
+| 가격 API 상태 | 국토교통부 매매·전월세·공시가격 API 설정 여부, 조회 모드, 매칭 건수, 폴백 사유 |
 | 거래 추이 | 최근 12개월 매매/전세 추이 SVG 그래프 |
 | 위험 신호 | 전세가율, 공시가격 대비 보증금, 주변 전세 중앙값 대비, 변동성, 노후도, 등기부 권리관계 |
+| 계약 전 확인 | 등기부 선순위 권리, 보증보험, 체납·신탁, 위반건축물, 전입·확정일자 체크리스트 |
 | 생활권 정보 | 지하철 접근성, 생활 SOC, 안전, 환경 점수와 시설 개수 |
 | AI 요약 | 장점, 단점, 주의사항, 추천 여부 |
 | 비교 | 최대 3개 단지 가격·전세가율·위험 신호·생활권 비교 |
@@ -49,7 +53,8 @@ MoveValue의 지도 기능을 생활권 추천 지도에서 주거 의사결정 
 | --- | --- |
 | 단지명, 주소, 좌표, 세대수, 동수, 사용승인일, 난방/관리 | 서울시 공동주택 아파트 정보 `OpenAptInfo` 실데이터 |
 | 생활권 월세, 보증금, 전세 중앙값 | 서울시 2025 부동산 전월세가 정보 집계 |
-| 매매가, 공시가격, 12개월 추이 | 국토교통부 실거래가/공시가격 API 키 연계 전 생활권 기반 추정 |
+| 매매가, 전월세 단지 가격 | 국토교통부 실거래가 API 키가 있으면 단지명 매칭 live 보정, 없거나 매칭 실패 시 생활권 기반 추정 |
+| 공시가격, 12개월 추이 | 공동주택 공시가격 PNU 매핑 전 생활권 기반 추정 |
 | 용도지역 | VWorld/토지이음 연계 예정 |
 | 등기부 권리관계 | 사용자 입력/서류 확인 필요 |
 
@@ -68,9 +73,12 @@ curl 'http://127.0.0.1:5173/api/property-detail?id=A15275101'
 응답 핵심:
 
 - `detail.price`: 매매·전세·월세·공시가격·주변 평균·전세가율
+- `detail.price.liveStatus`: 국토교통부 매매·전월세·공시가격 API 상태
 - `detail.transactions`: 최근 12개월 거래 추이
 - `detail.risk`: 위험 신호 점수, 등급, 항목별 근거
+- `detail.risk.contractChecklist`: 계약 전 확인 체크리스트
 - `detail.lifestyle`: 생활권 교통/SOC/안전/환경 정보
+- `detail.socRadius`: SOC 반경 표시용 중심좌표·반경
 - `detail.aiSummary`: 장점·단점·주의사항·추천 문장
 - `detail.dataStatus`: 실데이터/추정/연계 예정 구분
 
@@ -82,21 +90,22 @@ curl 'http://127.0.0.1:5173/api/property-detail?id=A15275101'
 curl 'http://127.0.0.1:5173/api/property-agent?id=A15275101&question=비슷한%20가격대의%20더%20안전한%20지역을%20찾아줘'
 ```
 
-응답은 `agent.answer`, `agent.basis`, `agent.suggestedComparisons`, `agent.disclaimer`를 포함한다.
+응답은 `agent.answer`, `agent.basis`, `agent.basisGroups`, `agent.suggestedComparisons`, `agent.disclaimer`를 포함한다. `basisGroups`는 가격 근거, 통근 근거, 위험 근거, 생활권 근거, 확인 필요 서류로 분리해 심사·사용자 검토 시 근거를 빠르게 확인할 수 있게 한다.
 
 ## 공공 데이터 연계 계획
 
 1. `SEOUL_OPEN_API_KEY`로 서울 OpenAptInfo 전체 단지를 live 로딩한다.
-2. 국토교통부 아파트 매매 실거래가 API와 전월세 실거래가 API를 법정동 코드 + 계약년월로 호출한다.
-3. VWorld Geocoder로 주소-좌표 정합을 보강하고, 용도지역/건물 공간정보를 붙인다.
-4. 공동주택 공시가격/건축물대장 데이터로 공시가격, 전용면적, 층수, 구조, 용도지역을 확정한다.
-5. 등기부 권리관계는 자동 판정하지 않고 사용자 입력 또는 체크리스트로만 반영한다.
+2. 국토교통부 아파트 매매 실거래가 API와 전월세 실거래가 API를 법정동 코드 + 계약년월로 호출한다. 현재 `api/real_estate_price_adapters.py`에 live 보정 구조를 구현했고 키가 있으면 상세 클릭 시 최근 9개월 단지명 매칭을 시도한다.
+3. `scripts/verify_live_integrations.py`로 Kakao/ODsay/TMAP/OpenAptInfo/MOLIT 키 기반 live 동작 여부를 검증한다.
+4. VWorld Geocoder로 주소-좌표 정합을 보강하고, 용도지역/건물 공간정보를 붙인다.
+5. 공동주택 공시가격/건축물대장 데이터로 공시가격, 전용면적, 층수, 구조, 용도지역을 확정한다.
+6. 등기부 권리관계는 자동 판정하지 않고 사용자 입력 또는 체크리스트로만 반영한다.
 
 ## 참고 URL
 
 - 서울시 공동주택 아파트 정보: https://data.seoul.go.kr/dataList/OA-15818/S/1/datasetView.do
 - 서울시 부동산 전월세가 정보: https://data.seoul.go.kr/dataList/OA-21276/S/1/datasetView.do
-- 국토교통부 아파트 매매 실거래가 API: https://www.data.go.kr/data/15126469/openapi.do
+- 국토교통부 아파트 매매 실거래가 상세 자료: https://www.data.go.kr/data/15126468/openapi.do?recommendDataYn=Y
 - 국토교통부 아파트 전월세 실거래가 API: https://www.data.go.kr/data/15126474/openapi.do
 - VWorld Geocoder API: https://www.vworld.kr/dev/v4dv_geocoderguide2_s001.do
 - 호갱노노: https://hogangnono.com/

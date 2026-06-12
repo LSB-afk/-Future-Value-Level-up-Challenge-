@@ -185,16 +185,17 @@ def cluster_step(zoom: int) -> float:
     return 0.05
 
 
-def apartment_feature(item: dict) -> dict:
-    return {"type": "apartment", "pricePreview": build_property_preview(item), **item}
+def apartment_feature(item: dict, destination: str = "gangnam") -> dict:
+    return {"type": "apartment", "pricePreview": build_property_preview(item, destination), **item}
 
 
-def cluster_price_preview(members: list[dict]) -> dict:
-    previews = [build_property_preview(item) for item in members]
+def cluster_price_preview(members: list[dict], destination: str = "gangnam") -> dict:
+    previews = [build_property_preview(item, destination) for item in members]
     if not previews:
         return {}
     avg_sale = sum(float(item.get("sale10k") or 0) for item in previews) / len(previews)
     avg_jeonse_ratio = sum(float(item.get("jeonseRatio") or 0) for item in previews) / len(previews)
+    avg_commute = sum(float(item.get("commuteMinutes") or 0) for item in previews) / len(previews)
     risk_counts = {"high": 0, "warning": 0, "low": 0}
     for item in previews:
         key = item.get("riskLevelKey") or "low"
@@ -203,15 +204,17 @@ def cluster_price_preview(members: list[dict]) -> dict:
     return {
         "sale10k": round(avg_sale),
         "jeonseRatio": round(avg_jeonse_ratio, 1),
+        "commuteMinutes": round(avg_commute),
+        "commuteLabel": f"{round(avg_commute)}분",
         "riskLevelKey": dominant,
         "riskCounts": risk_counts,
     }
 
 
-def cluster_apartments(apartments: list[dict], zoom: int) -> list[dict]:
+def cluster_apartments(apartments: list[dict], zoom: int, destination: str = "gangnam") -> list[dict]:
     step = cluster_step(zoom)
     if not step:
-        return [apartment_feature(item) for item in apartments]
+        return [apartment_feature(item, destination) for item in apartments]
 
     buckets: dict[tuple[int, int], list[dict]] = {}
     for item in apartments:
@@ -221,7 +224,7 @@ def cluster_apartments(apartments: list[dict], zoom: int) -> list[dict]:
     features: list[dict] = []
     for key, members in buckets.items():
         if len(members) == 1:
-            features.append(apartment_feature(members[0]))
+            features.append(apartment_feature(members[0], destination))
             continue
         total_households = sum(int(item.get("households") or 0) for item in members)
         districts = sorted({item.get("district", "") for item in members if item.get("district")})
@@ -236,7 +239,7 @@ def cluster_apartments(apartments: list[dict], zoom: int) -> list[dict]:
                 "households": total_households,
                 "districts": districts[:4],
                 "sampleNames": sample_names,
-                "pricePreview": cluster_price_preview(members),
+                "pricePreview": cluster_price_preview(members, destination),
             }
         )
     return features
@@ -249,6 +252,7 @@ def apartments_response(raw: dict[str, list[str]]) -> dict:
     bounds = parse_bounds(raw.get("bounds", [""])[0])
     district = raw.get("district", [""])[0].strip()
     search = raw.get("q", [""])[0].strip().lower()
+    destination = raw.get("destination", ["gangnam"])[0].strip() or "gangnam"
     try:
         zoom = int(float(raw.get("zoom", [11])[0]))
     except (TypeError, ValueError):
@@ -272,7 +276,7 @@ def apartments_response(raw: dict[str, list[str]]) -> dict:
             or search in item.get("dong", "").lower()
         ]
     filtered = filtered[:limit]
-    features = cluster_apartments(filtered, zoom) if cluster else [apartment_feature(item) for item in filtered]
+    features = cluster_apartments(filtered, zoom, destination) if cluster else [apartment_feature(item, destination) for item in filtered]
 
     return {
         "ok": True,
@@ -287,6 +291,7 @@ def apartments_response(raw: dict[str, list[str]]) -> dict:
             "returnedFeatures": len(features),
             "clustered": cluster and cluster_step(zoom) > 0,
             "zoom": zoom,
+            "destination": destination,
             "boundsApplied": bool(bounds),
             "generatedAt": meta.get("generatedAt", ""),
             "note": meta.get("note", ""),

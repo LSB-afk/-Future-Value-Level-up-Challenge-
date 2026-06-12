@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
 from property_adapters import property_agent_response, property_detail_response
+from real_estate_price_adapters import price_credential_status
 from route_adapters import build_commute_route, credential_status, resolve_location
 
 
@@ -296,7 +297,7 @@ def commute_route(raw: dict[str, list[str]]) -> dict:
 
 
 def integration_status() -> dict:
-    return {**credential_status(), **apartment_credential_status()}
+    return {**credential_status(), **apartment_credential_status(), **price_credential_status()}
 
 
 def apartment_health() -> dict:

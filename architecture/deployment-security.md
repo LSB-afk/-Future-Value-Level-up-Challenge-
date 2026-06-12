@@ -25,14 +25,15 @@ http://127.0.0.1:5173/#map
 | `ODSAY_API_KEY` 또는 `MOVEVALUE_ODSAY_API_KEY` | 대중교통 경로 live 검증 | 저장 금지 |
 | `TMAP_APP_KEY` | TMAP 대중교통 경로 live 검증 | 저장 금지 |
 | `SEOUL_OPEN_API_KEY`, `SEOUL_API_KEY`, `MOVEVALUE_SEOUL_OPEN_API_KEY` | 서울 OpenAptInfo 전체 단지 조회 | 저장 금지 |
+| `MOLIT_SERVICE_KEY`, `MOLIT_APT_TRADE_KEY`, `MOLIT_APT_RENT_KEY`, `PUBLIC_DATA_API_KEY` | 국토교통부 매매·전월세 실거래가 live 보정 | 저장 금지 |
+| `PUBLIC_PRICE_API_KEY`, `OFFICIAL_PRICE_API_KEY`, `MOLIT_PUBLIC_PRICE_KEY`, `NSDI_API_KEY` | 공동주택 공시가격/PNU 매핑 후 보정 | 저장 금지 |
 | 향후 `VWORLD_API_KEY` | 지오코딩·용도지역·공간정보 | 저장 금지 |
-| 향후 `MOLIT_SERVICE_KEY` | 국토교통부 실거래가·공시가격 | 저장 금지 |
 
 ```mermaid
 flowchart LR
     Env["환경변수"] --> Server["Python API Server"]
     Server --> Adapter["외부 API 어댑터"]
-    Adapter --> External["Kakao / ODsay / TMAP / Seoul API"]
+    Adapter --> External["Kakao / ODsay / TMAP / Seoul / MOLIT API"]
     Secret["API Key"] -. "Git 커밋 금지" .-> Repo["GitHub Repository"]
 ```
 
@@ -105,7 +106,8 @@ flowchart LR
 - `node --check app/app.js`
 - `python3 -m json.tool data/areas.actual.json`
 - `python3 -m json.tool data/apartments.seoul.snapshot.json`
-- `python3 -m py_compile api/movevalue_api.py api/route_adapters.py api/apartment_adapters.py api/property_model.py api/property_adapters.py scripts/build_real_dataset.py scripts/movevalue_adapters.py scripts/build_apartment_snapshot.py`
+- `python3 -m py_compile api/movevalue_api.py api/route_adapters.py api/apartment_adapters.py api/property_model.py api/property_adapters.py api/real_estate_price_adapters.py scripts/build_real_dataset.py scripts/movevalue_adapters.py scripts/build_apartment_snapshot.py scripts/verify_live_integrations.py`
+- `python3 scripts/verify_live_integrations.py`
 - `git diff --check`
 - `GET /api/health`에서 키 감지 여부와 데이터 상태 확인
 - 브라우저 `#map`에서 생활권 마커, 아파트 가격 마커, 단지 상세 드로어 확인

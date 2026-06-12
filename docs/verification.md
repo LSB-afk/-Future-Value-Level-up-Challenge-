@@ -1,6 +1,23 @@
 # Verification Log
 
-확인일: 2026-06-11 (부동산 지도 대시보드 + 데이터 정밀도 2차 + 통근검증 독립 화면 + 서울 아파트 단지 지도 레이어)
+확인일: 2026-06-12 (실제 API live 검증 구조 + 부동산 가격 어댑터 + 지도 UX/Agent 근거 보강)
+
+## 실제 API live 검증 구조 및 지도 UX 검증 (2026-06-12)
+
+- 서버 실행: `python3 api/movevalue_api.py --port 5173 --quiet`
+- `GET /api/health`: `ok=true`, 생활권 9개, `integrations={odsay:false,tmap:false,kakao:false,seoulOpenApi:false,molitTrade:false,molitRent:false,publicPrice:false}` 반환 확인
+- `python3 scripts/verify_live_integrations.py`: 키 미설정 환경에서도 실패하지 않고 `ok=true` 반환. Kakao 주소검색은 `not_configured_or_no_result`, 통근 루트는 `provider=fallback`, `mode=estimated_fallback`, 총 27분·요금 1,550원·단계 3개 반환
+- 같은 스크립트에서 서울 아파트 데이터는 `sourceMode=snapshot`, `totalRecords=2876`, `availableRecords=5`, `complete=false`로 확인. 실제 `SEOUL_OPEN_API_KEY` 주입 시 전체 수집 경로로 전환 가능
+- 같은 스크립트에서 부동산 가격 어댑터는 `molitTrade.mode=not_configured`, `molitRent.mode=not_configured`, `publicPrice.mode=not_configured`로 확인. 키 값은 출력하지 않음
+- `GET /api/apartments?zoom=13&destination=gangnam`: 단지 `pricePreview`에 매매가 라벨, 전세가율, 위험 등급, 생활권 기준 통근시간(`commuteMinutes`, `commuteLabel`) 포함 확인
+- `GET /api/property-detail?id=A15275101`: `price.liveStatus`, `risk.contractChecklist`, `socRadius`, 전세 위험 신호, 생활권 정보, 데이터 연계 상태 반환 확인
+- `GET /api/property-agent?id=A15275101&question=전세%20들어가도%20괜찮아?`: `basisGroups`가 `가격 근거`, `통근 근거`, `위험 근거`, `생활권 근거`, `확인 필요 서류`로 구조화되어 반환 확인
+- 브라우저 지도 검증: 생활권 마커 9개, 현재 화면 단지 마커 2개, Leaflet 타일 20개 이상 렌더링, 콘솔 오류 없음
+- 지도 라벨 필터 검증: `매매가` 기본값에서 `위험도`, `통근시간`으로 전환 시 마커 라벨과 범례 문구가 즉시 변경됨
+- 단지 목록 클릭 검증: `개봉건영` 선택 시 오른쪽 부동산 상세 대시보드 열림, 가격 정보, 실거래 API 상태, 거래 추이 SVG, 전세 위험 신호, 계약 전 확인 체크리스트, 생활권 정보, 비교표, AI Agent 폼 표시
+- 선택 단지 생활 SOC 반경 검증: `선택 단지 생활 SOC 반경` 체크 상태에서 1.6km 원이 지도에 표시되고, 체크 해제 시 원이 제거됨
+- AI Agent UI 검증: `이 아파트 전세 들어가도 괜찮아?` 입력 후 답변, 가격 근거, 통근 근거, 위험 근거, 생활권 근거, 확인 필요 서류 그룹이 화면에 표시됨
+- DOCX 제출자료 검증: `scripts/build_application_docx.py`로 `deliverables/MoveValue_참가신청서_기획서_초안.docx` 재생성 후 `render_docx.py`로 4개 페이지 PNG와 PDF 렌더링, 육안 확인에서 텍스트 잘림·중첩 없음
 
 ## 시스템 아키텍처 문서 검증 (2026-06-12)
 
@@ -45,7 +62,7 @@
 - `node --check app/app.js` 통과
 - `python3 -m json.tool data/areas.actual.json` 통과
 - `python3 -m json.tool data/apartments.seoul.snapshot.json` 통과
-- `python3 -m py_compile api/movevalue_api.py api/route_adapters.py api/apartment_adapters.py scripts/build_real_dataset.py scripts/movevalue_adapters.py scripts/build_apartment_snapshot.py` 통과
+- `python3 -m py_compile api/movevalue_api.py api/route_adapters.py api/apartment_adapters.py api/property_model.py api/property_adapters.py api/real_estate_price_adapters.py scripts/build_real_dataset.py scripts/movevalue_adapters.py scripts/build_apartment_snapshot.py scripts/verify_live_integrations.py scripts/build_application_docx.py` 통과
 - `git diff --check` 통과
 
 ## API 검증

@@ -33,6 +33,7 @@ flowchart LR
         Recommend["Recommendation Engine<br/>예산·통근·SOC·안전환경 점수"]
         Route["Route Adapters<br/>Kakao / ODsay / TMAP / Fallback"]
         Apt["Apartment Layer Adapter<br/>OpenAptInfo / Snapshot"]
+        Price["Real Estate Price Adapter<br/>MOLIT live / Fallback"]
         Property["Property Model<br/>가격·위험 신호·AI Agent"]
     end
 
@@ -52,11 +53,13 @@ flowchart LR
     Router --> Recommend
     Router --> Route
     Router --> Apt
+    Router --> Price
     Router --> Property
     Recommend --> Areas
     Apt --> AptSnapshot
     Property --> Areas
     Property --> AptSnapshot
+    Property --> Price
     RentBuilder --> Areas
     AdapterBuilder --> Areas
     AptBuilder --> AptSnapshot
@@ -84,6 +87,7 @@ flowchart TB
     DetailApi --> PropertyAdapters["property_adapters.py"]
     AgentApi --> PropertyAdapters
     PropertyAdapters --> PropertyModel["property_model.py<br/>price/risk/trend/AI rules"]
+    PropertyModel --> PriceAdapters["real_estate_price_adapters.py<br/>MOLIT trade/rent live status"]
 ```
 
 ## 화면 구조
@@ -119,8 +123,10 @@ flowchart LR
 | Recommendation | 생활권 점수, 추천 사유 문장, 가중치 계산 | `api/movevalue_api.py` |
 | Route/Geocode | 주소 좌표화, 대중교통 live API, 거리 기반 폴백 | `api/route_adapters.py` |
 | Apartment Layer | 단지 API 호출, 스냅샷 폴백, 클러스터링, 가격 미리보기 | `api/apartment_adapters.py` |
-| Property Detail | 가격 추정, 거래 추이, 전세 위험 신호, AI Agent 규칙 | `api/property_model.py`, `api/property_adapters.py` |
+| Price Live Adapter | 국토교통부 매매·전월세 실거래가 조회, 단지명 매칭, live/폴백 상태 | `api/real_estate_price_adapters.py` |
+| Property Detail | 가격 추정/live 보정, 거래 추이, 전세 위험 신호, 계약 체크리스트, AI Agent 규칙 | `api/property_model.py`, `api/property_adapters.py` |
 | Data Build | 전월세 집계, SOC·안전환경 집계, 단지 스냅샷 생성 | `scripts/` |
+| Verification | 키 기반 live API와 폴백 상태 검증 | `scripts/verify_live_integrations.py` |
 
 ## 확장 목표 구조
 

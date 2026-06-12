@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from apartment_adapters import apartment_credential_status, load_apartment_dataset
 from property_model import build_property_detail, build_property_preview, property_agent_answer
+from real_estate_price_adapters import price_credential_status
 
 
 def single_value(raw: dict[str, list[str]], name: str, default: str = "") -> str:
@@ -69,7 +70,7 @@ def property_detail_response(raw: dict[str, list[str]]) -> dict:
             "availableRecords": int(meta.get("recordsWithCoordinates") or len(apartments)),
             "note": "단지 상세 대시보드는 실데이터 필드와 추정/연계 예정 필드를 dataStatus로 구분합니다.",
         },
-        "integrations": apartment_credential_status(),
+        "integrations": {**apartment_credential_status(), **price_credential_status()},
     }
 
 

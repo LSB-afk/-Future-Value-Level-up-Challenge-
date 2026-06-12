@@ -14,6 +14,8 @@ import json
 import math
 from pathlib import Path
 
+from real_estate_price_adapters import enrich_market_from_live
+
 
 ROOT = Path(__file__).resolve().parents[1]
 AREAS_PATH = ROOT / "data" / "areas.actual.json"
@@ -34,15 +36,15 @@ PUBLIC_SOURCES = [
     },
     {
         "name": "국토교통부 아파트 매매 실거래가 API",
-        "url": "https://www.data.go.kr/data/15126469/openapi.do",
+        "url": "https://www.data.go.kr/data/15126468/openapi.do?recommendDataYn=Y",
         "fields": "단지별 매매 실거래가",
-        "status": "API 키 연계 예정",
+        "status": "상세 클릭 시 API 키 기반 live 보정 지원",
     },
     {
         "name": "국토교통부 아파트 전월세 실거래가 API",
         "url": "https://www.data.go.kr/data/15126474/openapi.do",
         "fields": "단지별 전월세 실거래가",
-        "status": "API 키 연계 예정",
+        "status": "상세 클릭 시 API 키 기반 live 보정 지원",
     },
     {
         "name": "VWorld 지오코더/지도 API",
@@ -184,7 +186,16 @@ def estimate_market(apartment: dict, area: dict) -> dict:
         "volatilityRate": round(volatility, 1),
         "sourceMode": "public_area_proxy",
         "sourceLabel": "공개 단지정보 + 생활권 전월세 실거래 기반 추정",
+        "liveStatus": {},
     }
+
+
+def commute_minutes_for(area: dict, destination: str = "gangnam") -> int:
+    minutes = area.get("commuteMinutes", {}).get(destination)
+    if minutes:
+        return integer(minutes)
+    fallback = area.get("commuteMinutes", {}).get("gangnam") or area.get("commuteMinutes", {}).get("seoulStation")
+    return integer(fallback, 45)
 
 
 def transaction_trend(apartment: dict, market: dict) -> list[dict]:
@@ -309,8 +320,52 @@ def build_risk(apartment: dict, market: dict) -> dict:
         "levelKey": level_key,
         "summary": summary,
         "signals": signals,
+        "contractChecklist": contract_checklist(apartment, market, signals),
         "disclaimer": "위험 신호 점검은 계약 안전성의 법적 판정이 아니며, 등기부등본·건축물대장·임대인 세금 체납 여부 확인을 대체하지 않습니다.",
     }
+
+
+def contract_checklist(apartment: dict, market: dict, signals: list[dict]) -> list[dict]:
+    age = building_age(apartment)
+    high_or_unknown = {item["label"] for item in signals if item["status"] in {"high", "warning", "unknown"}}
+    return [
+        {
+            "label": "등기부등본 선순위 권리",
+            "status": "필수 확인",
+            "priority": "high",
+            "reason": "근저당, 압류, 가압류, 선순위 임차권은 자동 수집하지 않으므로 계약 전 원본 확인이 필요합니다.",
+        },
+        {
+            "label": "전세보증보험 가능 여부",
+            "status": "필수 확인",
+            "priority": "high" if "공시가격 대비 보증금 비율" in high_or_unknown else "medium",
+            "reason": "보증금·공시가격·선순위 권리 조건에 따라 가입 가능성이 달라집니다.",
+        },
+        {
+            "label": "임대인 세금 체납·신탁 여부",
+            "status": "확인 필요",
+            "priority": "medium",
+            "reason": "국세·지방세 체납, 신탁등기 여부는 보증금 회수 위험과 직접 연결됩니다.",
+        },
+        {
+            "label": "건축물대장 위반건축물 여부",
+            "status": "확인 필요",
+            "priority": "medium" if age >= 25 else "low",
+            "reason": f"사용승인 후 {age}년 경과 단지는 용도·구조 변경과 수선 이력을 확인하는 것이 좋습니다.",
+        },
+        {
+            "label": "전입신고·확정일자 가능성",
+            "status": "계약 전 확인",
+            "priority": "high",
+            "reason": "대항력과 우선변제권 확보를 위해 잔금일·입주일·확정일자 절차를 확인해야 합니다.",
+        },
+        {
+            "label": "관리비·장기수선충당금",
+            "status": "확인 필요",
+            "priority": "low",
+            "reason": "실거주 비용 판단을 위해 최근 관리비와 주차·수선비 부담 구조를 확인합니다.",
+        },
+    ]
 
 
 def lifestyle_summary(area: dict) -> dict:
@@ -378,10 +433,11 @@ def ai_summary(apartment: dict, area: dict, market: dict, risk: dict) -> dict:
     }
 
 
-def build_property_preview(apartment: dict) -> dict:
+def build_property_preview(apartment: dict, destination: str = "gangnam") -> dict:
     area = nearest_living_area(apartment)
     market = estimate_market(apartment, area)
     risk = build_risk(apartment, market)
+    commute_minutes = commute_minutes_for(area, destination)
     return {
         "sale10k": market["recentSale10k"],
         "saleLabel": format_money_10k(market["recentSale10k"]),
@@ -390,13 +446,16 @@ def build_property_preview(apartment: dict) -> dict:
         "riskScore": risk["score"],
         "riskLevel": risk["level"],
         "riskLevelKey": risk["levelKey"],
+        "commuteMinutes": commute_minutes,
+        "commuteLabel": f"{commute_minutes}분",
+        "livingAreaName": area.get("name", ""),
         "sourceMode": market["sourceMode"],
     }
 
 
 def build_property_detail(apartment: dict) -> dict:
     area = nearest_living_area(apartment)
-    market = estimate_market(apartment, area)
+    market = enrich_market_from_live(apartment, estimate_market(apartment, area))
     trend = transaction_trend(apartment, market)
     risk = build_risk(apartment, market)
     lifestyle = lifestyle_summary(area)
@@ -430,17 +489,18 @@ def build_property_detail(apartment: dict) -> dict:
         "transactions": trend,
         "risk": risk,
         "lifestyle": lifestyle,
+        "socRadius": {"meters": 1600, "lat": apartment.get("lat"), "lng": apartment.get("lng")},
         "aiSummary": ai_summary(apartment, area, market, risk),
         "dataStatus": {
             "buildingInfo": "실데이터: 서울시 OpenAptInfo",
             "rentalMarket": "실데이터 집계: 서울시 2025 전월세 거래 생활권 중앙값",
-            "salePrice": "추정: 국토교통부 매매 실거래가 API 키 연계 전 생활권 기반 보정",
-            "officialPrice": "추정: 공동주택 공시가격 API/데이터 연계 전 보수적 보정",
+            "salePrice": "실거래 API 키·단지명 매칭 성공 시 live 보정, 실패 시 생활권 기반 추정",
+            "officialPrice": "추정: 공동주택 공시가격 API는 PNU/공시가격 식별자 매핑 후 live 보정",
             "landUse": "연계 예정: VWorld/토지이음 용도지역 데이터",
         },
         "sources": PUBLIC_SOURCES,
         "limitations": [
-            "현재 단지 매매가·공시가격은 API 키 없이도 화면 검증이 가능하도록 공개 생활권 데이터 기반 추정값으로 표시합니다.",
+            "매매·전월세 live API 키가 없거나 단지명 매칭 기록이 없으면 공개 생활권 데이터 기반 추정값으로 표시합니다.",
             "전세 위험 신호는 법적 판정이 아니라 계약 전 확인 항목을 좁히기 위한 체크리스트입니다.",
             "등기부 권리관계, 세금 체납, 보증보험 가입 가능 여부는 사용자가 별도 서류로 확인해야 합니다.",
         ],
@@ -452,12 +512,34 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
     price = detail["price"]
     risk = detail["risk"]
     lifestyle = detail["lifestyle"]
-    base_basis = [
-        f"전세가율 {price['jeonseRatio']}%",
-        f"공시가격 대비 보증금 비율 {price['depositOfficialRatio']}%",
-        f"최근 매매 추정가 {format_money_10k(price['recentSale10k'])}",
-        f"{lifestyle['livingAreaName']} 생활권 SOC 병원 {lifestyle['counts']['hospital']}개·학교 {lifestyle['counts']['school']}개·공원 {lifestyle['counts']['park']}개",
-    ]
+    basis_groups = {
+        "가격 근거": [
+            f"최근 매매가 {format_money_10k(price['recentSale10k'])}",
+            f"최근 전세가 {format_money_10k(price['recentJeonse10k'])}",
+            f"전세가율 {price['jeonseRatio']}%",
+            f"공시가격 대비 보증금 비율 {price['depositOfficialRatio']}%",
+        ],
+        "통근 근거": [
+            f"{lifestyle['livingAreaName']} 생활권 기준 주요 목적지 통근시간은 추천 엔진의 경로 API/폴백 테이블에서 산출합니다.",
+            f"대중교통 접근성 {lifestyle['transitScore']}점, 대표역 {lifestyle['station']}",
+        ],
+        "위험 근거": [
+            f"{item['label']} {item['value']} · {item['evidence']}"
+            for item in risk["signals"]
+            if item["status"] in {"high", "warning", "unknown"}
+        ][:4],
+        "생활권 근거": [
+            f"생활 SOC {lifestyle['serviceScore']}점",
+            f"병원 {lifestyle['counts']['hospital']}개·학교 {lifestyle['counts']['school']}개·공원 {lifestyle['counts']['park']}개",
+            f"치안시설 {lifestyle['counts']['police']}개·CCTV {lifestyle['counts']['cctv']}대",
+        ],
+        "확인 필요 서류": [
+            f"{item['label']}: {item['status']}"
+            for item in risk.get("contractChecklist", [])
+            if item.get("priority") in {"high", "medium"}
+        ][:5],
+    }
+    base_basis = [item for values in basis_groups.values() for item in values[:2]]
 
     safer = sorted(
         [
@@ -496,6 +578,7 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
     return {
         "answer": answer,
         "basis": base_basis,
+        "basisGroups": basis_groups,
         "suggestedComparisons": [
             {
                 "id": item["id"],

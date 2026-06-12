@@ -709,6 +709,19 @@ main > .map-dashboard-shell.is-active-view {
   font-weight: 700;
 }
 
+.map-floating-header em {
+  display: inline-flex;
+  width: max-content;
+  margin-top: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .map-floating-legend {
   position: absolute;
   right: 14px;
@@ -779,6 +792,17 @@ main > .map-dashboard-shell.is-active-view {
   height: 16px;
   margin: 0;
   accent-color: var(--accent);
+}
+
+.map-filter-field {
+  display: grid;
+  gap: 6px;
+}
+
+.map-filter-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .map-layer-status {
@@ -1178,6 +1202,12 @@ main > .map-dashboard-shell.is-active-view {
   justify-content: flex-end;
 }
 
+.property-actions .ghost-button {
+  width: auto;
+  margin-top: 0;
+  white-space: nowrap;
+}
+
 .property-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1247,6 +1277,43 @@ main > .map-dashboard-shell.is-active-view {
   margin-top: 5px;
   font-size: 17px;
   line-height: 1.25;
+}
+
+.price-live-status {
+  display: grid;
+  gap: 8px;
+}
+
+.price-live-status-item {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.price-live-status-item.is-live {
+  border-style: solid;
+  border-color: rgba(47, 143, 88, 0.35);
+  background: #effaf2;
+}
+
+.price-live-status-item strong,
+.price-live-status-item span,
+.price-live-status-item small {
+  display: block;
+}
+
+.price-live-status-item strong {
+  font-size: 12px;
+}
+
+.price-live-status-item span,
+.price-live-status-item small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .risk-pill {
@@ -1398,6 +1465,60 @@ main > .map-dashboard-shell.is-active-view {
   text-align: right;
 }
 
+.checklist-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcf8;
+}
+
+.checklist-item.priority-high {
+  border-color: rgba(201, 77, 47, 0.34);
+  background: #fff7f3;
+}
+
+.checklist-item.priority-medium {
+  border-color: rgba(180, 135, 42, 0.34);
+  background: #fffaf0;
+}
+
+.checklist-item strong,
+.checklist-item span {
+  display: block;
+}
+
+.checklist-item span {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.checklist-item em {
+  flex: 0 0 auto;
+  max-width: 96px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--accent);
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 900;
+  text-align: center;
+}
+
 .ai-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1503,6 +1624,32 @@ main > .map-dashboard-shell.is-active-view {
 .agent-answer.is-error {
   color: var(--accent-2);
   background: #fff8f5;
+}
+
+.agent-basis-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.agent-basis-grid section {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.agent-basis-grid strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.agent-basis-grid ul {
+  padding-left: 16px;
+  font-size: 12px;
 }
 
 .agent-suggestions {
@@ -2301,15 +2448,18 @@ main > .map-dashboard-shell.is-active-view {
   }
 
   .property-metrics.two,
+  .agent-basis-grid,
   .agent-form {
     grid-template-columns: 1fr;
   }
 
-  .risk-signal {
+  .risk-signal,
+  .checklist-item {
     flex-direction: column;
   }
 
-  .risk-signal em {
+  .risk-signal em,
+  .checklist-item em {
     text-align: left;
   }
 
