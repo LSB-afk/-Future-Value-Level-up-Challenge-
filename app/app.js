@@ -11,6 +11,7 @@ const state = {
   apiMeta: null,
   apiOnline: false,
   isLoading: false,
+  hasMatched: false,
   lastError: "",
   lastUpdated: null,
   refreshTimer: null,
@@ -155,6 +156,7 @@ const nodes = {
   serviceWeightOutput: document.querySelector("#serviceWeightOutput"),
   safetyWeightOutput: document.querySelector("#safetyWeightOutput"),
   refreshButton: document.querySelector("#refreshButton"),
+  matchButton: document.querySelector("#matchButton"),
   resetButton: document.querySelector("#resetButton"),
   cards: document.querySelector("#cards"),
   toggleCards: document.querySelector("#toggleCards"),
@@ -429,19 +431,10 @@ function calculateFallback() {
     .sort((a, b) => b.total - a.total || a.rentMonthly10k - b.rentMonthly10k || a.name.localeCompare(b.name));
 }
 
-function ensureSelection() {
-  if (!state.results.length) {
-    state.selectedId = null;
-    return;
-  }
-  if (!state.selectedId || !state.results.some((item) => item.id === state.selectedId)) {
-    state.selectedId = state.results[0].id;
-  }
-}
-
 async function refreshRecommendations() {
   const requestId = ++state.requestId;
   state.isLoading = true;
+  state.hasMatched = true;
   if (!state.results.length) {
     render();
   } else {
@@ -471,7 +464,6 @@ async function refreshRecommendations() {
       if (state.map) {
         state.map.fitted = false;
       }
-      ensureSelection();
       render();
     }
   }
@@ -479,12 +471,26 @@ async function refreshRecommendations() {
 
 function scheduleRefresh(delay = 140) {
   window.clearTimeout(state.refreshTimer);
-  state.isLoading = true;
-  renderControls();
-  renderLoadingHint();
-  state.refreshTimer = window.setTimeout(() => {
-    refreshRecommendations();
-  }, delay);
+  state.requestId += 1;
+  state.isLoading = false;
+  state.hasMatched = false;
+  state.results = [];
+  state.selectedId = null;
+  state.showAllCards = false;
+  state.detailPanelOpen = false;
+  state.evidenceRendered = false;
+  state.property.selectedId = null;
+  state.property.detail = null;
+  state.property.error = "";
+  state.property.isLoading = false;
+  state.property.agentAnswer = null;
+  state.property.agentError = "";
+  state.property.requestId += 1;
+  resetRouteState();
+  if (state.map) {
+    state.map.fitted = false;
+  }
+  render();
 }
 
 function markerColor(score) {
@@ -810,10 +816,14 @@ function renderLeafletMap() {
   return true;
 }
 
-function focusSelectedMarker(pan) {
+function focusSelectedMarker(options = {}) {
   const marker = state.map?.markersById?.[state.selectedId];
   if (!marker) return;
-  if (pan) {
+  if (options.zoom) {
+    state.map.instance.flyTo(marker.getLatLng(), Math.max(state.map.instance.getZoom(), 15), {
+      duration: 0.65
+    });
+  } else if (options.pan) {
     state.map.instance.panTo(marker.getLatLng());
   }
   marker.openPopup();
@@ -1118,9 +1128,7 @@ function renderDetailSubpanelState() {
   nodes.detailSubpanel.setAttribute("aria-hidden", open ? "false" : "true");
 
   if (nodes.subpanelMeta) {
-    nodes.subpanelMeta.textContent = selected
-      ? `${selected.district} · ${selected.station} 중심`
-      : "매칭 결과를 선택하세요";
+    nodes.subpanelMeta.textContent = selected ? "" : "매칭 결과를 선택하세요";
   }
 }
 
@@ -1327,6 +1335,19 @@ function removePropertyFromCompare(id) {
   renderPropertyDashboard();
 }
 
+function closePropertyDashboard() {
+  state.property.selectedId = null;
+  state.property.detail = null;
+  state.property.error = "";
+  state.property.isLoading = false;
+  state.property.agentAnswer = null;
+  state.property.agentError = "";
+  state.property.requestId += 1;
+  renderApartmentLayer();
+  renderPropertyDashboard();
+  drawPropertySocRadius();
+}
+
 async function askPropertyAgent(event) {
   event?.preventDefault();
   const detail = state.property.detail;
@@ -1350,6 +1371,7 @@ async function askPropertyAgent(event) {
 }
 
 function bindPropertyDashboardEvents() {
+  document.querySelector("#propertyCloseButton")?.addEventListener("click", closePropertyDashboard);
   document.querySelector("#addCompareButton")?.addEventListener("click", () => {
     addPropertyToCompare(state.property.detail);
   });
@@ -1411,6 +1433,7 @@ function renderPropertyDashboard() {
         <p>${escapeHtml(detail.address || "")}</p>
       </div>
       <div class="property-actions">
+        <button id="propertyCloseButton" class="property-close-button" type="button" aria-label="부동산 상세 대시보드 닫기">×</button>
         <span class="risk-pill ${riskTone(risk.levelKey)}">${escapeHtml(risk.level || "점검 필요")} · ${formatNumber(risk.score)}점</span>
         <button id="addCompareButton" class="ghost-button" type="button" ${compareExists ? "disabled" : ""}>
           ${compareExists ? "비교 추가됨" : "비교에 추가"}
@@ -1651,7 +1674,7 @@ function renderCards() {
   }
 
   if (!state.results.length) {
-    nodes.cards.innerHTML = `<div class="empty-state">추천 결과가 없습니다.</div>`;
+    nodes.cards.innerHTML = `<div class="empty-state">${state.hasMatched ? "조건에 맞는 매칭 결과가 없습니다." : "조건을 설정하고 매칭하기 버튼을 눌러주세요"}</div>`;
     nodes.toggleCards.hidden = true;
     return;
   }
@@ -1665,7 +1688,7 @@ function renderCards() {
     card.classList.toggle("is-selected", item.id === state.selectedId);
     fragment.querySelector(".rank").textContent = index + 1;
     fragment.querySelector(".name").textContent = `${item.name} · ${item.district}`;
-    button.addEventListener("click", () => selectArea(item.id, { source: "card", autoRoute: true, openDetailPanel: true }));
+    button.addEventListener("click", () => selectArea(item.id, { source: "card", openDetailPanel: true }));
     nodes.cards.append(fragment);
   });
 
@@ -1842,6 +1865,12 @@ function renderDetail() {
     <div>
       <h3>${selected.name} · ${selected.district}</h3>
     </div>
+    <div class="score-list" aria-label="항목별 점수">
+      ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
+      ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
+      ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
+      ${scoreRow("안전·환경", selected.adjusted.safety, scoreTips.safety)}
+    </div>
     <div class="metric-grid">
       ${metric("종합점수", `${selected.total}점`)}
       ${metric("통근시간", `${selected.minutes}분`)}
@@ -1849,21 +1878,6 @@ function renderDetail() {
       ${metric("보증금 중앙값", formatMoney10k(selected.deposit10k))}
       ${metric("전세 중앙값", formatMoney10k(selected.jeonse10k))}
       ${metric("대중교통", `${selected.transitScore}점`)}
-    </div>
-    <div class="score-list" aria-label="항목별 점수">
-      ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
-      ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
-      ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
-      ${scoreRow("안전·환경", selected.adjusted.safety, scoreTips.safety)}
-    </div>
-    <div class="callout">
-      <p><strong>추천 근거</strong><br>${buildReason(selected)} ${selected.insight}</p>
-    </div>
-    ${renderRentExamples(selected)}
-    ${renderSafetyEnvSummary(selected)}
-    ${renderEvidence(selected)}
-    <div class="callout">
-      <p><strong>사업 적용</strong><br>부동산 플랫폼에는 생활권 점수 API로, 지자체에는 주거-이동 부담 리포트로 제공할 수 있다.</p>
     </div>
   `;
 }
@@ -2110,6 +2124,10 @@ function renderControls() {
   if (nodes.destinationInput && nodes.destinationInput.value !== state.destinationQuery) {
     nodes.destinationInput.value = state.destinationQuery;
   }
+  if (nodes.matchButton) {
+    nodes.matchButton.disabled = state.isLoading || !state.neighborhoods.length;
+    nodes.matchButton.textContent = state.isLoading ? "매칭 중" : "매칭하기";
+  }
   syncAllRangeProgress();
 
   nodes.resultSummary.textContent = "";
@@ -2118,10 +2136,12 @@ function renderControls() {
     ? state.lastUpdated.toLocaleTimeString("ko-KR", { hour12: false })
     : "";
   nodes.updatedAt.textContent = state.isLoading
-    ? "조건 반영 중…"
-    : sourceYear
-      ? `${modeLabel} 계산 · ${sourceYear} 서울 전월세 실데이터${stamp ? ` · ${stamp} 기준` : ""}`
-      : "데이터 준비 중";
+    ? "매칭 계산 중…"
+    : !state.hasMatched
+      ? ""
+      : sourceYear
+        ? `${modeLabel} 계산 · ${sourceYear} 서울 전월세 실데이터${stamp ? ` · ${stamp} 기준` : ""}`
+        : "데이터 준비 중";
 }
 
 function render() {
@@ -2139,7 +2159,8 @@ function render() {
 }
 
 function selectArea(id, options = {}) {
-  if (state.selectedId !== id) {
+  const shouldResetRoute = options.resetRoute ?? ["card", "map", "route"].includes(options.source);
+  if (state.selectedId !== id || shouldResetRoute) {
     resetRouteState();
   }
   state.selectedId = id;
@@ -2154,12 +2175,7 @@ function selectArea(id, options = {}) {
   }
 
   render();
-  focusSelectedMarker(options.source === "card");
-  const selected = state.results.find((item) => item.id === id);
-  const shouldAutoRoute = options.autoRoute ?? ["card", "map"].includes(options.source);
-  if (shouldAutoRoute && selected && state.route.selectedId !== id && !state.route.isLoading) {
-    calculateRouteForSelected(selected);
-  }
+  focusSelectedMarker({ zoom: ["card", "map"].includes(options.source) });
 }
 
 function setActiveNav(sectionId) {
@@ -2187,7 +2203,7 @@ function activateSection(sectionId, options = {}) {
       if (state.apartments.enabled) {
         scheduleApartmentLayerLoad();
       }
-      focusSelectedMarker(false);
+      focusSelectedMarker();
     }, 80);
   }
 }
@@ -2212,9 +2228,12 @@ function resetUserSettings() {
   state.destinationQuery = "";
   state.persona = "single";
   state.weights = { commute: 25, cost: 25, service: 25, safety: 25 };
+  state.results = [];
   state.selectedId = null;
   state.showAllCards = false;
   state.detailPanelOpen = false;
+  state.hasMatched = false;
+  state.isLoading = false;
   state.apartments.enabled = true;
   state.apartments.labelMode = "sale";
   state.apartments.showSocRadius = true;
@@ -2252,7 +2271,7 @@ async function refreshAllData() {
 
   try {
     await loadAreas();
-    await refreshRecommendations();
+    render();
     if (state.apartments.enabled) {
       scheduleApartmentLayerLoad(true);
     }
@@ -2321,6 +2340,21 @@ function bindEvents() {
     renderCards();
   });
 
+  nodes.matchButton?.addEventListener("click", () => {
+    window.clearTimeout(state.refreshTimer);
+    state.showAllCards = false;
+    state.detailPanelOpen = false;
+    state.property.selectedId = null;
+    state.property.detail = null;
+    state.property.error = "";
+    state.property.isLoading = false;
+    state.property.agentAnswer = null;
+    state.property.agentError = "";
+    state.property.requestId += 1;
+    resetRouteState();
+    refreshRecommendations();
+  });
+
   [nodes.closeSubpanelButton, nodes.subpanelCloseXButton].forEach((button) => {
     button?.addEventListener("click", () => {
       state.detailPanelOpen = false;
@@ -2371,7 +2405,7 @@ async function init() {
   initNavigation();
   render();
   await loadAreas();
-  await refreshRecommendations();
+  render();
 }
 
 init().catch((error) => {

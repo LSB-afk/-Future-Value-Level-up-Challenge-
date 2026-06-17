@@ -17,7 +17,7 @@
   --purple: #6d5dfc;
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-strong: 0 18px 48px rgba(15, 23, 42, 0.16);
-  --sidebar-width: 392px;
+  --sidebar-width: 540px;
   --subpanel-width: 504px;
 }
 
@@ -431,6 +431,7 @@ input[type="range"]::-moz-range-thumb {
 
 .segmented legend {
   grid-column: 1 / -1;
+  margin-bottom: 8px;
 }
 
 .segmented label {
@@ -637,6 +638,18 @@ input[type="range"]::-moz-range-thumb {
   background: var(--naver-strong);
 }
 
+.match-button {
+  margin-top: 14px;
+  min-height: 44px;
+}
+
+.match-button:disabled {
+  border-color: var(--line);
+  background: #e2e8f0;
+  color: var(--muted);
+  cursor: wait;
+}
+
 .empty-state,
 .property-empty {
   display: grid;
@@ -719,6 +732,10 @@ input[type="range"]::-moz-range-thumb {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.subpanel-meta:empty {
+  display: none;
 }
 
 .subpanel-scroll {
@@ -1449,6 +1466,27 @@ details > summary span {
   min-width: 124px;
 }
 
+.property-close-button {
+  justify-self: end;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.property-close-button:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
 .property-grid {
   display: grid;
   gap: 10px;
@@ -1723,7 +1761,7 @@ details > summary span {
 
 @media (max-width: 1180px) {
   :root {
-    --sidebar-width: 372px;
+    --sidebar-width: 492px;
     --subpanel-width: 456px;
   }
 
@@ -1751,7 +1789,7 @@ details > summary span {
     left: 10px;
     top: 10px;
     bottom: 10px;
-    width: min(390px, calc(100vw - 20px));
+    width: min(520px, calc(100vw - 20px));
     height: auto;
     border: 1px solid var(--line);
     border-radius: 12px;
