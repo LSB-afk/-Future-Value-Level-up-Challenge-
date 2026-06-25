@@ -1,7 +1,62 @@
 const CARD_PREVIEW_COUNT = 5;
+const MATCH_RESULT_LIMIT = 10;
+const SEOUL_CENTER = [37.5665, 126.9780];
+const SEOUL_OVERVIEW_ZOOM = 12;
+const BOOKMARK_STORAGE_KEY = "movevalue-apartment-bookmarks";
+const ROUTE_TRANSPORT_MODES = [
+  { key: "car", label: "자동차", icon: "car-front" },
+  { key: "transit", label: "대중교통", icon: "bus-front" },
+  { key: "bicycle", label: "자전거", icon: "bike" },
+  { key: "walk", label: "도보", icon: "person-standing" }
+];
+const SOC_CATEGORY_DEFINITIONS = {
+  medical: {
+    label: "의료",
+    aliases: ["medical", "hospital", "clinic", "pharmacy", "emergency"],
+    targetCount: 3
+  },
+  transport: {
+    label: "교통",
+    aliases: ["transport", "subway", "station", "busStop", "bus_stop", "transferCenter", "transfer_center"],
+    targetCount: 4
+  },
+  convenience: {
+    label: "생활편의",
+    aliases: ["convenience", "convenienceStore", "convenience_store", "mart", "bank", "laundry"],
+    targetCount: 6
+  },
+  education: {
+    label: "교육",
+    aliases: ["education", "school", "daycare", "kindergarten", "elementarySchool", "elementary_school", "academy"],
+    targetCount: 4
+  },
+  leisure: {
+    label: "여가·복지",
+    aliases: ["leisure", "park", "trail", "sports", "gym"],
+    targetCount: 3
+  },
+  welfare: {
+    label: "복지시설",
+    aliases: ["welfare", "communityCenter", "community_center", "welfareCenter", "welfare_center", "seniorWelfare", "senior_welfare"],
+    targetCount: 3
+  }
+};
+const SOC_PERSONA_WEIGHTS = {
+  single: { medical: 15, transport: 30, convenience: 35, education: 5, leisure: 10, welfare: 5 },
+  commuter: { medical: 10, transport: 40, convenience: 25, education: 5, leisure: 10, welfare: 5 },
+  newlywed: { medical: 15, transport: 20, convenience: 20, education: 25, leisure: 15, welfare: 5 },
+  senior: { medical: 35, transport: 10, convenience: 10, education: 0, leisure: 15, welfare: 30 }
+};
+const PERSONA_LABELS = {
+  single: "1인 청년",
+  commuter: "직장인",
+  newlywed: "신혼",
+  senior: "노인"
+};
 
 const state = {
   neighborhoods: [],
+  apartmentCandidates: [],
   results: [],
   selectedId: null,
   destination: "gangnam",
@@ -12,10 +67,12 @@ const state = {
   apiOnline: false,
   isLoading: false,
   hasMatched: false,
+  matchValidationMessage: "",
   lastError: "",
   lastUpdated: null,
   refreshTimer: null,
   requestId: 0,
+  routeRequestId: 0,
   map: null,
   activeSection: "recommend",
   route: {
@@ -23,12 +80,12 @@ const state = {
     isLoading: false,
     result: null,
     error: "",
-    focusMap: false
+    focusMap: false,
+    transportMode: "transit"
   },
   apartments: {
     enabled: true,
     labelMode: "sale",
-    showSocRadius: true,
     isLoading: false,
     features: [],
     meta: null,
@@ -43,15 +100,22 @@ const state = {
     detail: null,
     error: "",
     requestId: 0,
-    comparison: [],
     agentQuestion: "이 아파트 전세 들어가도 괜찮아?",
     agentAnswer: null,
     agentLoading: false,
     agentError: ""
   },
+  bookmarks: {
+    ids: [],
+    details: {},
+    panelOpen: false,
+    isLoading: false,
+    error: ""
+  },
   showAllCards: false,
   evidenceRendered: false,
   detailPanelOpen: false,
+  detailSubpanelTab: "matching",
   weights: {
     commute: 25,
     cost: 25,
@@ -74,6 +138,42 @@ const destinationAddresses = {
   seoulStation: "서울 중구 봉래동2가",
   digital: "서울 구로구 구로동",
   pangyo: "경기도 성남시 분당구 삼평동"
+};
+
+const destinationCoordinates = {
+  gangnam: { lat: 37.4979, lng: 127.0276 },
+  yeouido: { lat: 37.5219, lng: 126.9245 },
+  seoulStation: { lat: 37.5563, lng: 126.9723 },
+  digital: { lat: 37.4853, lng: 126.9015 },
+  pangyo: { lat: 37.3947, lng: 127.1112 }
+};
+
+const seoulDistrictCoordinates = {
+  강남구: { lat: 37.5172, lng: 127.0473 },
+  강동구: { lat: 37.5301, lng: 127.1238 },
+  강북구: { lat: 37.6396, lng: 127.0257 },
+  강서구: { lat: 37.5509, lng: 126.8495 },
+  관악구: { lat: 37.4784, lng: 126.9516 },
+  광진구: { lat: 37.5385, lng: 127.0824 },
+  구로구: { lat: 37.4955, lng: 126.8874 },
+  금천구: { lat: 37.4569, lng: 126.8955 },
+  노원구: { lat: 37.6542, lng: 127.0568 },
+  도봉구: { lat: 37.6688, lng: 127.0471 },
+  동대문구: { lat: 37.5744, lng: 127.0396 },
+  동작구: { lat: 37.5124, lng: 126.9393 },
+  마포구: { lat: 37.5663, lng: 126.9019 },
+  서대문구: { lat: 37.5791, lng: 126.9368 },
+  서초구: { lat: 37.4837, lng: 127.0324 },
+  성동구: { lat: 37.5633, lng: 127.0371 },
+  성북구: { lat: 37.5894, lng: 127.0167 },
+  송파구: { lat: 37.5145, lng: 127.1059 },
+  양천구: { lat: 37.5170, lng: 126.8666 },
+  영등포구: { lat: 37.5264, lng: 126.8963 },
+  용산구: { lat: 37.5326, lng: 126.9905 },
+  은평구: { lat: 37.6027, lng: 126.9291 },
+  종로구: { lat: 37.5735, lng: 126.9790 },
+  중구: { lat: 37.5641, lng: 126.9979 },
+  중랑구: { lat: 37.6063, lng: 127.0927 }
 };
 
 const destinationSearchOptions = [
@@ -121,25 +221,11 @@ const areaAddressDefaults = {
   gimpoairport: "서울 강서구 공항동"
 };
 
-const personaLabels = {
-  single: "1인 청년",
-  commuter: "직장인",
-  newlywed: "신혼",
-  senior: "교통약자"
-};
-
-const personaBoost = {
-  single: { cost: 7, service: 2 },
-  commuter: { commute: 7, transit: 3 },
-  newlywed: { safety: 5, service: 5 },
-  senior: { safety: 7, service: 4 }
-};
-
 const scoreTips = {
-  commute: "대중교통 경로 API 어댑터 기반 통근시간 점수, API 키가 없으면 검증 테이블로 폴백",
-  cost: "예산 대비 월세 중앙값(2025 서울 전월세 실데이터) 기반 점수",
-  service: "병원·학교·공원 좌표를 생활권 반경으로 집계한 생활 SOC 접근성 점수",
-  safety: "치안시설·CCTV 집계점·대기측정망·공원 접근성을 결합한 안전·환경 점수"
+  commute: "목적지까지의 대중교통 통근시간을 반영한 점수",
+  cost: "예산 대비 단지 추정 월세를 반영한 주거비 점수",
+  service: "의료·교통·생활편의·교육·여가복지·복지시설을 가구 유형별 비중으로 합산한 생활 SOC 점수",
+  safety: "치안·환경 접근성과 단지 전세 위험 신호를 결합한 안전 점수"
 };
 
 const nodes = {
@@ -156,6 +242,8 @@ const nodes = {
   serviceWeightOutput: document.querySelector("#serviceWeightOutput"),
   safetyWeightOutput: document.querySelector("#safetyWeightOutput"),
   refreshButton: document.querySelector("#refreshButton"),
+  bookmarkPanelButton: document.querySelector("#bookmarkPanelButton"),
+  bookmarkCount: document.querySelector("#bookmarkCount"),
   matchButton: document.querySelector("#matchButton"),
   resetButton: document.querySelector("#resetButton"),
   cards: document.querySelector("#cards"),
@@ -164,11 +252,12 @@ const nodes = {
   mapCanvas: document.querySelector("#mapCanvas"),
   detailContent: document.querySelector("#detailContent"),
   routeContent: document.querySelector("#routeContent"),
+  infrastructureContent: document.querySelector("#infrastructureContent"),
   apartmentLayerToggle: document.querySelector("#apartmentLayerToggle"),
   mapLabelModeInput: document.querySelector("#mapLabelModeInput"),
-  socRadiusToggle: document.querySelector("#socRadiusToggle"),
   apartmentLayerStatus: document.querySelector("#apartmentLayerStatus"),
   propertyDashboard: document.querySelector("#propertyDashboard"),
+  bookmarkPanel: document.querySelector("#bookmarkPanel"),
   detailSubpanel: document.querySelector("#detailSubpanel"),
   closeSubpanelButton: document.querySelector("#closeSubpanelButton"),
   subpanelCloseXButton: document.querySelector("#subpanelCloseXButton"),
@@ -234,6 +323,29 @@ function riskTone(key) {
   return "safe";
 }
 
+function loadBookmarksFromStorage() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(BOOKMARK_STORAGE_KEY) || "[]");
+    state.bookmarks.ids = Array.isArray(saved)
+      ? [...new Set(saved.filter((id) => typeof id === "string" && id))]
+      : [];
+  } catch {
+    state.bookmarks.ids = [];
+  }
+}
+
+function persistBookmarks() {
+  try {
+    window.localStorage.setItem(BOOKMARK_STORAGE_KEY, JSON.stringify(state.bookmarks.ids));
+  } catch {
+    // Local storage may be unavailable in privacy-restricted browser contexts.
+  }
+}
+
+function isBookmarked(id) {
+  return state.bookmarks.ids.includes(id);
+}
+
 function labelModeName(mode = state.apartments.labelMode) {
   if (mode === "jeonse") return "전세가율";
   if (mode === "risk") return "위험도";
@@ -258,21 +370,13 @@ function propertyLabel(feature) {
   if (state.apartments.labelMode === "commute") {
     return {
       primary: preview.commuteLabel || "통근",
-      secondary: preview.livingAreaName ? escapeHtml(preview.livingAreaName) : "생활권 기준"
+      secondary: preview.livingAreaName ? escapeHtml(preview.livingAreaName) : "입지 기준"
     };
   }
   return {
     primary: preview.saleLabel ? escapeHtml(preview.saleLabel.replace(" ", "")) : "단지",
     secondary: preview.jeonseRatio ? `전세 ${formatPercent(preview.jeonseRatio)}` : "상세 보기"
   };
-}
-
-function clusterLabel(feature) {
-  const preview = feature.pricePreview || {};
-  if (state.apartments.labelMode === "jeonse") return preview.jeonseRatio ? `전세 ${formatPercent(preview.jeonseRatio)}` : `${formatNumber(feature.count)}개`;
-  if (state.apartments.labelMode === "risk") return preview.riskLevelKey === "high" ? "위험 높음" : preview.riskLevelKey === "warning" ? "주의" : "위험 낮음";
-  if (state.apartments.labelMode === "commute") return preview.commuteLabel || `${formatNumber(feature.count)}개`;
-  return preview.sale10k ? formatMoney10k(preview.sale10k).replace(" ", "") : `${formatNumber(feature.count)}개`;
 }
 
 function updateMapScaleUI() {
@@ -299,6 +403,22 @@ function inferDestinationKey(value = "") {
   return keywordMatch?.key || state.destination || "gangnam";
 }
 
+function currentDestinationCoordinates() {
+  const query = state.destinationQuery?.trim();
+  if (!query) return destinationCoordinates[state.destination] || destinationCoordinates.gangnam;
+
+  const normalized = normalizeSearchText(query);
+  const preset = destinationSearchOptions.find((option) => (
+    normalizeSearchText(option.address) === normalized
+    || normalizeSearchText(option.label) === normalized
+    || option.keywords.some((keyword) => normalized === normalizeSearchText(keyword))
+  ));
+  if (preset) return destinationCoordinates[preset.key];
+
+  const district = Object.keys(seoulDistrictCoordinates).find((name) => normalized.includes(normalizeSearchText(name)));
+  return district ? seoulDistrictCoordinates[district] : destinationCoordinates[state.destination] || destinationCoordinates.gangnam;
+}
+
 function destinationDisplayLabel() {
   const query = state.destinationQuery?.trim();
   return query || destinationLabels[state.destination] || "목적지";
@@ -319,6 +439,7 @@ function destinationScoringLabel() {
 
 function representativeAddressFor(item) {
   return item?.representativeAddress
+    || item?.address
     || areaAddressDefaults[item?.id]
     || `${item?.district || ""} ${item?.station || item?.name || ""}`.trim();
 }
@@ -339,6 +460,18 @@ function applyDataset(dataset) {
   state.apiMeta = dataset.meta || null;
 }
 
+function applyApartmentDataset(dataset) {
+  const candidates = Array.isArray(dataset?.apartments)
+    ? dataset.apartments
+    : Array.isArray(dataset?.features)
+      ? dataset.features.filter((item) => item.type !== "cluster")
+      : [];
+  if (!candidates.length) {
+    throw new Error("아파트 후보 데이터 형식이 올바르지 않습니다.");
+  }
+  state.apartmentCandidates = candidates;
+}
+
 async function loadAreas() {
   try {
     const dataset = await fetchJson("/api/areas");
@@ -352,17 +485,208 @@ async function loadAreas() {
   }
 }
 
+async function loadApartmentCandidates() {
+  try {
+    const dataset = state.apiOnline
+      ? await fetchJson("/api/apartments?cluster=false&limit=10000")
+      : await fetchJson("../data/apartments.seoul.snapshot.json");
+    applyApartmentDataset(dataset);
+  } catch (apiError) {
+    const dataset = await fetchJson("../data/apartments.seoul.snapshot.json");
+    applyApartmentDataset(dataset);
+    state.lastError = `아파트 API 비연결: ${apiError.message}`;
+  }
+}
+
 function buildRecommendationQuery() {
+  const destination = currentDestinationCoordinates();
   return new URLSearchParams({
     budget: state.budget,
     destination: state.destination,
+    destinationQuery: state.destinationQuery.trim(),
+    destinationLat: destination.lat,
+    destinationLng: destination.lng,
     persona: state.persona,
     commuteWeight: state.weights.commute,
     costWeight: state.weights.cost,
     serviceWeight: state.weights.service,
     safetyWeight: state.weights.safety,
-    limit: 9
+    limit: MATCH_RESULT_LIMIT
   });
+}
+
+function haversineKm(aLat, aLng, bLat, bLng) {
+  const radius = 6371.0088;
+  const toRadians = (value) => Number(value) * Math.PI / 180;
+  const phi1 = toRadians(aLat);
+  const phi2 = toRadians(bLat);
+  const deltaPhi = toRadians(Number(bLat) - Number(aLat));
+  const deltaLambda = toRadians(Number(bLng) - Number(aLng));
+  const h = Math.sin(deltaPhi / 2) ** 2
+    + Math.cos(phi1) * Math.cos(phi2) * Math.sin(deltaLambda / 2) ** 2;
+  return radius * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+}
+
+function stableFactor(seed, minimum, maximum) {
+  let hash = 2166136261;
+  for (const character of String(seed || "apartment")) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const ratio = (hash >>> 0) / 4294967295;
+  return minimum + (maximum - minimum) * ratio;
+}
+
+function nearestNeighborhoodForApartment(apartment) {
+  const district = String(apartment.district || "").replace(/^서울(?:특별시)?\s*/, "");
+  const sameDistrict = state.neighborhoods.filter((item) => (
+    district && String(item.district || "").includes(district)
+  ));
+  const candidates = sameDistrict.length ? sameDistrict : state.neighborhoods;
+  return candidates.reduce((nearest, item) => {
+    const distance = haversineKm(apartment.lat, apartment.lng, item.lat, item.lng);
+    return !nearest || distance < nearest.distance ? { item, distance } : nearest;
+  }, null)?.item || {};
+}
+
+function numericFrom(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function socCountFromAliases(sources, aliases) {
+  for (const source of sources) {
+    if (!source || typeof source !== "object") continue;
+    let count = 0;
+    let hasValue = false;
+    aliases.forEach((alias) => {
+      if (Object.prototype.hasOwnProperty.call(source, alias)) {
+        count += numericFrom(source[alias]);
+        hasValue = true;
+      }
+    });
+    if (hasValue) return { count, hasValue };
+  }
+  return { count: 0, hasValue: false };
+}
+
+function scoreFromFacilityCount(count, targetCount) {
+  return clamp(45 + Math.min(Math.max(count, 0) / Math.max(targetCount, 1), 1) * 55);
+}
+
+function socCategoryScoresFor(area) {
+  const baseScore = clamp(numericFrom(area.serviceScore ?? area.socScore, 70));
+  const soc = area.socSummary || {};
+  const evidence = area.evidence || {};
+  const counts = soc.counts || {};
+  const categoryCounts = soc.categoryCounts || soc.countsByCategory || evidence.socCategoryCounts || {};
+  const categoryScores = soc.categoryScores || area.socCategoryScores || evidence.socCategoryScores || {};
+
+  return Object.fromEntries(Object.entries(SOC_CATEGORY_DEFINITIONS).map(([key, definition]) => {
+    const explicitScore = categoryScores[key];
+    if (explicitScore != null && explicitScore !== "") {
+      return [key, Math.round(clamp(numericFrom(explicitScore, baseScore)))];
+    }
+    if (key === "transport") {
+      return [key, Math.round(clamp(numericFrom(area.transitScore, baseScore)))];
+    }
+    const { count, hasValue } = socCountFromAliases([categoryCounts, counts, evidence.socCounts], definition.aliases);
+    return [
+      key,
+      Math.round(hasValue ? scoreFromFacilityCount(count, definition.targetCount) : baseScore)
+    ];
+  }));
+}
+
+function personaSocWeights(persona = state.persona) {
+  return SOC_PERSONA_WEIGHTS[persona] || SOC_PERSONA_WEIGHTS.single;
+}
+
+function computePersonaSocScore(area, persona = state.persona) {
+  const categoryScores = socCategoryScoresFor(area);
+  const weights = personaSocWeights(persona);
+  const totalWeight = Object.values(weights).reduce((sum, value) => sum + Number(value), 0) || 100;
+  const weighted = Object.entries(weights).reduce((sum, [key, weight]) => {
+    return sum + numericFrom(categoryScores[key], 70) * Number(weight);
+  }, 0);
+  return {
+    score: Math.round(clamp(weighted / totalWeight)),
+    categoryScores,
+    weights
+  };
+}
+
+function socSummaryTextFor(area, persona = state.persona, limit = 3) {
+  const scoring = {
+    categoryScores: area.socCategoryScores || computePersonaSocScore(area, persona).categoryScores,
+    weights: area.socPersonaWeights || personaSocWeights(persona)
+  };
+  return Object.keys(SOC_CATEGORY_DEFINITIONS)
+    .filter((key) => Number(scoring.weights[key]) > 0)
+    .sort((a, b) => Number(scoring.weights[b]) - Number(scoring.weights[a]))
+    .slice(0, limit)
+    .map((key) => `${SOC_CATEGORY_DEFINITIONS[key].label} ${formatNumber(scoring.categoryScores[key])}점`)
+    .join(" · ");
+}
+
+function scoreApartmentCandidate(apartment) {
+  const area = nearestNeighborhoodForApartment(apartment);
+  const pricePreview = apartment.pricePreview || {};
+  const marketFactor = stableFactor(`${apartment.id}:market`, 0.92, 1.16);
+  const monthlyRent = Math.round(Number(area.rentMonthly10k || 65) * marketFactor);
+  const deposit = Math.round(Number(area.deposit10k || 1000) * stableFactor(`${apartment.id}:deposit`, 0.85, 1.3));
+  const jeonse = Number(pricePreview.jeonse10k) || Math.round(Number(area.jeonse10k || 26000) * marketFactor);
+  const sale = Number(pricePreview.sale10k) || Math.round(jeonse / stableFactor(`${apartment.id}:ratio`, 0.55, 0.72));
+  const destination = currentDestinationCoordinates();
+  const areaMinutes = Number(area.commuteMinutes?.[state.destination] || 60);
+  const apartmentDistance = haversineKm(apartment.lat, apartment.lng, destination.lat, destination.lng);
+  const areaDistance = haversineKm(area.lat, area.lng, destination.lat, destination.lng);
+  const minutes = Math.round(clamp(areaMinutes + (apartmentDistance - areaDistance) * 2.2, 10, 120));
+  const commuteScore = clamp(105 - minutes * 1.18);
+  const overBudget = Math.max(0, monthlyRent - state.budget);
+  const underBudget = Math.max(0, state.budget - monthlyRent);
+  const costScore = clamp(82 + underBudget * 0.55 - overBudget * 1.9);
+  const neighborhoodSafety = Number(area.safetyScore || 70) * 0.58 + Number(area.carbonScore || 70) * 0.42;
+  const propertySafety = 100 - Number(pricePreview.riskScore || 0);
+  const socScoring = computePersonaSocScore(area, state.persona);
+  const adjusted = {
+    commute: clamp(commuteScore),
+    cost: clamp(costScore),
+    service: socScoring.score,
+    safety: clamp(neighborhoodSafety * 0.85 + propertySafety * 0.15)
+  };
+  const totalWeight = Object.values(state.weights).reduce((sum, value) => sum + Number(value), 0) || 100;
+  const weighted = Object.keys(state.weights).reduce((sum, key) => sum + adjusted[key] * state.weights[key], 0);
+  const dataConfidence = (Number(area.dataReadiness || 80) - 80) * 0.12;
+  const result = {
+    ...apartment,
+    propertyType: "apartment",
+    total: Math.round(clamp(weighted / totalWeight + dataConfidence)),
+    minutes,
+    adjusted: Object.fromEntries(Object.entries(adjusted).map(([key, value]) => [key, Math.round(value)])),
+    destination: state.destination,
+    destinationLabel: destinationDisplayLabel(),
+    destinationAddress: destinationAddressFor(),
+    representativeAddress: apartment.address,
+    rentMonthly10k: monthlyRent,
+    deposit10k: deposit,
+    jeonse10k: Math.round(jeonse),
+    sale10k: Math.round(sale),
+    pricePreview,
+    transitScore: area.transitScore,
+    serviceScore: socScoring.score,
+    baseServiceScore: area.serviceScore,
+    socCategoryScores: socScoring.categoryScores,
+    socPersonaWeights: socScoring.weights,
+    safetyScore: area.safetyScore,
+    carbonScore: area.carbonScore,
+    dataReadiness: area.dataReadiness,
+    socSummary: area.socSummary,
+    safetyEnvSummary: area.safetyEnvSummary,
+    evidence: area.evidence,
+    livingArea: { id: area.id, name: area.name, station: area.station, district: area.district }
+  };
+  return { ...result, reasonText: buildSpecificReason(result) };
 }
 
 function scoreNeighborhood(item) {
@@ -372,13 +696,12 @@ function scoreNeighborhood(item) {
   const underBudget = Math.max(0, state.budget - Number(item.rentMonthly10k));
   const costScore = clamp(82 + underBudget * 0.55 - overBudget * 1.9);
   const safetyEnvScore = Math.round(Number(item.safetyScore) * 0.58 + Number(item.carbonScore) * 0.42);
-  const boost = personaBoost[state.persona] || {};
-
+  const socScoring = computePersonaSocScore(item, state.persona);
   const adjusted = {
-    commute: clamp(commuteScore + (boost.commute || 0) + (boost.transit || 0)),
-    cost: clamp(costScore + (boost.cost || 0)),
-    service: clamp(Number(item.serviceScore) + (boost.service || 0)),
-    safety: clamp(safetyEnvScore + (boost.safety || 0))
+    commute: clamp(commuteScore),
+    cost: clamp(costScore),
+    service: socScoring.score,
+    safety: clamp(safetyEnvScore)
   };
 
   const totalWeight = Object.values(state.weights).reduce((sum, value) => sum + Number(value), 0) || 100;
@@ -388,9 +711,8 @@ function scoreNeighborhood(item) {
     adjusted.service * state.weights.service +
     adjusted.safety * state.weights.safety;
 
-  const personaMatch = item.recommendedFor?.includes(state.persona) ? 3 : 0;
   const dataConfidence = (Number(item.dataReadiness || 80) - 80) * 0.12;
-  const total = clamp(weighted / totalWeight + personaMatch + dataConfidence);
+  const total = clamp(weighted / totalWeight + dataConfidence);
 
   return {
     ...item,
@@ -402,6 +724,10 @@ function scoreNeighborhood(item) {
       service: Math.round(adjusted.service),
       safety: Math.round(adjusted.safety)
     },
+    serviceScore: socScoring.score,
+    baseServiceScore: item.serviceScore,
+    socCategoryScores: socScoring.categoryScores,
+    socPersonaWeights: socScoring.weights,
     destination: state.destination,
     destinationLabel: destinationDisplayLabel(),
     destinationScoringLabel: destinationScoringLabel(),
@@ -426,9 +752,10 @@ function enrichRecommendationResult(item) {
 }
 
 function calculateFallback() {
-  return state.neighborhoods
-    .map(scoreNeighborhood)
-    .sort((a, b) => b.total - a.total || a.rentMonthly10k - b.rentMonthly10k || a.name.localeCompare(b.name));
+  return state.apartmentCandidates
+    .map(scoreApartmentCandidate)
+    .sort((a, b) => b.total - a.total || a.rentMonthly10k - b.rentMonthly10k || a.name.localeCompare(b.name))
+    .slice(0, MATCH_RESULT_LIMIT);
 }
 
 async function refreshRecommendations() {
@@ -444,7 +771,7 @@ async function refreshRecommendations() {
 
   try {
     if (state.apiOnline) {
-      const payload = await fetchJson(`/api/recommendations?${buildRecommendationQuery().toString()}`);
+      const payload = await fetchJson(`/api/apartment-recommendations?${buildRecommendationQuery().toString()}`);
       if (requestId !== state.requestId) return;
       state.apiMeta = payload.meta || state.apiMeta;
       state.results = Array.isArray(payload.results) ? payload.results.map(enrichRecommendationResult) : [];
@@ -474,10 +801,12 @@ function scheduleRefresh(delay = 140) {
   state.requestId += 1;
   state.isLoading = false;
   state.hasMatched = false;
+  state.matchValidationMessage = "";
   state.results = [];
   state.selectedId = null;
   state.showAllCards = false;
   state.detailPanelOpen = false;
+  state.detailSubpanelTab = "matching";
   state.evidenceRendered = false;
   state.property.selectedId = null;
   state.property.detail = null;
@@ -507,6 +836,8 @@ function markerTone(score) {
 
 function routeModeKey(mode = "") {
   const text = String(mode).toLowerCase();
+  if (text.includes("자동차") || text.includes("car") || text.includes("drive")) return "car";
+  if (text.includes("자전거") || text.includes("bicycle") || text.includes("bike") || text.includes("cycle")) return "bicycle";
   if (text.includes("지하철") || text.includes("metro") || text.includes("subway")) return "subway";
   if (text.includes("버스") || text.includes("bus")) return "bus";
   if (text.includes("도보") || text.includes("walk")) return "walk";
@@ -533,6 +864,8 @@ function subwayRouteColor(route = "") {
 
 function routeModeColor(step = {}) {
   const key = routeModeKey(step.mode);
+  if (key === "car") return "#2563EB";
+  if (key === "bicycle") return "#F59E0B";
   if (key === "subway") return subwayRouteColor(step.route);
   if (key === "bus") return "#386DE8";
   if (key === "walk") return "#64748B";
@@ -542,6 +875,8 @@ function routeModeColor(step = {}) {
 
 function routeModeIcon(mode = "") {
   const key = routeModeKey(mode);
+  if (key === "car") return "C";
+  if (key === "bicycle") return "BI";
   if (key === "subway") return "M";
   if (key === "bus") return "B";
   if (key === "walk") return "W";
@@ -649,21 +984,63 @@ function initializeLeafletMap() {
   const instance = L.map(nodes.mapCanvas, {
     zoomControl: true,
     scrollWheelZoom: true
-  }).setView([37.54, 126.98], 11);
+  }).setView(SEOUL_CENTER, SEOUL_OVERVIEW_ZOOM);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(instance);
 
+  const markerLayer = typeof L.markerClusterGroup === "function"
+    ? L.markerClusterGroup({
+        maxClusterRadius: (zoom) => (zoom >= 16 ? 34 : 52),
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        spiderfyOnMaxZoom: true,
+        spiderfyDistanceMultiplier: 1.25,
+        iconCreateFunction(cluster) {
+          const count = cluster.getChildCount();
+          const size = count >= 10 ? 58 : count >= 5 ? 54 : 50;
+          return L.divIcon({
+            className: "mv-cluster-icon-wrapper",
+            html: `<span class="mv-cluster-icon" style="--cluster-size:${size}px"><strong>${formatNumber(count)}</strong></span>`,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2]
+          });
+        }
+      })
+    : L.layerGroup();
+  markerLayer.addTo(instance);
+
+  const apartmentLayer = typeof L.markerClusterGroup === "function"
+    ? L.markerClusterGroup({
+        maxClusterRadius: (zoom) => (zoom >= 16 ? 48 : zoom >= 14 ? 66 : 82),
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        spiderfyOnMaxZoom: true,
+        spiderfyDistanceMultiplier: 1.3,
+        iconCreateFunction(cluster) {
+          const count = cluster.getChildCount();
+          const size = count >= 10 ? 60 : count >= 5 ? 56 : 52;
+          return L.divIcon({
+            className: "apt-cluster-wrapper",
+            html: `<span class="apt-cluster" style="--cluster-size:${size}px"><strong>${formatNumber(count)}</strong></span>`,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2]
+          });
+        }
+      })
+    : L.layerGroup();
+  apartmentLayer.addTo(instance);
+
   state.map = {
     instance,
-    markerLayer: L.layerGroup().addTo(instance),
-    apartmentLayer: L.layerGroup().addTo(instance),
+    markerLayer,
+    apartmentLayer,
     routeLayer: L.layerGroup().addTo(instance),
-    socLayer: L.layerGroup().addTo(instance),
     markersById: {},
-    fitted: false
+    fitted: false,
+    cameraRequestId: 0
   };
 
   instance.on("moveend zoomend", () => {
@@ -678,6 +1055,8 @@ function initializeLeafletMap() {
 function drawRouteLine(bounds) {
   if (!state.map?.routeLayer) return;
   state.map.routeLayer.clearLayers();
+
+  if (!state.detailPanelOpen || state.detailSubpanelTab !== "route") return;
 
   const route = state.route.result;
   if (!route || route.origin?.lat == null || route.destination?.lat == null) return;
@@ -754,14 +1133,9 @@ function drawRouteLine(bounds) {
 
   allLatLngs.forEach((point) => bounds.push(point));
   if (state.route.focusMap && state.map.instance) {
-    state.map.instance.flyToBounds(L.latLngBounds(allLatLngs), {
-      paddingTopLeft: [72, 108],
-      paddingBottomRight: [360, 190],
-      maxZoom: 14,
-      duration: 0.75
-    });
     state.route.focusMap = false;
     state.map.fitted = true;
+    focusRouteOnMap();
   }
 }
 
@@ -777,10 +1151,10 @@ function renderLeafletMap() {
   state.results.forEach((item, index) => {
     const selected = item.id === state.selectedId;
     const marker = L.marker([item.lat, item.lng], {
-      title: `${index + 1}위 ${item.name} ${item.total}점`,
+      title: `${index + 1}위 ${item.name}`,
       icon: L.divIcon({
         className: "mv-map-icon-wrapper",
-        html: `<span class="mv-map-icon ${markerTone(item.total)}${selected ? " is-selected" : ""}" style="--size:${42 + item.total / 5}px"><strong>${item.total}</strong><small>${escapeHtml(item.name)}</small></span>`,
+        html: `<span class="mv-map-icon ${markerTone(item.total)}${selected ? " is-selected" : ""}" style="--size:64px"><strong>${escapeHtml(item.name)}</strong></span>`,
         iconSize: [70, 70],
         iconAnchor: [35, 35],
         popupAnchor: [0, -20]
@@ -788,12 +1162,16 @@ function renderLeafletMap() {
     });
 
     marker.bindPopup(`
-      <strong>${item.name}</strong> <span class="popup-rank">${index + 1}위</span><br>
-      ${item.destinationLabel || destinationDisplayLabel()} ${item.minutes}분<br>
-      월세 중앙값 ${formatNumber(item.rentMonthly10k)}만원<br>
-      종합점수 <strong>${item.total}점</strong>
-    `);
-    marker.on("click", () => selectArea(item.id, { source: "map" }));
+      <div class="match-popup">
+        <strong class="match-popup-name">${escapeHtml(item.name)}</strong>
+        <div class="match-popup-prices">
+          <div><span>매매</span><strong>${formatMoney10k(item.sale10k)}</strong></div>
+          <div><span>전세</span><strong>${formatMoney10k(item.jeonse10k)}</strong></div>
+          <div><span>월세</span><strong>${formatNumber(item.rentMonthly10k)}만원</strong></div>
+        </div>
+      </div>
+    `, { className: "match-price-popup" });
+    marker.on("click", () => selectApartmentMatch(item.id, { source: "map", openDetailPanel: true }));
     marker.addTo(markerLayer);
     state.map.markersById[item.id] = marker;
     bounds.push([item.lat, item.lng]);
@@ -806,7 +1184,9 @@ function renderLeafletMap() {
     state.map.fitted = true;
   }
 
-  if (state.apartments.enabled) {
+  if (state.hasMatched && state.results.length) {
+    renderApartmentLayer();
+  } else if (state.apartments.enabled) {
     scheduleApartmentLayerLoad();
   } else {
     renderApartmentLayer();
@@ -816,30 +1196,62 @@ function renderLeafletMap() {
   return true;
 }
 
+function beginMapCameraTransition() {
+  if (!state.map?.instance) return 0;
+  state.map.cameraRequestId = Number(state.map.cameraRequestId || 0) + 1;
+  state.map.instance.stop();
+  return state.map.cameraRequestId;
+}
+
+function isCurrentMapCameraTransition(requestId) {
+  return Boolean(state.map && state.map.cameraRequestId === requestId);
+}
+
 function focusSelectedMarker(options = {}) {
   const marker = state.map?.markersById?.[state.selectedId];
   if (!marker) return;
+  const requestId = beginMapCameraTransition();
+  const markerLayer = state.map.markerLayer;
+  const openMarker = () => {
+    if (!isCurrentMapCameraTransition(requestId) || state.detailSubpanelTab === "route") return;
+    if (state.map.instance.hasLayer(marker)) marker.openPopup();
+  };
+
   if (options.zoom) {
+    state.map.instance.closePopup();
     state.map.instance.flyTo(marker.getLatLng(), Math.max(state.map.instance.getZoom(), 15), {
       duration: 0.65
     });
+    state.map.instance.once("moveend", openMarker);
+    return;
   } else if (options.pan) {
     state.map.instance.panTo(marker.getLatLng());
   }
-  marker.openPopup();
+
+  if (typeof markerLayer?.zoomToShowLayer === "function") {
+    markerLayer.zoomToShowLayer(marker, openMarker);
+  } else {
+    openMarker();
+  }
 }
 
 function focusRouteOnMap() {
   if (!state.map?.instance || !state.route.result) return;
+  const requestId = beginMapCameraTransition();
   const latLngs = buildRouteSegments(state.route.result).flatMap((segment) => (
     segment.points.map((point) => [Number(point.lat), Number(point.lng)])
   ));
   if (latLngs.length < 2) return;
-  state.map.instance.flyToBounds(L.latLngBounds(latLngs), {
-    paddingTopLeft: [72, 108],
-    paddingBottomRight: [360, 190],
-    maxZoom: 14,
-    duration: 0.75
+  state.map.instance.closePopup();
+  window.requestAnimationFrame(() => {
+    if (!isCurrentMapCameraTransition(requestId) || state.detailSubpanelTab !== "route") return;
+    state.map.instance.invalidateSize({ pan: false });
+    state.map.instance.flyToBounds(L.latLngBounds(latLngs), {
+      paddingTopLeft: [72, 108],
+      paddingBottomRight: [360, 190],
+      maxZoom: 14,
+      duration: 0.75
+    });
   });
 }
 
@@ -869,6 +1281,11 @@ function apartmentBoundsParam() {
 
 function renderApartmentLayerStatus() {
   if (!nodes.apartmentLayerStatus) return;
+  if (state.hasMatched && state.results.length) {
+    nodes.apartmentLayerStatus.textContent = `추천 상위 ${formatNumber(state.results.length)}개 표시`;
+    nodes.apartmentLayerStatus.className = "map-layer-status is-ready";
+    return;
+  }
   if (!state.apartments.enabled) {
     nodes.apartmentLayerStatus.textContent = "아파트 단지 레이어 꺼짐";
     nodes.apartmentLayerStatus.className = "map-layer-status";
@@ -890,9 +1307,11 @@ function renderApartmentLayerStatus() {
     nodes.apartmentLayerStatus.className = "map-layer-status";
     return;
   }
-  const mode = meta.complete ? "전체" : "제한 스냅샷";
+  const mode = meta.complete ? "전체" : meta.prototypeExpanded ? "프로토타입" : "제한 스냅샷";
   const viewCount = meta.filteredRecords || 0;
-  const total = meta.totalRecords || meta.availableRecords || 0;
+  const total = meta.prototypeExpanded
+    ? meta.availableRecords || viewCount
+    : meta.totalRecords || meta.availableRecords || 0;
   nodes.apartmentLayerStatus.textContent = `${mode} ${formatNumber(total)}개 중 현재 화면 ${formatNumber(viewCount)}개`;
   nodes.apartmentLayerStatus.className = meta.complete ? "map-layer-status is-ready" : "map-layer-status is-warning";
 }
@@ -908,7 +1327,7 @@ function apartmentPopup(feature) {
     ${formatNumber(feature.households)}세대 · ${formatNumber(feature.buildingCount)}개동 · ${escapeHtml(approval)}${parking}<br>
     <span class="popup-muted">${escapeHtml(feature.housingType || "공동주택")} · ${escapeHtml(feature.heating || "난방 정보 없음")}</span><br>
     <span class="popup-muted">${price}</span><br>
-    <span class="popup-muted">클릭한 단지의 상세 대시보드가 아래에 열립니다.</span>
+    <span class="popup-muted">클릭하면 아파트 상세 정보가 열립니다.</span>
   `;
 }
 
@@ -931,23 +1350,29 @@ function renderApartmentLayer() {
   const layer = state.map.apartmentLayer;
   layer.clearLayers();
 
+  if (state.hasMatched && state.results.length) {
+    renderApartmentLayerStatus();
+    return;
+  }
+
   if (!state.apartments.enabled) {
     renderApartmentLayerStatus();
     renderMapSidebar();
     return;
   }
 
+  const recommendationIds = new Set(state.results.map((item) => item.id));
   state.apartments.features.forEach((feature) => {
+    if (feature.type !== "cluster" && recommendationIds.has(feature.id)) return;
     if (feature.type === "cluster") {
-      const priceLabel = clusterLabel(feature);
       const marker = L.marker([feature.lat, feature.lng], {
         title: `아파트 단지 ${feature.count}개`,
         icon: L.divIcon({
           className: "apt-cluster-wrapper",
-          html: `<span class="apt-cluster"><strong>${formatNumber(feature.count)}</strong><small>${priceLabel}</small></span>`,
-          iconSize: [74, 50],
-          iconAnchor: [37, 25],
-          popupAnchor: [0, -18]
+          html: `<span class="apt-cluster"><strong>${formatNumber(feature.count)}</strong></span>`,
+          iconSize: [54, 54],
+          iconAnchor: [27, 27],
+          popupAnchor: [0, -22]
         })
       });
       marker.bindPopup(clusterPopup(feature));
@@ -969,12 +1394,11 @@ function renderApartmentLayer() {
         html: `
           <span class="property-price-marker ${riskTone(preview.riskLevelKey)}${selected ? " is-selected" : ""}">
             <strong>${label.primary}</strong>
-            <small>${label.secondary}</small>
           </span>
         `,
-        iconSize: [94, 48],
-        iconAnchor: [47, 24],
-        popupAnchor: [0, -22]
+        iconSize: [94, 44],
+        iconAnchor: [47, 22],
+        popupAnchor: [0, -21]
       })
     });
     marker
@@ -985,7 +1409,6 @@ function renderApartmentLayer() {
   });
   renderApartmentLayerStatus();
   updateMapScaleUI();
-  drawPropertySocRadius();
   renderMapSidebar();
 }
 
@@ -1008,7 +1431,7 @@ async function loadApartmentsForMap(force = false) {
     bounds: apartmentBoundsParam(),
     zoom: state.map.instance.getZoom(),
     destination: state.destination,
-    cluster: "true",
+    cluster: typeof L.markerClusterGroup === "function" ? "false" : "true",
     limit: 5000
   });
 
@@ -1041,13 +1464,14 @@ function renderFallbackMap() {
   nodes.mapCanvas.innerHTML = "";
   nodes.mapCanvas.classList.add("synthetic-map");
 
-  if (!state.neighborhoods.length) {
+  const mapCandidates = state.results.length ? state.results : state.apartmentCandidates;
+  if (!mapCandidates.length) {
     nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
     return;
   }
 
-  const latValues = state.neighborhoods.map((item) => item.lat);
-  const lngValues = state.neighborhoods.map((item) => item.lng);
+  const latValues = mapCandidates.map((item) => item.lat);
+  const lngValues = mapCandidates.map((item) => item.lng);
   const minLat = Math.min(...latValues);
   const maxLat = Math.max(...latValues);
   const minLng = Math.min(...lngValues);
@@ -1063,14 +1487,14 @@ function renderFallbackMap() {
     marker.style.top = `${y}%`;
     marker.style.setProperty("--size", `${18 + item.total / 5}px`);
     marker.style.setProperty("--marker", markerColor(item.total));
-    marker.setAttribute("aria-label", `${item.name} ${item.total}점`);
-    marker.innerHTML = `<span>${item.name} ${item.total}</span>`;
-    marker.addEventListener("click", () => selectArea(item.id, { source: "map" }));
+    marker.setAttribute("aria-label", item.name);
+    marker.innerHTML = `<span>${item.name}</span>`;
+    marker.addEventListener("click", () => selectApartmentMatch(item.id, { source: "map", openDetailPanel: true }));
     nodes.mapCanvas.append(marker);
   });
 
   const route = state.route.result;
-  if (route?.origin && route?.destination) {
+  if (state.detailPanelOpen && state.detailSubpanelTab === "route" && route?.origin && route?.destination) {
     const routeLine = document.createElement("div");
     routeLine.className = "fallback-route-line";
     routeLine.textContent = route.mode === "live_api" ? "실제 경로 계산됨" : "추정 경로";
@@ -1091,25 +1515,6 @@ function renderMap() {
   }
 }
 
-function drawPropertySocRadius() {
-  if (!state.map?.socLayer) return;
-  state.map.socLayer.clearLayers();
-  const detail = state.property.detail;
-  if (!state.apartments.showSocRadius || !detail?.lat || !detail?.lng) return;
-  const radiusMeters = Number(detail.socRadius?.meters || 1600);
-  L.circle([Number(detail.lat), Number(detail.lng)], {
-    radius: radiusMeters,
-    color: "#23665a",
-    weight: 2,
-    opacity: 0.8,
-    fillColor: "#2f8f58",
-    fillOpacity: 0.08,
-    dashArray: "8 8"
-  })
-    .bindTooltip(`생활 SOC 반경 ${formatDistance(radiusMeters)}`, { direction: "top" })
-    .addTo(state.map.socLayer);
-}
-
 function renderMapSidebar() {
   // Map-side list panels were removed; sidebar cards are the single ranking surface.
 }
@@ -1127,9 +1532,58 @@ function renderDetailSubpanelState() {
   nodes.detailSubpanel.hidden = !open;
   nodes.detailSubpanel.setAttribute("aria-hidden", open ? "false" : "true");
 
+  const activeTab = ["matching", "apartment", "route", "infrastructure"].includes(state.detailSubpanelTab)
+    ? state.detailSubpanelTab
+    : "matching";
+  nodes.detailSubpanel.querySelectorAll("[data-subpanel-tab]").forEach((button) => {
+    const active = button.dataset.subpanelTab === activeTab;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+    button.tabIndex = active ? 0 : -1;
+  });
+  nodes.detailSubpanel.querySelectorAll("[data-subpanel-panel]").forEach((panel) => {
+    panel.hidden = panel.dataset.subpanelPanel !== activeTab;
+  });
+
+  if (!open || activeTab !== "route") {
+    state.map?.routeLayer?.clearLayers();
+  } else if (state.route.result && state.map?.routeLayer?.getLayers().length === 0) {
+    drawRouteLine([]);
+  }
+
+  const apartmentPanel = nodes.detailSubpanel.querySelector('[data-subpanel-panel="apartment"]');
+  const showingPropertyDashboard = Boolean(state.property.selectedId);
+  apartmentPanel?.classList.toggle("has-property-dashboard", showingPropertyDashboard);
+
   if (nodes.subpanelMeta) {
     nodes.subpanelMeta.textContent = selected ? "" : "매칭 결과를 선택하세요";
   }
+}
+
+function activateDetailSubpanelTab(tab) {
+  state.detailSubpanelTab = tab;
+  renderDetailSubpanelState();
+  if (tab !== "route") {
+    focusSelectedMarker({ zoom: true });
+    return;
+  }
+
+  const selected = state.results.find((item) => item.id === state.selectedId);
+  const routeReady = state.route.selectedId === selected?.id
+    && (state.route.isLoading || state.route.result);
+  if (selected && !routeReady) {
+    calculateCommuteRoute(selected);
+  } else if (state.route.result) {
+    focusRouteOnMap();
+  }
+}
+
+function resetMapToSeoul() {
+  if (!state.map?.instance) return;
+  state.map.instance.flyTo(SEOUL_CENTER, SEOUL_OVERVIEW_ZOOM, {
+    duration: 0.65
+  });
+  state.map.fitted = true;
 }
 
 function propertyMetric(label, value, note = "") {
@@ -1201,28 +1655,6 @@ function renderRiskSignals(risk) {
   `).join("");
 }
 
-function renderPriceLiveStatus(price) {
-  const liveStatus = price?.liveStatus || {};
-  const labels = {
-    molitTrade: "매매 실거래",
-    molitRent: "전월세 실거래",
-    publicPrice: "공시가격"
-  };
-  const entries = Object.entries(labels).map(([key, label]) => ({ key, label, status: liveStatus[key] || {} }));
-  if (!entries.some((entry) => Object.keys(entry.status).length)) return "";
-  return `
-    <div class="price-live-status" aria-label="가격 API 연계 상태">
-      ${entries.map(({ key, label, status }) => `
-        <div class="price-live-status-item ${status.mode === "live_api" ? "is-live" : ""}" data-price-status="${escapeHtml(key)}">
-          <strong>${escapeHtml(label)}</strong>
-          <span>${escapeHtml(status.mode || "not_configured")} · ${formatNumber(status.recordCount || 0)}건</span>
-          <small>${escapeHtml(status.note || "")}</small>
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
-
 function renderContractChecklist(risk) {
   const items = Array.isArray(risk?.contractChecklist) ? risk.contractChecklist : [];
   if (!items.length) return `<div class="compare-empty">계약 전 확인 체크리스트 준비 중</div>`;
@@ -1241,41 +1673,6 @@ function renderContractChecklist(risk) {
   `;
 }
 
-function renderCompareTable() {
-  const rows = state.property.comparison;
-  if (!rows.length) {
-    return `<div class="compare-empty">비교에 추가한 단지가 없습니다. 상세 패널에서 최대 3개까지 추가할 수 있습니다.</div>`;
-  }
-  return `
-    <div class="property-compare-table">
-      <table>
-        <thead>
-          <tr>
-            <th scope="col">단지</th>
-            <th scope="col">매매</th>
-            <th scope="col">전세가율</th>
-            <th scope="col">위험 신호</th>
-            <th scope="col">생활권</th>
-            <th scope="col"></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows.map((item) => `
-            <tr>
-              <th scope="row">${escapeHtml(item.name)}</th>
-              <td>${formatMoney10k(item.price.recentSale10k)}</td>
-              <td>${formatPercent(item.price.jeonseRatio)}</td>
-              <td><span class="risk-pill ${riskTone(item.risk.levelKey)}">${escapeHtml(item.risk.level)}</span></td>
-              <td>${escapeHtml(item.lifestyle.livingAreaName)} · SOC ${formatNumber(item.lifestyle.serviceScore)}</td>
-              <td><button class="text-button" type="button" data-compare-remove="${escapeHtml(item.id)}">제거</button></td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
 function renderAgentAnswer() {
   const answer = state.property.agentAnswer;
   if (state.property.agentLoading) {
@@ -1285,7 +1682,7 @@ function renderAgentAnswer() {
     return `<div class="agent-answer is-error">${escapeHtml(state.property.agentError)}</div>`;
   }
   if (!answer) {
-    return `<div class="agent-answer">질문을 입력하면 가격·생활권·전세 위험 신호 근거를 함께 답변합니다.</div>`;
+    return `<div class="agent-answer">질문을 입력하면 가격·입지·전세 위험 신호 근거를 함께 답변합니다.</div>`;
   }
   return `
     <div class="agent-answer">
@@ -1322,17 +1719,198 @@ function renderAgentBasisGroups(answer) {
   `;
 }
 
-function addPropertyToCompare(detail) {
-  if (!detail) return;
-  const existing = state.property.comparison.find((item) => item.id === detail.id);
-  if (existing) return;
-  state.property.comparison = [...state.property.comparison, detail].slice(-3);
-  renderPropertyDashboard();
+function bookmarkSummary(id) {
+  const detail = state.bookmarks.details[id] || null;
+  const result = state.results.find((item) => item.id === id) || null;
+  const candidate = state.apartmentCandidates.find((item) => item.id === id) || null;
+  const price = detail?.price || {};
+  const lifestyle = detail?.lifestyle || {};
+  const risk = detail?.risk || {};
+  return {
+    id,
+    name: detail?.name || result?.name || candidate?.name || "아파트",
+    address: detail?.address || result?.address || candidate?.address || "",
+    district: detail?.district || result?.district || candidate?.district || "",
+    score: result?.total,
+    commuteMinutes: result?.minutes ?? candidate?.pricePreview?.commuteMinutes,
+    sale10k: price.recentSale10k ?? result?.sale10k ?? candidate?.pricePreview?.sale10k,
+    jeonse10k: price.recentJeonse10k ?? result?.jeonse10k ?? candidate?.pricePreview?.jeonse10k,
+    monthlyRent10k: price.monthlyRent10k ?? result?.rentMonthly10k,
+    monthlyDeposit10k: price.monthlyDeposit10k ?? result?.deposit10k,
+    jeonseRatio: price.jeonseRatio ?? candidate?.pricePreview?.jeonseRatio,
+    riskLevel: risk.level || candidate?.pricePreview?.riskLevel || "",
+    riskLevelKey: risk.levelKey || candidate?.pricePreview?.riskLevelKey || "unknown",
+    households: detail?.households ?? result?.households ?? candidate?.households,
+    approvalYear: detail?.approvalYear ?? result?.approvalYear ?? candidate?.approvalYear,
+    serviceScore: lifestyle.serviceScore ?? result?.serviceScore,
+    safetyScore: lifestyle.safetyScore ?? result?.safetyScore
+  };
 }
 
-function removePropertyFromCompare(id) {
-  state.property.comparison = state.property.comparison.filter((item) => item.id !== id);
+function bookmarkValue(value, formatter = (item) => item) {
+  return value === undefined || value === null || value === "" ? "-" : formatter(value);
+}
+
+function renderBookmarkCompareTable() {
+  const items = state.bookmarks.ids.map(bookmarkSummary);
+  if (!items.length) {
+    return `
+      <div class="bookmark-empty">
+        <strong>즐겨찾기한 아파트가 없습니다.</strong>
+        <span>매칭 결과나 아파트 상세 정보에서 별표를 선택하세요.</span>
+      </div>
+    `;
+  }
+
+  const rows = [
+    { label: "매칭 점수", value: (item) => bookmarkValue(item.score, (value) => `${formatNumber(value)}점`) },
+    { label: "통근시간", value: (item) => bookmarkValue(item.commuteMinutes, (value) => `${formatNumber(value)}분`) },
+    { label: "추정 매매가", value: (item) => bookmarkValue(item.sale10k, formatMoney10k) },
+    { label: "추정 전세가", value: (item) => bookmarkValue(item.jeonse10k, formatMoney10k) },
+    { label: "월세", value: (item) => bookmarkValue(item.monthlyRent10k, (value) => `${formatMoney10k(item.monthlyDeposit10k)} / 월 ${formatMoney10k(value)}`) },
+    { label: "전세가율", value: (item) => bookmarkValue(item.jeonseRatio, formatPercent) },
+    { label: "위험도", value: (item) => item.riskLevel ? `<span class="risk-pill ${riskTone(item.riskLevelKey)}">${escapeHtml(item.riskLevel)}</span>` : "-" },
+    { label: "세대수·준공", value: (item) => `${bookmarkValue(item.households, (value) => `${formatNumber(value)}세대`)} · ${bookmarkValue(item.approvalYear, (value) => `${value}년`)}` },
+    { label: "생활 SOC", value: (item) => bookmarkValue(item.serviceScore, (value) => `${formatNumber(value)}점`) },
+    { label: "안전", value: (item) => bookmarkValue(item.safetyScore, (value) => `${formatNumber(value)}점`) }
+  ];
+
+  return `
+    <div class="bookmark-compare-scroll">
+      <table class="bookmark-compare-table">
+        <thead>
+          <tr>
+            <th scope="col">비교 항목</th>
+            ${items.map((item) => `
+              <th scope="col">
+                <button class="bookmark-property-link" type="button" data-bookmark-open="${escapeHtml(item.id)}">${escapeHtml(item.name)}</button>
+                <small>${escapeHtml(item.district)}</small>
+                <button class="bookmark-remove-button" type="button" data-bookmark-remove="${escapeHtml(item.id)}" aria-label="${escapeHtml(item.name)} 즐겨찾기 해제" title="즐겨찾기 해제">★</button>
+              </th>
+            `).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="bookmark-address-row">
+            <th scope="row">주소</th>
+            ${items.map((item) => `<td>${escapeHtml(item.address || "-")}</td>`).join("")}
+          </tr>
+          ${rows.map((row) => `
+            <tr>
+              <th scope="row">${row.label}</th>
+              ${items.map((item) => `<td>${row.value(item)}</td>`).join("")}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderBookmarkHeader() {
+  if (!nodes.bookmarkPanelButton || !nodes.bookmarkCount) return;
+  const count = state.bookmarks.ids.length;
+  nodes.bookmarkCount.textContent = formatNumber(count);
+  nodes.bookmarkPanelButton.classList.toggle("has-bookmarks", count > 0);
+  nodes.bookmarkPanelButton.classList.toggle("is-open", state.bookmarks.panelOpen);
+  const icon = nodes.bookmarkPanelButton.querySelector("span");
+  if (icon) icon.textContent = count ? "★" : "☆";
+}
+
+function bindBookmarkPanelEvents() {
+  document.querySelector("#closeBookmarkPanelButton")?.addEventListener("click", closeBookmarkPanel);
+  document.querySelectorAll("[data-bookmark-remove]").forEach((button) => {
+    button.addEventListener("click", () => toggleBookmark(button.dataset.bookmarkRemove));
+  });
+  document.querySelectorAll("[data-bookmark-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      closeBookmarkPanel();
+      selectProperty(button.dataset.bookmarkOpen);
+    });
+  });
+}
+
+function renderBookmarkPanel() {
+  if (!nodes.bookmarkPanel) return;
+  renderBookmarkHeader();
+  nodes.bookmarkPanel.hidden = !state.bookmarks.panelOpen;
+  if (!state.bookmarks.panelOpen) {
+    nodes.bookmarkPanel.innerHTML = "";
+    return;
+  }
+  nodes.bookmarkPanel.innerHTML = `
+    <header class="bookmark-panel-header">
+      <div>
+        <p class="eyebrow">저장한 아파트</p>
+        <h2>즐겨찾기 비교 <span>${formatNumber(state.bookmarks.ids.length)}</span></h2>
+      </div>
+      <button id="closeBookmarkPanelButton" class="property-close-button" type="button" aria-label="즐겨찾기 비교 닫기">×</button>
+    </header>
+    <div class="bookmark-panel-body">
+      ${state.bookmarks.isLoading ? `<div class="bookmark-loading">아파트 상세 정보를 불러오는 중입니다.</div>` : ""}
+      ${state.bookmarks.error ? `<div class="bookmark-error">${escapeHtml(state.bookmarks.error)}</div>` : ""}
+      ${renderBookmarkCompareTable()}
+    </div>
+  `;
+  bindBookmarkPanelEvents();
+}
+
+async function loadBookmarkDetails() {
+  const missing = state.bookmarks.ids.filter((id) => !state.bookmarks.details[id]);
+  if (!missing.length) return;
+  state.bookmarks.isLoading = true;
+  state.bookmarks.error = "";
+  renderBookmarkPanel();
+  const failures = [];
+  await Promise.all(missing.map(async (id) => {
+    try {
+      const payload = await fetchJson(`/api/property-detail?id=${encodeURIComponent(id)}`);
+      if (payload.detail) state.bookmarks.details[id] = payload.detail;
+    } catch {
+      failures.push(id);
+    }
+  }));
+  state.bookmarks.isLoading = false;
+  state.bookmarks.error = failures.length ? "일부 아파트 상세 정보를 불러오지 못했습니다." : "";
+  renderBookmarkPanel();
+}
+
+function refreshBookmarkViews() {
+  renderBookmarkHeader();
+  renderCards();
+  renderDetail();
   renderPropertyDashboard();
+  renderBookmarkPanel();
+}
+
+async function toggleBookmark(id, detail = null) {
+  if (!id) return;
+  if (isBookmarked(id)) {
+    state.bookmarks.ids = state.bookmarks.ids.filter((item) => item !== id);
+    delete state.bookmarks.details[id];
+  } else {
+    state.bookmarks.ids = [...state.bookmarks.ids, id];
+    if (detail) state.bookmarks.details[id] = detail;
+  }
+  persistBookmarks();
+  refreshBookmarkViews();
+  if (isBookmarked(id) && !state.bookmarks.details[id]) {
+    await loadBookmarkDetails();
+  }
+}
+
+function openBookmarkPanel() {
+  state.bookmarks.panelOpen = true;
+  state.detailPanelOpen = false;
+  closePropertyDashboard();
+  renderDetailSubpanelState();
+  renderBookmarkPanel();
+  loadBookmarkDetails();
+}
+
+function closeBookmarkPanel() {
+  state.bookmarks.panelOpen = false;
+  renderBookmarkPanel();
 }
 
 function closePropertyDashboard() {
@@ -1345,7 +1923,7 @@ function closePropertyDashboard() {
   state.property.requestId += 1;
   renderApartmentLayer();
   renderPropertyDashboard();
-  drawPropertySocRadius();
+  renderDetailSubpanelState();
 }
 
 async function askPropertyAgent(event) {
@@ -1371,13 +1949,10 @@ async function askPropertyAgent(event) {
 }
 
 function bindPropertyDashboardEvents() {
-  document.querySelector("#propertyCloseButton")?.addEventListener("click", closePropertyDashboard);
-  document.querySelector("#addCompareButton")?.addEventListener("click", () => {
-    addPropertyToCompare(state.property.detail);
-  });
-  document.querySelectorAll("[data-compare-remove]").forEach((button) => {
-    button.addEventListener("click", () => removePropertyFromCompare(button.dataset.compareRemove));
-  });
+  bindPropertyAgentEvents();
+}
+
+function bindPropertyAgentEvents() {
   document.querySelector("#propertyAgentForm")?.addEventListener("submit", askPropertyAgent);
   document.querySelectorAll("[data-agent-property-id]").forEach((button) => {
     button.addEventListener("click", () => selectProperty(button.dataset.agentPropertyId));
@@ -1401,7 +1976,6 @@ function renderPropertyDashboard() {
   if (state.property.error) {
     nodes.propertyDashboard.classList.add("has-property-detail");
     nodes.propertyDashboard.innerHTML = `<div class="property-empty is-error">${escapeHtml(state.property.error)}</div>`;
-    drawPropertySocRadius();
     return;
   }
 
@@ -1411,41 +1985,22 @@ function renderPropertyDashboard() {
     nodes.propertyDashboard.innerHTML = `
       <div class="property-empty">
         <strong>지도에서 아파트 단지를 선택하세요.</strong>
-        <span>단지 가격, 전세 위험 신호, 생활권 정보, AI 요약을 한 화면에서 확인할 수 있습니다.</span>
+        <span>단지 가격과 전세 위험 신호를 확인할 수 있습니다.</span>
       </div>
     `;
-    drawPropertySocRadius();
     return;
   }
 
   nodes.propertyDashboard.classList.add("has-property-detail");
   const price = detail.price || {};
   const risk = detail.risk || {};
-  const lifestyle = detail.lifestyle || {};
-  const ai = detail.aiSummary || {};
   const areaText = (detail.areaOptions || []).map((item) => `${item.exclusiveM2}㎡`).join(" / ");
-  const compareExists = state.property.comparison.some((item) => item.id === detail.id);
   nodes.propertyDashboard.innerHTML = `
-    <div class="property-head">
-      <div>
-        <p class="eyebrow">부동산 상세 대시보드</p>
-        <h3>${escapeHtml(detail.name)}</h3>
-        <p>${escapeHtml(detail.address || "")}</p>
-      </div>
-      <div class="property-actions">
-        <button id="propertyCloseButton" class="property-close-button" type="button" aria-label="부동산 상세 대시보드 닫기">×</button>
-        <span class="risk-pill ${riskTone(risk.levelKey)}">${escapeHtml(risk.level || "점검 필요")} · ${formatNumber(risk.score)}점</span>
-        <button id="addCompareButton" class="ghost-button" type="button" ${compareExists ? "disabled" : ""}>
-          ${compareExists ? "비교 추가됨" : "비교에 추가"}
-        </button>
-      </div>
-    </div>
-
     <div class="property-grid">
       <section class="property-card">
         <div class="property-card-title">
           <h4>기본 정보</h4>
-          <span>OpenAptInfo</span>
+          <span>${detail.prototype ? "프로토타입 데이터" : "OpenAptInfo"}</span>
         </div>
         <div class="property-metrics two">
           ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
@@ -1465,12 +2020,9 @@ function renderPropertyDashboard() {
         <div class="property-metrics two">
           ${propertyMetric("최근 매매가", formatMoney10k(price.recentSale10k), "실거래 API 연계 전 추정")}
           ${propertyMetric("최근 전세가", formatMoney10k(price.recentJeonse10k), `전세가율 ${formatPercent(price.jeonseRatio)}`)}
-          ${propertyMetric("월세", `${formatMoney10k(price.monthlyDeposit10k)} / 월 ${formatMoney10k(price.monthlyRent10k)}`, "생활권 월세 중앙값 기반")}
+          ${propertyMetric("월세", `${formatMoney10k(price.monthlyDeposit10k)} / 월 ${formatMoney10k(price.monthlyRent10k)}`, "인근 전월세 데이터 기반")}
           ${propertyMetric("공시가격", formatMoney10k(price.officialPrice10k), "공시가격 API 연계 전 추정")}
-          ${propertyMetric("주변 평균 매매", formatMoney10k(price.surroundingAverageSale10k), `${price.saleGapPercent > 0 ? "+" : ""}${formatPercent(price.saleGapPercent)} 차이`)}
-          ${propertyMetric("최근 변동률", `${price.priceChangeRate > 0 ? "+" : ""}${formatPercent(price.priceChangeRate)}`, "최근 1년 추정")}
         </div>
-        ${renderPriceLiveStatus(price)}
       </section>
 
       <section class="property-card wide">
@@ -1491,62 +2043,6 @@ function renderPropertyDashboard() {
         <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
       </section>
 
-      <section class="property-card">
-        <div class="property-card-title">
-          <h4>계약 전 확인 체크리스트</h4>
-          <span>전세 위험 보완</span>
-        </div>
-        ${renderContractChecklist(risk)}
-      </section>
-
-      <section class="property-card">
-        <div class="property-card-title">
-          <h4>생활권 정보</h4>
-          <span>${escapeHtml(lifestyle.livingAreaName || "")}</span>
-        </div>
-        <div class="property-metrics two">
-          ${propertyMetric("대중교통", `${formatNumber(lifestyle.transitScore)}점`, lifestyle.station || "")}
-          ${propertyMetric("생활 SOC", `${formatNumber(lifestyle.serviceScore)}점`, `병원 ${formatNumber(lifestyle.counts?.hospital)} · 학교 ${formatNumber(lifestyle.counts?.school)} · 공원 ${formatNumber(lifestyle.counts?.park)}`)}
-          ${propertyMetric("안전", `${formatNumber(lifestyle.safetyScore)}점`, `치안시설 ${formatNumber(lifestyle.counts?.police)} · CCTV ${formatNumber(lifestyle.counts?.cctv)}`)}
-          ${propertyMetric("환경", `${formatNumber(lifestyle.carbonScore)}점`, "대기질·녹지 접근성")}
-          ${propertyMetric("SOC 반경", formatDistance(detail.socRadius?.meters || 1600), "지도 원으로 표시")}
-        </div>
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>AI 요약</h4>
-          <span>데이터 근거 기반</span>
-        </div>
-        <p class="ai-headline">${escapeHtml(ai.headline || "")}</p>
-        <div class="ai-summary-grid">
-          <div><strong>장점</strong><ul>${(ai.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
-          <div><strong>단점</strong><ul>${(ai.weaknesses || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
-          <div><strong>주의사항</strong><ul>${(ai.cautions || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>
-        </div>
-        <p class="recommendation-text">${escapeHtml(ai.recommendation || "")}</p>
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>단지 비교</h4>
-          <span>최대 3개</span>
-        </div>
-        ${renderCompareTable()}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>AI Agent 질의응답</h4>
-          <span>가격·이동·위험 신호 통합</span>
-        </div>
-        <form id="propertyAgentForm" class="agent-form">
-          <input id="propertyAgentQuestion" type="text" value="${escapeHtml(state.property.agentQuestion)}" aria-label="AI Agent 질문">
-          <button class="primary-button" type="submit">질문</button>
-        </form>
-        ${renderAgentAnswer()}
-      </section>
-
       <section class="property-card wide data-status">
         <div class="property-card-title">
           <h4>데이터 연계 상태</h4>
@@ -1558,13 +2054,14 @@ function renderPropertyDashboard() {
       </section>
     </div>
   `;
-  bindPropertyDashboardEvents();
-  drawPropertySocRadius();
 }
 
 async function selectProperty(id) {
   if (!id) return;
+  state.bookmarks.panelOpen = false;
+  renderBookmarkPanel();
   state.property.selectedId = id;
+  state.property.detail = null;
   state.property.isLoading = true;
   state.property.error = "";
   state.property.agentAnswer = null;
@@ -1573,15 +2070,13 @@ async function selectProperty(id) {
   const requestId = state.property.requestId;
   renderApartmentLayer();
   renderPropertyDashboard();
-
+  renderDetailSubpanelState();
   try {
     const payload = await fetchJson(`/api/property-detail?id=${encodeURIComponent(id)}`);
     if (requestId !== state.property.requestId) return;
     state.property.detail = payload.detail || null;
     if (state.property.detail) {
       state.property.agentQuestion = `${state.property.detail.name} 전세 들어가도 괜찮아?`;
-      addPropertyToCompare(state.property.detail);
-      drawPropertySocRadius();
     }
   } catch (error) {
     if (requestId !== state.property.requestId) return;
@@ -1592,6 +2087,7 @@ async function selectProperty(id) {
       state.property.isLoading = false;
       renderApartmentLayer();
       renderPropertyDashboard();
+      renderDetailSubpanelState();
     }
   }
 }
@@ -1601,13 +2097,12 @@ function buildReason(item) {
 }
 
 function buildSpecificReason(item) {
-  const socCounts = item.evidence?.socCounts || item.socSummary?.counts || {};
-  const safetyCounts = item.evidence?.safetyEnvCounts || item.safetyEnvSummary?.counts || {};
   const destinationLabel = item.destinationLabel || destinationLabels[state.destination] || "목적지";
   const monthlyRent = Math.round(Number(item.rentMonthly10k || 0));
   const budgetDelta = Math.round(state.budget - monthlyRent);
   const budgetText = budgetDelta >= 0 ? "예산 내" : `예산 ${Math.abs(budgetDelta)}만원 초과`;
-  return `${destinationLabel} ${formatNumber(item.minutes)}분 · 월세 중앙값 ${formatNumber(monthlyRent)}만원 · 병원 ${socCounts.hospital || 0}개·학교 ${socCounts.school || 0}개·공원 ${socCounts.park || 0}개 · 치안시설 ${safetyCounts.police || 0}개·CCTV ${formatNumber(safetyCounts.cctv || 0)}대 · ${personaLabels[state.persona]} ${budgetText}`;
+  const socText = socSummaryTextFor(item, state.persona, 3);
+  return `${destinationLabel} ${formatNumber(item.minutes)}분 · 추정 월세 ${formatNumber(monthlyRent)}만원 · 추정 매매 ${formatMoney10k(item.sale10k)} · ${socText} · ${budgetText}`;
 }
 
 function formatRentExample(example) {
@@ -1651,17 +2146,6 @@ function renderSafetyEnvSummary(selected) {
   `;
 }
 
-function renderRouteCredentialHint() {
-  const integrations = state.apiMeta?.integrations || {};
-  const ready = [];
-  if (integrations.odsay) ready.push("ODsay");
-  if (integrations.tmap) ready.push("TMAP");
-  if (ready.length) {
-    return `<p class="field-hint route-live-ready">${ready.join("·")} 키 감지됨. 경로 계산 시 live API를 우선 호출합니다.</p>`;
-  }
-  return `<p class="field-hint">ODsay/TMAP 키가 없으면 거리 기반 폴백을 표시합니다. 키는 환경변수로만 주입하고 코드에는 저장하지 않습니다.</p>`;
-}
-
 function renderCards() {
   nodes.cards.classList.toggle("is-loading", state.isLoading);
   nodes.cards.setAttribute("aria-busy", state.isLoading ? "true" : "false");
@@ -1674,7 +2158,11 @@ function renderCards() {
   }
 
   if (!state.results.length) {
-    nodes.cards.innerHTML = `<div class="empty-state">${state.hasMatched ? "조건에 맞는 매칭 결과가 없습니다." : "조건을 설정하고 매칭하기 버튼을 눌러주세요"}</div>`;
+    if (state.matchValidationMessage) {
+      nodes.cards.innerHTML = `<div class="empty-state is-error">${escapeHtml(state.matchValidationMessage)}</div>`;
+    } else {
+      nodes.cards.innerHTML = `<div class="empty-state">${state.hasMatched ? "조건에 맞는 매칭 결과가 없습니다." : "조건을 설정하고 매칭하기 버튼을 눌러주세요"}</div>`;
+    }
     nodes.toggleCards.hidden = true;
     return;
   }
@@ -1685,10 +2173,17 @@ function renderCards() {
     const fragment = nodes.cardTemplate.content.cloneNode(true);
     const card = fragment.querySelector(".result-card");
     const button = fragment.querySelector(".card-button");
+    const bookmarkButton = fragment.querySelector(".card-bookmark-button");
     card.classList.toggle("is-selected", item.id === state.selectedId);
     fragment.querySelector(".rank").textContent = index + 1;
-    fragment.querySelector(".name").textContent = `${item.name} · ${item.district}`;
-    button.addEventListener("click", () => selectArea(item.id, { source: "card", openDetailPanel: true }));
+    fragment.querySelector(".name").textContent = item.name;
+    fragment.querySelector(".card-meta").textContent = `${item.district || "서울"} ${item.dong || ""} · 월 ${formatNumber(item.rentMonthly10k)}만원 · ${formatNumber(item.minutes)}분`;
+    button.addEventListener("click", () => selectApartmentMatch(item.id, { source: "card", openDetailPanel: true }));
+    const bookmarked = isBookmarked(item.id);
+    bookmarkButton.textContent = bookmarked ? "★" : "☆";
+    bookmarkButton.classList.toggle("is-bookmarked", bookmarked);
+    bookmarkButton.setAttribute("aria-label", `${item.name} ${bookmarked ? "즐겨찾기 해제" : "즐겨찾기 추가"}`);
+    bookmarkButton.addEventListener("click", () => toggleBookmark(item.id));
     nodes.cards.append(fragment);
   });
 
@@ -1713,14 +2208,66 @@ function scoreRow(label, value, tip) {
   `;
 }
 
-function routeProviderLabel(provider) {
-  if (provider === "odsay") return "ODsay";
-  if (provider === "tmap") return "TMAP";
-  return "폴백";
+function transportModeLabel(mode = "transit") {
+  return ROUTE_TRANSPORT_MODES.find((item) => item.key === mode)?.label || "대중교통";
 }
 
-function routeModeLabel(mode) {
-  return mode === "live_api" ? "실제 경로 API" : "거리 기반 추정";
+function routeModeLabel(route = {}) {
+  return `${transportModeLabel(route.transportMode)} 최적 경로`;
+}
+
+function renderRouteModeSelector() {
+  const activeMode = state.route.transportMode || "transit";
+  return `
+    <div class="route-mode-selector" role="group" aria-label="이동수단 선택">
+      ${ROUTE_TRANSPORT_MODES.map((mode) => `
+        <button
+          class="route-mode-option${mode.key === activeMode ? " is-active" : ""}"
+          type="button"
+          data-route-transport="${mode.key}"
+          aria-pressed="${mode.key === activeMode ? "true" : "false"}"
+        >
+          <span>${mode.label}</span>
+          <i data-lucide="${mode.icon}" aria-hidden="true"></i>
+        </button>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderRouteSummary(route) {
+  const summary = route.summary || {};
+  const transportMode = route.transportMode || "transit";
+  if (transportMode === "car") {
+    return `
+      ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
+      ${metric("이동 거리", formatDistance(summary.distanceMeters))}
+      ${metric("예상 비용", formatFare(summary.estimatedCost ?? summary.fare))}
+      ${metric("교통 상황", summary.trafficLabel || "보통")}
+    `;
+  }
+  if (transportMode === "bicycle") {
+    return `
+      ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
+      ${metric("이동 거리", formatDistance(summary.distanceMeters))}
+      ${metric("예상 소모", `${formatNumber(summary.estimatedCalories)}kcal`)}
+      ${metric("이용 요금", summary.fare ? formatFare(summary.fare) : "무료")}
+    `;
+  }
+  if (transportMode === "walk") {
+    return `
+      ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
+      ${metric("이동 거리", formatDistance(summary.distanceMeters))}
+      ${metric("예상 걸음", `${formatNumber(summary.stepCount)}보`)}
+      ${metric("이용 요금", summary.fare ? formatFare(summary.fare) : "무료")}
+    `;
+  }
+  return `
+    ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
+    ${metric("환승", `${formatNumber(summary.transferCount)}회`)}
+    ${metric("도보", formatDistance(summary.totalWalkMeters))}
+    ${metric("요금", formatFare(summary.fare))}
+  `;
 }
 
 function renderRouteSteps(route) {
@@ -1757,18 +2304,14 @@ function renderRouteResult(selected) {
   }
   const route = state.route.result;
   if (!route) return "";
-  const summary = route.summary || {};
   return `
     <div class="route-result">
       <div class="route-result-head">
-        <strong>${routeProviderLabel(route.provider)} · ${routeModeLabel(route.mode)}</strong>
+        <strong>${routeModeLabel(route)}</strong>
         <button class="text-button" type="button" data-route-map>지도 중심 이동</button>
       </div>
       <div class="route-summary-grid">
-        ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
-        ${metric("환승", `${formatNumber(summary.transferCount)}회`)}
-        ${metric("도보", formatDistance(summary.totalWalkMeters))}
-        ${metric("요금", formatFare(summary.fare))}
+        ${renderRouteSummary(route)}
       </div>
       <p class="route-label">${escapeHtml(route.origin?.label)} → ${escapeHtml(route.destination?.label)}</p>
       ${renderRouteSteps(route)}
@@ -1777,47 +2320,23 @@ function renderRouteResult(selected) {
   `;
 }
 
-function renderRouteAreaOptions(selected) {
-  const areas = state.results.length ? state.results : state.neighborhoods;
-  return areas.map((item, index) => {
-    const selectedAttr = item.id === selected.id ? " selected" : "";
-    return `<option value="${escapeHtml(item.id)}"${selectedAttr}>${index + 1}위 ${escapeHtml(item.name)} · ${escapeHtml(item.district)}</option>`;
-  }).join("");
-}
-
 function renderRoutePlanner(selected) {
   const originValue = representativeAddressFor(selected);
   const destinationValue = selected.destinationAddress || destinationAddressFor();
   return `
     <div class="route-planner">
-      <div class="route-form">
-        <label class="field compact route-area-field">
-          <span>검증 생활권</span>
-          <select id="routeAreaInput">
-            ${renderRouteAreaOptions(selected)}
-          </select>
-        </label>
-        <label class="field compact route-origin-field">
-          <span>집 주소</span>
-          <input id="routeOriginInput" type="text" value="${escapeHtml(originValue)}" placeholder="예: 서울 광진구 화양동">
-        </label>
-        <label class="field compact route-destination-field">
-          <span>회사 주소</span>
-          <input id="routeDestinationInput" type="text" value="${escapeHtml(destinationValue)}" placeholder="예: 서울 강남구 역삼동">
-        </label>
-        <label class="field compact">
-          <span>경로 API</span>
-          <select id="routeProviderInput">
-            <option value="auto">자동 선택</option>
-            <option value="odsay">ODsay</option>
-            <option value="tmap">TMAP</option>
-          </select>
-        </label>
-        <button id="routeUseSelectedButton" class="ghost-button route-action" type="button">추천 생활권 주소 사용</button>
-        <button id="routeCalculateButton" class="ghost-button route-action primary" type="button">통근 루트 계산</button>
+      <div class="route-origin-summary">
+        <span>출발 아파트</span>
+        <strong>${escapeHtml(selected.name)}</strong>
+        <small>${escapeHtml(originValue)}</small>
       </div>
-      <p class="field-hint">기본 대표 주소는 로컬 좌표로 바로 변환됩니다. 직접 입력한 상세 주소 검색은 Kakao REST 키가 있을 때 동작합니다.</p>
-      ${renderRouteCredentialHint()}
+      <div class="route-form">
+        <label class="field compact route-destination-field">
+          <span>회사/목적지</span>
+          <input id="routeDestinationInput" type="text" value="${escapeHtml(destinationValue)}" placeholder="주소를 입력하세요.">
+        </label>
+      </div>
+      ${renderRouteModeSelector()}
       ${renderRouteResult(selected)}
     </div>
   `;
@@ -1863,21 +2382,57 @@ function renderDetail() {
   nodes.selectedBadge.textContent = selected.name;
   nodes.detailContent.innerHTML = `
     <div>
-      <h3>${selected.name} · ${selected.district}</h3>
+      <h3>${escapeHtml(selected.name)}</h3>
+      <p class="detail-address">${escapeHtml(selected.address || `${selected.district || ""} ${selected.dong || ""}`.trim())}</p>
     </div>
     <div class="score-list" aria-label="항목별 점수">
       ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
       ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
       ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
-      ${scoreRow("안전·환경", selected.adjusted.safety, scoreTips.safety)}
+      ${scoreRow("안전", selected.adjusted.safety, scoreTips.safety)}
     </div>
-    <div class="metric-grid">
-      ${metric("종합점수", `${selected.total}점`)}
-      ${metric("통근시간", `${selected.minutes}분`)}
-      ${metric("월세 중앙값", formatMoney10k(selected.rentMonthly10k))}
-      ${metric("보증금 중앙값", formatMoney10k(selected.deposit10k))}
-      ${metric("전세 중앙값", formatMoney10k(selected.jeonse10k))}
-      ${metric("대중교통", `${selected.transitScore}점`)}
+    ${renderMatchHighlights(selected)}
+  `;
+}
+
+function matchHighlight(title, value, note = "") {
+  return `
+    <div class="match-highlight">
+      <span>${escapeHtml(title)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      ${note ? `<small>${escapeHtml(note)}</small>` : ""}
+    </div>
+  `;
+}
+
+function renderMatchHighlights(selected) {
+  const safetyCounts = selected.evidence?.safetyEnvCounts || selected.safetyEnvSummary?.counts || {};
+  const socSummary = socSummaryTextFor(selected, state.persona, 3);
+  const budgetGap = Math.round(Number(state.budget || 0) - Number(selected.rentMonthly10k || 0));
+  const budgetValue = budgetGap >= 0
+    ? `월 ${formatNumber(budgetGap)}만원 여유`
+    : `월 ${formatNumber(Math.abs(budgetGap))}만원 초과`;
+  const commuteNote = selected.minutes <= 20
+    ? "목적지 접근성이 좋은 편입니다."
+    : selected.minutes <= 35
+      ? "일상 통근 부담이 보통 수준입니다."
+      : "통근 시간을 한 번 더 확인해보세요.";
+  const budgetNote = budgetGap >= 0
+    ? `월 주거 예산 ${formatNumber(state.budget)}만원 기준`
+    : `월 주거 예산 ${formatNumber(state.budget)}만원 기준`;
+
+  return `
+    <div class="match-summary-block">
+      <div class="match-summary-heading">
+        <strong>추천 포인트</strong>
+        <span>현재 조건 기준</span>
+      </div>
+      <div class="match-highlight-grid">
+        ${matchHighlight("통근", `${formatNumber(selected.minutes)}분`, commuteNote)}
+        ${matchHighlight("예산", budgetValue, budgetNote)}
+        ${matchHighlight("생활 SOC", socSummary, `${PERSONA_LABELS[state.persona] || "가구 유형"} 기준 비중 반영`)}
+        ${matchHighlight("안전", `치안시설 ${formatNumber(safetyCounts.police || 0)} · CCTV ${formatNumber(safetyCounts.cctv || 0)}`, "치안·환경 지표 반영")}
+      </div>
     </div>
   `;
 }
@@ -1889,76 +2444,100 @@ function renderRoutePanel() {
   if (!selected) {
     nodes.routeContent.innerHTML = state.isLoading
       ? `<div class="callout"><p>추천 후보를 불러온 뒤 통근 루트를 계산할 수 있습니다.</p></div>`
-      : `<div class="callout"><p>추천 생활권을 선택하거나 추천 조건을 계산하면 집 주소와 회사 주소 기준 통근 루트를 검증할 수 있습니다.</p></div>`;
+      : `<div class="callout"><p>추천 아파트를 선택하면 단지에서 회사/목적지까지의 통근 루트를 계산할 수 있습니다.</p></div>`;
     return;
   }
 
   nodes.routeContent.innerHTML = renderRoutePlanner(selected);
   bindRoutePlanner(selected);
+  window.lucide?.createIcons();
+}
+
+function infrastructureItem(label, value, nearest = null) {
+  const name = nearest?.name || "근접 시설 정보 준비 중";
+  const distance = nearest?.distanceMeters != null ? formatDistance(nearest.distanceMeters) : "";
+  return `
+    <div class="infrastructure-item">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(name)}${distance ? ` · ${escapeHtml(distance)}` : ""}</small>
+    </div>
+  `;
+}
+
+function renderInfrastructurePanel() {
+  if (!nodes.infrastructureContent) return;
+  const selected = state.results.find((item) => item.id === state.selectedId);
+  if (!selected) {
+    nodes.infrastructureContent.innerHTML = `<div class="callout"><p>추천 아파트를 선택하면 주변 인프라를 확인할 수 있습니다.</p></div>`;
+    return;
+  }
+
+  const soc = selected.socSummary || {};
+  const safety = selected.safetyEnvSummary || {};
+  const socCounts = soc.counts || {};
+  const safetyCounts = safety.counts || {};
+  const socNearest = soc.nearestFacilities || {};
+  const safetyNearest = safety.nearestFacilities || {};
+
+  nodes.infrastructureContent.innerHTML = `
+    <section class="infrastructure-category">
+      <div class="infrastructure-category-title">생활 SOC</div>
+      <div class="infrastructure-list">
+        ${infrastructureItem("병원", `${formatNumber(socCounts.hospital)}개`, socNearest.hospital)}
+        ${infrastructureItem("학교", `${formatNumber(socCounts.school)}개`, socNearest.school)}
+        ${infrastructureItem("공원", `${formatNumber(socCounts.park)}개`, socNearest.park)}
+      </div>
+    </section>
+
+    <section class="infrastructure-category">
+      <div class="infrastructure-category-title">안전</div>
+      <div class="infrastructure-list">
+        ${infrastructureItem("치안시설", `${formatNumber(safetyCounts.police)}개`, safetyNearest.police)}
+        ${infrastructureItem("CCTV", `${formatNumber(safetyCounts.cctv)}대`, safetyNearest.cctv)}
+        ${infrastructureItem("대기환경", `${formatNumber(safety.airQualityScore)}점`, safety.airStation ? { name: safety.airStation } : null)}
+        ${infrastructureItem("녹지 접근", `${formatNumber(safety.greenScore)}점`, safetyNearest.park)}
+      </div>
+    </section>
+  `;
 }
 
 function resetRouteState() {
+  const transportMode = state.route.transportMode || "transit";
+  state.routeRequestId += 1;
   state.route = {
     selectedId: null,
     isLoading: false,
     result: null,
     error: "",
-    focusMap: false
+    focusMap: false,
+    transportMode
   };
   if (state.map?.routeLayer) {
     state.map.routeLayer.clearLayers();
   }
 }
 
-async function calculateRouteForSelected(selected, provider = "auto") {
-  if (!selected) return;
-  const origin = representativeAddressFor(selected);
-  const destinationText = selected.destinationAddress || destinationAddressFor();
-  const params = new URLSearchParams({
-    origin,
-    provider,
-    destinationQuery: destinationText
-  });
-
-  state.route = { selectedId: selected.id, isLoading: true, result: null, error: "", focusMap: false };
-  renderRoutePanel();
-
-  try {
-    const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
-    if (state.selectedId !== selected.id) return;
-    state.route = { selectedId: selected.id, isLoading: false, result: payload, error: "", focusMap: true };
-    if (state.map) {
-      state.map.fitted = false;
-    }
-    render();
-  } catch (error) {
-    if (state.selectedId !== selected.id) return;
-    state.route = {
-      selectedId: selected.id,
-      isLoading: false,
-      result: null,
-      error: `경로 계산 실패: ${error.message}`,
-      focusMap: false
-    };
-    renderRoutePanel();
-  }
-}
-
-async function calculateCommuteRoute(selected) {
-  const originInput = document.querySelector("#routeOriginInput");
+async function calculateCommuteRoute(selected, options = {}) {
   const destinationInput = document.querySelector("#routeDestinationInput");
-  const providerInput = document.querySelector("#routeProviderInput");
-  if (!originInput || !destinationInput || !providerInput) return;
+  if (!destinationInput) return;
 
-  const origin = originInput.value.trim();
+  const transportMode = options.transportMode || state.route.transportMode || "transit";
+  const requestId = state.routeRequestId + 1;
+  state.routeRequestId = requestId;
+  const origin = representativeAddressFor(selected);
   const destinationText = destinationInput.value.trim();
+  const destination = currentDestinationCoordinates();
   const params = new URLSearchParams({
     origin,
-    provider: providerInput.value || "auto"
+    provider: "auto",
+    transportMode,
+    destinationLat: destination.lat,
+    destinationLng: destination.lng
   });
 
   if (!origin) {
-    state.route = { selectedId: selected.id, isLoading: false, result: null, error: "집 위치를 입력하세요.", focusMap: false };
+    state.route = { selectedId: selected.id, isLoading: false, result: null, error: "아파트 주소를 확인할 수 없습니다.", focusMap: false, transportMode };
     renderRoutePanel();
     return;
   }
@@ -1968,51 +2547,67 @@ async function calculateCommuteRoute(selected) {
     params.set("destination", state.destination);
   }
 
-  state.route = { selectedId: selected.id, isLoading: true, result: null, error: "", focusMap: false };
+  state.route = { selectedId: selected.id, isLoading: true, result: null, error: "", focusMap: false, transportMode };
+  state.map?.routeLayer?.clearLayers();
   renderRoutePanel();
 
   try {
     const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
-    state.route = { selectedId: selected.id, isLoading: false, result: payload, error: "", focusMap: true };
+    if (requestId !== state.routeRequestId) return;
+    state.route = { selectedId: selected.id, isLoading: false, result: payload, error: "", focusMap: true, transportMode };
     if (state.map) {
       state.map.fitted = false;
     }
     render();
   } catch (error) {
+    if (requestId !== state.routeRequestId) return;
     state.route = {
       selectedId: selected.id,
       isLoading: false,
       result: null,
       error: `경로 계산 실패: ${error.message}`,
-      focusMap: false
+      focusMap: false,
+      transportMode
     };
     renderRoutePanel();
   }
 }
 
 function bindRoutePlanner(selected) {
-  const routeAreaInput = document.querySelector("#routeAreaInput");
-  const originInput = document.querySelector("#routeOriginInput");
-  const providerInput = document.querySelector("#routeProviderInput");
-  const useSelectedButton = document.querySelector("#routeUseSelectedButton");
-  const calculateButton = document.querySelector("#routeCalculateButton");
+  const destinationInput = document.querySelector("#routeDestinationInput");
   const mapButton = document.querySelector("[data-route-map]");
+  const transportButtons = document.querySelectorAll("[data-route-transport]");
 
-  if (providerInput && state.route.selectedId === selected.id && state.route.result?.provider) {
-    providerInput.value = state.route.result.provider === "fallback" ? "auto" : state.route.result.provider;
-  }
-
-  routeAreaInput?.addEventListener("change", (event) => {
-    selectArea(event.target.value, { source: "route" });
-  });
-
-  useSelectedButton?.addEventListener("click", () => {
-    if (originInput) {
-      originInput.value = representativeAddressFor(selected);
+  destinationInput?.addEventListener("input", (event) => {
+    state.destinationQuery = event.target.value;
+    if (state.destinationQuery.trim()) {
+      state.destination = inferDestinationKey(state.destinationQuery);
+    }
+    if (nodes.destinationInput) {
+      nodes.destinationInput.value = state.destinationQuery;
     }
   });
 
-  calculateButton?.addEventListener("click", () => calculateCommuteRoute(selected));
+  destinationInput?.addEventListener("change", () => calculateCommuteRoute(selected));
+  destinationInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    calculateCommuteRoute(selected);
+  });
+
+  transportButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const transportMode = button.dataset.routeTransport;
+      const sameRoute = state.route.selectedId === selected.id
+        && state.route.transportMode === transportMode
+        && state.route.result;
+      if (sameRoute) {
+        focusRouteOnMap();
+        return;
+      }
+      calculateCommuteRoute(selected, { transportMode });
+    });
+  });
 
   mapButton?.addEventListener("click", () => {
     if (state.map) {
@@ -2054,7 +2649,7 @@ function renderEvidenceTable() {
   rows.push(`
     <tr class="total-row">
       <th scope="row">합계</th>
-      <td>생활권 ${state.neighborhoods.length}개</td>
+      <td>아파트 후보 ${state.apartmentCandidates.length}개</td>
       <td class="num">${formatNumber(totalRecords)}건</td>
       <td colspan="5" class="muted">15~85㎡ 거래 중앙값 · 생활 SOC/안전환경 반경 집계 기준</td>
     </tr>
@@ -2119,13 +2714,13 @@ function renderControls() {
   nodes.serviceWeightOutput.textContent = `${state.weights.service}%`;
   nodes.safetyWeightOutput.textContent = `${state.weights.safety}%`;
   if (nodes.candidateCount) {
-    nodes.candidateCount.textContent = state.apiMeta?.totalCandidates || state.neighborhoods.length;
+    nodes.candidateCount.textContent = state.apiMeta?.totalCandidates || state.apartmentCandidates.length;
   }
   if (nodes.destinationInput && nodes.destinationInput.value !== state.destinationQuery) {
     nodes.destinationInput.value = state.destinationQuery;
   }
   if (nodes.matchButton) {
-    nodes.matchButton.disabled = state.isLoading || !state.neighborhoods.length;
+    nodes.matchButton.disabled = state.isLoading || !state.neighborhoods.length || !state.apartmentCandidates.length;
     nodes.matchButton.textContent = state.isLoading ? "매칭 중" : "매칭하기";
   }
   syncAllRangeProgress();
@@ -2140,7 +2735,7 @@ function renderControls() {
     : !state.hasMatched
       ? ""
       : sourceYear
-        ? `${modeLabel} 계산 · ${sourceYear} 서울 전월세 실데이터${stamp ? ` · ${stamp} 기준` : ""}`
+        ? `${modeLabel} 계산 · 아파트 단지 스냅샷 + ${sourceYear} 서울 전월세 데이터${stamp ? ` · ${stamp} 기준` : ""}`
         : "데이터 준비 중";
 }
 
@@ -2151,17 +2746,30 @@ function render() {
   renderMapSidebar();
   renderMapRouteChip();
   renderPropertyDashboard();
+  renderBookmarkPanel();
   renderCards();
   renderDetail();
   renderRoutePanel();
+  renderInfrastructurePanel();
   renderDetailSubpanelState();
   renderEvidenceTable();
 }
 
-function selectArea(id, options = {}) {
+function selectApartmentMatch(id, options = {}) {
+  const changed = state.selectedId !== id;
+  const panelWasOpen = state.detailPanelOpen;
   const shouldResetRoute = options.resetRoute ?? ["card", "map", "route"].includes(options.source);
   if (state.selectedId !== id || shouldResetRoute) {
     resetRouteState();
+  }
+  if (changed && state.property.selectedId) {
+    state.property.selectedId = null;
+    state.property.detail = null;
+    state.property.error = "";
+    state.property.isLoading = false;
+    state.property.agentAnswer = null;
+    state.property.agentError = "";
+    state.property.requestId += 1;
   }
   state.selectedId = id;
 
@@ -2172,9 +2780,13 @@ function selectArea(id, options = {}) {
 
   if (options.openDetailPanel) {
     state.detailPanelOpen = true;
+    if (changed || !panelWasOpen) state.detailSubpanelTab = "matching";
   }
 
   render();
+  if (options.openDetailPanel) {
+    selectProperty(id);
+  }
   focusSelectedMarker({ zoom: ["card", "map"].includes(options.source) });
 }
 
@@ -2232,15 +2844,17 @@ function resetUserSettings() {
   state.selectedId = null;
   state.showAllCards = false;
   state.detailPanelOpen = false;
+  state.detailSubpanelTab = "matching";
   state.hasMatched = false;
+  state.matchValidationMessage = "";
   state.isLoading = false;
   state.apartments.enabled = true;
   state.apartments.labelMode = "sale";
-  state.apartments.showSocRadius = true;
   state.apartments.lastKey = "";
   state.property.selectedId = null;
   state.property.detail = null;
   state.property.error = "";
+  state.bookmarks.panelOpen = false;
   state.evidenceRendered = false;
 
   nodes.budgetInput.value = state.budget;
@@ -2252,7 +2866,6 @@ function resetUserSettings() {
   nodes.safetyWeight.value = state.weights.safety;
   if (nodes.apartmentLayerToggle) nodes.apartmentLayerToggle.checked = true;
   if (nodes.mapLabelModeInput) nodes.mapLabelModeInput.value = "sale";
-  if (nodes.socRadiusToggle) nodes.socRadiusToggle.checked = true;
   resetRouteState();
   if (state.map) {
     state.map.fitted = false;
@@ -2268,9 +2881,11 @@ async function refreshAllData() {
   window.clearTimeout(state.refreshTimer);
   resetUserSettings();
   render();
+  resetMapToSeoul();
 
   try {
     await loadAreas();
+    await loadApartmentCandidates();
     render();
     if (state.apartments.enabled) {
       scheduleApartmentLayerLoad(true);
@@ -2341,9 +2956,25 @@ function bindEvents() {
   });
 
   nodes.matchButton?.addEventListener("click", () => {
+    if (!nodes.destinationInput.value.trim()) {
+      state.destinationQuery = "";
+      nodes.destinationInput.value = "";
+      state.hasMatched = false;
+      state.matchValidationMessage = "주소를 입력해주세요.";
+      state.results = [];
+      state.selectedId = null;
+      state.showAllCards = false;
+      state.detailPanelOpen = false;
+      render();
+      nodes.destinationInput.focus();
+      return;
+    }
+
+    state.matchValidationMessage = "";
     window.clearTimeout(state.refreshTimer);
     state.showAllCards = false;
     state.detailPanelOpen = false;
+    state.detailSubpanelTab = "matching";
     state.property.selectedId = null;
     state.property.detail = null;
     state.property.error = "";
@@ -2355,6 +2986,21 @@ function bindEvents() {
     refreshRecommendations();
   });
 
+  const subpanelTabs = [...(nodes.detailSubpanel?.querySelectorAll("[data-subpanel-tab]") || [])];
+  subpanelTabs.forEach((button, index) => {
+    button.addEventListener("click", () => {
+      activateDetailSubpanelTab(button.dataset.subpanelTab);
+    });
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+      event.preventDefault();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const next = subpanelTabs[(index + direction + subpanelTabs.length) % subpanelTabs.length];
+      activateDetailSubpanelTab(next.dataset.subpanelTab);
+      next.focus();
+    });
+  });
+
   [nodes.closeSubpanelButton, nodes.subpanelCloseXButton].forEach((button) => {
     button?.addEventListener("click", () => {
       state.detailPanelOpen = false;
@@ -2364,6 +3010,14 @@ function bindEvents() {
 
   nodes.refreshButton?.addEventListener("click", () => {
     refreshAllData();
+  });
+
+  nodes.bookmarkPanelButton?.addEventListener("click", () => {
+    if (state.bookmarks.panelOpen) {
+      closeBookmarkPanel();
+    } else {
+      openBookmarkPanel();
+    }
   });
 
   nodes.resetButton?.addEventListener("click", () => {
@@ -2394,17 +3048,15 @@ function bindEvents() {
     updateMapScaleUI();
   });
 
-  nodes.socRadiusToggle?.addEventListener("change", (event) => {
-    state.apartments.showSocRadius = event.target.checked;
-    drawPropertySocRadius();
-  });
 }
 
 async function init() {
+  loadBookmarksFromStorage();
   bindEvents();
   initNavigation();
   render();
   await loadAreas();
+  await loadApartmentCandidates();
   render();
 }
 

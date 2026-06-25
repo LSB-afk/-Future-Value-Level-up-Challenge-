@@ -31,7 +31,7 @@ PUBLIC_SOURCES = [
     {
         "name": "서울시 부동산 전월세가 정보 2025 집계",
         "url": "https://data.seoul.go.kr/dataList/OA-21276/S/1/datasetView.do",
-        "fields": "생활권별 월세·보증금·전세 중앙값과 예시 거래",
+        "fields": "인근 권역별 월세·보증금·전세 중앙값과 예시 거래",
         "status": "실데이터 집계",
     },
     {
@@ -87,6 +87,13 @@ def format_money_10k(value) -> str:
         rest = amount % 10000
         return f"{eok}억 {rest:,}만원" if rest else f"{eok}억원"
     return f"{amount:,}만원"
+
+
+def topic(value) -> str:
+    text = str(value or "아파트")
+    last = ord(text[-1])
+    has_batchim = 0xAC00 <= last <= 0xD7A3 and (last - 0xAC00) % 28 != 0
+    return f"{text}{'은' if has_batchim else '는'}"
 
 
 def load_areas() -> list[dict]:
@@ -185,7 +192,7 @@ def estimate_market(apartment: dict, area: dict) -> dict:
         "priceChangeRate": round(price_change, 1),
         "volatilityRate": round(volatility, 1),
         "sourceMode": "public_area_proxy",
-        "sourceLabel": "공개 단지정보 + 생활권 전월세 실거래 기반 추정",
+        "sourceLabel": "공개 단지정보 + 인근 전월세 실거래 기반 추정",
         "liveStatus": {},
     }
 
@@ -271,13 +278,13 @@ def build_risk(apartment: dict, market: dict) -> dict:
             "label": "주변 전세 중앙값 대비",
             "value": f"{surrounding_gap:+.1f}%",
             "status": signal_status(surrounding_gap >= 18, surrounding_gap >= 8),
-            "evidence": f"생활권 전세 중앙값 {format_money_10k(surrounding_jeonse)} 대비 수준입니다.",
+            "evidence": f"인근 전세 중앙값 {format_money_10k(surrounding_jeonse)} 대비 수준입니다.",
         },
         {
             "label": "최근 가격 변동성",
             "value": f"{volatility:.1f}%",
             "status": signal_status(volatility >= 11, volatility >= 7),
-            "evidence": "실거래 API 연계 전까지 생활권 기반 변동성 추정값으로 표시합니다.",
+            "evidence": "실거래 API 연계 전까지 인근 권역 기반 변동성 추정값으로 표시합니다.",
         },
         {
             "label": "건축물 노후도",
@@ -400,8 +407,8 @@ def lifestyle_summary(area: dict) -> dict:
 def ai_summary(apartment: dict, area: dict, market: dict, risk: dict) -> dict:
     lifestyle = lifestyle_summary(area)
     strengths = [
-        f"{lifestyle['livingAreaName']} 생활권과 가까워 지하철 접근성 {lifestyle['transitScore']}점입니다.",
-        f"월세 기준은 {format_money_10k(market['monthlyRent10k'])}로 생활권 중앙값과 비교 가능한 수준입니다.",
+        f"{lifestyle['livingAreaName']} 인근 입지를 기준으로 지하철 접근성 {lifestyle['transitScore']}점입니다.",
+        f"월세 기준은 {format_money_10k(market['monthlyRent10k'])}로 인근 중앙값과 비교 가능한 수준입니다.",
         f"병원 {lifestyle['counts']['hospital']}개, 학교 {lifestyle['counts']['school']}개, 공원 {lifestyle['counts']['park']}개가 생활 SOC 점수에 반영됐습니다.",
     ]
     cautions = [
@@ -420,12 +427,12 @@ def ai_summary(apartment: dict, area: dict, market: dict, risk: dict) -> dict:
     if risk["levelKey"] == "high":
         recommendation = "전세 계약은 보수적으로 접근하고 등기부·보증보험·선순위 권리 확인 후 판단하는 것이 좋습니다."
     elif risk["levelKey"] == "warning":
-        recommendation = "입지와 생활권 장점은 있으나 전세가율·공시가격 대비 비율을 계약 전 재검증해야 합니다."
+        recommendation = "입지 장점은 있으나 전세가율·공시가격 대비 비율을 계약 전 재검증해야 합니다."
     else:
-        recommendation = "현재 공개 데이터 기준으로는 생활권·가격 균형이 무난하지만 권리관계 확인은 별도 필요합니다."
+        recommendation = "현재 공개 데이터 기준으로는 입지·가격 균형이 무난하지만 권리관계 확인은 별도 필요합니다."
 
     return {
-        "headline": f"{apartment.get('name')}은 {lifestyle['livingAreaName']} 생활권의 주거비·이동·생활 SOC를 함께 검토할 수 있는 후보입니다.",
+        "headline": f"{topic(apartment.get('name'))} {lifestyle['livingAreaName']} 인근의 주거비·이동·생활 SOC를 함께 검토할 수 있는 아파트 후보입니다.",
         "strengths": strengths,
         "weaknesses": weaknesses,
         "cautions": cautions,
@@ -465,6 +472,7 @@ def build_property_detail(apartment: dict) -> dict:
     return {
         "id": apartment.get("id"),
         "name": apartment.get("name"),
+        "prototype": bool(apartment.get("prototype")),
         "address": apartment.get("address"),
         "district": apartment.get("district"),
         "dong": apartment.get("dong"),
@@ -493,14 +501,14 @@ def build_property_detail(apartment: dict) -> dict:
         "aiSummary": ai_summary(apartment, area, market, risk),
         "dataStatus": {
             "buildingInfo": "실데이터: 서울시 OpenAptInfo",
-            "rentalMarket": "실데이터 집계: 서울시 2025 전월세 거래 생활권 중앙값",
-            "salePrice": "실거래 API 키·단지명 매칭 성공 시 live 보정, 실패 시 생활권 기반 추정",
+            "rentalMarket": "실데이터 집계: 서울시 2025 인근 전월세 거래 중앙값",
+            "salePrice": "실거래 API 키·단지명 매칭 성공 시 live 보정, 실패 시 인근 권역 기반 추정",
             "officialPrice": "추정: 공동주택 공시가격 API는 PNU/공시가격 식별자 매핑 후 live 보정",
             "landUse": "연계 예정: VWorld/토지이음 용도지역 데이터",
         },
         "sources": PUBLIC_SOURCES,
         "limitations": [
-            "매매·전월세 live API 키가 없거나 단지명 매칭 기록이 없으면 공개 생활권 데이터 기반 추정값으로 표시합니다.",
+            "매매·전월세 live API 키가 없거나 단지명 매칭 기록이 없으면 공개 인근 권역 데이터 기반 추정값으로 표시합니다.",
             "전세 위험 신호는 법적 판정이 아니라 계약 전 확인 항목을 좁히기 위한 체크리스트입니다.",
             "등기부 권리관계, 세금 체납, 보증보험 가입 가능 여부는 사용자가 별도 서류로 확인해야 합니다.",
         ],
@@ -520,7 +528,7 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
             f"공시가격 대비 보증금 비율 {price['depositOfficialRatio']}%",
         ],
         "통근 근거": [
-            f"{lifestyle['livingAreaName']} 생활권 기준 주요 목적지 통근시간은 추천 엔진의 경로 API/폴백 테이블에서 산출합니다.",
+            f"{lifestyle['livingAreaName']} 인근 기준 주요 목적지 통근시간은 추천 엔진의 경로 API/폴백 테이블에서 산출합니다.",
             f"대중교통 접근성 {lifestyle['transitScore']}점, 대표역 {lifestyle['station']}",
         ],
         "위험 근거": [
@@ -528,7 +536,7 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
             for item in risk["signals"]
             if item["status"] in {"high", "warning", "unknown"}
         ][:4],
-        "생활권 근거": [
+        "주변 입지 근거": [
             f"생활 SOC {lifestyle['serviceScore']}점",
             f"병원 {lifestyle['counts']['hospital']}개·학교 {lifestyle['counts']['school']}개·공원 {lifestyle['counts']['park']}개",
             f"치안시설 {lifestyle['counts']['police']}개·CCTV {lifestyle['counts']['cctv']}대",
@@ -553,7 +561,7 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
     if any(token in text for token in ["비슷", "더 안전", "대안", "찾아"]):
         if safer:
             names = ", ".join(f"{item['name']}({item['preview']['riskLevel']})" for item in safer)
-            answer = f"현재 스냅샷 기준 더 낮은 위험 점수 후보는 {names}입니다. 비교표에 추가해 전세가율과 생활권 점수를 함께 보세요."
+            answer = f"현재 스냅샷 기준 더 낮은 위험 점수 후보는 {names}입니다. 비교표에 추가해 전세가율과 입지 점수를 함께 보세요."
         else:
             answer = "현재 로딩된 단지 중에는 더 낮은 위험 점수 후보가 충분하지 않습니다. 서울 OpenAptInfo 키를 연결하면 전체 단지에서 대안을 찾을 수 있습니다."
     elif any(token in text for token in ["전세", "괜찮", "안전", "사기", "깡통"]):
@@ -564,14 +572,14 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
         )
     elif any(token in text for token in ["왜", "추천", "장점"]):
         answer = (
-            f"{detail['name']}은 {lifestyle['livingAreaName']} 생활권 기준으로 지하철 접근성 {lifestyle['transitScore']}점, "
+            f"{topic(detail['name'])} {lifestyle['livingAreaName']} 인근 기준으로 지하철 접근성 {lifestyle['transitScore']}점, "
             f"생활 SOC {lifestyle['serviceScore']}점입니다. "
             f"매매 추정가는 주변 평균 대비 {price['saleGapPercent']:+.1f}%이며, "
             f"전세 위험 신호는 {risk['level']}입니다."
         )
     else:
         answer = (
-            f"{detail['name']}은 가격·생활권·위험 신호를 함께 보면 {risk['level']} 단계입니다. "
+            f"{topic(detail['name'])} 가격·입지·위험 신호를 함께 보면 {risk['level']} 단계입니다. "
             "질문을 전세 안전성, 추천 이유, 비슷한 가격대 대안 중 하나로 구체화하면 더 정확히 답할 수 있습니다."
         )
 

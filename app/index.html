@@ -3,30 +3,37 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="MoveValue - 데이터 기반 생활권 매칭 서비스">
-    <title>MoveValue 생활권 매칭</title>
+    <meta name="description" content="MoveValue - 데이터 기반 아파트 매칭 서비스">
+    <title>MoveValue 아파트 매칭</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%2303C75A'/%3E%3Cpath d='M9 11h4.4l2.6 6.3L18.6 11H23v10h-3v-5.7L17.6 21h-3.2L12 15.3V21H9z' fill='white'/%3E%3C/svg%3E">
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin="">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="./styles.css">
   </head>
   <body>
     <main>
-      <section id="recommend" class="workspace anchor-target is-active-view" aria-label="MoveValue 생활권 매칭 화면">
+      <section id="recommend" class="workspace anchor-target is-active-view" aria-label="MoveValue 아파트 매칭 화면">
         <aside class="mv-sidebar" aria-label="조건 설정과 매칭 결과">
           <header class="sidebar-brand">
             <span class="brand-mark">MV</span>
             <div class="brand-copy">
               <strong>MoveValue</strong>
-              <span>데이터 기반 생활권 매칭</span>
+              <span>데이터 기반 아파트 매칭</span>
             </div>
-            <button id="refreshButton" class="header-refresh-button" type="button" title="추천 새로고침" aria-label="추천 새로고침">&#8635;</button>
+            <div class="header-actions">
+              <button id="bookmarkPanelButton" class="header-bookmark-button" type="button" title="즐겨찾기 비교" aria-label="즐겨찾기 아파트 비교 열기">
+                <span aria-hidden="true">☆</span>
+                <strong id="bookmarkCount">0</strong>
+              </button>
+              <button id="refreshButton" class="header-refresh-button" type="button" title="추천 새로고침" aria-label="추천 새로고침">&#8635;</button>
+            </div>
           </header>
 
-          <section class="sidebar-section controls" aria-label="생활권 조건 설정">
+          <section class="sidebar-section controls" aria-label="아파트 조건 설정">
             <label class="field">
               <span>월 주거 예산</span>
               <output id="budgetOutput">70만원</output>
@@ -39,18 +46,10 @@
                 <input
                   id="destinationInput"
                   type="text"
-                  list="destinationSuggestions"
                   value=""
                   autocomplete="off"
                   placeholder="주소를 입력하세요.">
               </span>
-              <datalist id="destinationSuggestions">
-                <option value="서울 강남구 역삼동">강남역 · 테헤란로</option>
-                <option value="서울 영등포구 여의도동">여의도 · IFC/국회의사당</option>
-                <option value="서울 중구 봉래동2가">서울역 · 도심권</option>
-                <option value="서울 구로구 구로동">구로디지털단지역</option>
-                <option value="경기도 성남시 분당구 삼평동">판교테크노밸리</option>
-              </datalist>
             </label>
 
             <fieldset class="segmented" aria-label="가구 유형">
@@ -58,7 +57,7 @@
               <label><input type="radio" name="persona" value="single" checked><span>1인 청년</span></label>
               <label><input type="radio" name="persona" value="commuter"><span>직장인</span></label>
               <label><input type="radio" name="persona" value="newlywed"><span>신혼</span></label>
-              <label><input type="radio" name="persona" value="senior"><span>교통약자</span></label>
+              <label><input type="radio" name="persona" value="senior"><span>노인</span></label>
             </fieldset>
 
             <div class="weights" aria-label="가중치 설정">
@@ -70,7 +69,7 @@
                 <output id="commuteWeightOutput">25%</output>
                 <input id="commuteWeight" type="range" min="5" max="50" value="25" step="5">
               </label>
-              <label class="field compact" title="예산 대비 월세 중앙값을 점수화합니다.">
+              <label class="field compact" title="예산 대비 아파트 단지 추정 월세를 점수화합니다.">
                 <span>주거비</span>
                 <output id="costWeightOutput">25%</output>
                 <input id="costWeight" type="range" min="5" max="50" value="25" step="5">
@@ -104,7 +103,7 @@
 
         </aside>
 
-        <aside id="detailSubpanel" class="mv-subpanel" aria-label="선택 생활권 상세" hidden>
+        <aside id="detailSubpanel" class="mv-subpanel" aria-label="선택 아파트 상세" hidden>
           <header class="subpanel-header">
             <button id="closeSubpanelButton" class="subpanel-icon-button" type="button" aria-label="상세 패널 닫기">‹</button>
             <div class="subpanel-title-block">
@@ -114,48 +113,36 @@
             <button id="subpanelCloseXButton" class="subpanel-icon-button" type="button" aria-label="상세 패널 닫기">×</button>
           </header>
 
+          <nav class="subpanel-tabs" role="tablist" aria-label="아파트 상세 메뉴">
+            <button id="matchingResultTab" class="subpanel-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="matchingResultPanel" data-subpanel-tab="matching">매칭 결과</button>
+            <button id="apartmentInfoTab" class="subpanel-tab" type="button" role="tab" aria-selected="false" aria-controls="apartmentInfoPanel" data-subpanel-tab="apartment">아파트 정보</button>
+            <button id="commuteRouteTab" class="subpanel-tab" type="button" role="tab" aria-selected="false" aria-controls="commuteRoutePanel" data-subpanel-tab="route">출퇴근 경로</button>
+            <button id="infrastructureTab" class="subpanel-tab" type="button" role="tab" aria-selected="false" aria-controls="infrastructurePanel" data-subpanel-tab="infrastructure">주변 인프라</button>
+          </nav>
+
           <div class="subpanel-scroll">
-            <section class="subpanel-section" aria-label="상세 분석">
-              <div class="subpanel-section-title">
-                <h2>상세 분석</h2>
-              </div>
+            <section id="matchingResultPanel" class="subpanel-section" role="tabpanel" aria-labelledby="matchingResultTab" data-subpanel-panel="matching">
               <div id="detailContent" class="detail-content"></div>
             </section>
 
-            <section class="subpanel-section" aria-label="출퇴근 경로">
-              <div class="subpanel-section-title">
-                <h2>출퇴근 경로</h2>
-              </div>
+            <section id="apartmentInfoPanel" class="subpanel-section" role="tabpanel" aria-labelledby="apartmentInfoTab" data-subpanel-panel="apartment" hidden>
+              <div id="propertyDashboard" class="property-dashboard map-property-drawer" aria-live="polite"></div>
+            </section>
+
+            <section id="commuteRoutePanel" class="subpanel-section" role="tabpanel" aria-labelledby="commuteRouteTab" data-subpanel-panel="route" hidden>
               <div id="routeContent" class="route-content"></div>
+            </section>
+
+            <section id="infrastructurePanel" class="subpanel-section" role="tabpanel" aria-labelledby="infrastructureTab" data-subpanel-panel="infrastructure" hidden>
+              <div id="infrastructureContent" class="infrastructure-content"></div>
             </section>
           </div>
         </aside>
 
-        <section class="map-stage" aria-label="생활권 지도">
-          <div class="map-canvas" id="mapCanvas" role="region" aria-label="추천 생활권과 대중교통 경로 지도"></div>
+        <section class="map-stage" aria-label="아파트 지도">
+          <div class="map-canvas" id="mapCanvas" role="region" aria-label="추천 아파트와 대중교통 경로 지도"></div>
 
-          <div class="map-control-panel" aria-label="지도 레이어 설정">
-            <label class="layer-toggle">
-              <input id="apartmentLayerToggle" type="checkbox" checked>
-              <span>아파트 단지</span>
-            </label>
-            <label class="map-filter-field">
-              <span>라벨</span>
-              <select id="mapLabelModeInput">
-                <option value="sale">매매가</option>
-                <option value="jeonse">전세가율</option>
-                <option value="risk">위험도</option>
-                <option value="commute">통근시간</option>
-              </select>
-            </label>
-            <label class="layer-toggle">
-              <input id="socRadiusToggle" type="checkbox" checked>
-              <span>SOC 반경</span>
-            </label>
-            <span id="apartmentLayerStatus" class="map-layer-status">아파트 단지 데이터 준비 중</span>
-          </div>
-
-          <div id="propertyDashboard" class="property-dashboard map-property-drawer" aria-live="polite"></div>
+          <aside id="bookmarkPanel" class="bookmark-panel" aria-label="즐겨찾기 아파트 비교" aria-live="polite" hidden></aside>
         </section>
       </section>
     </main>
@@ -166,8 +153,10 @@
           <span class="rank"></span>
           <span class="card-main">
             <strong class="name"></strong>
+            <span class="card-meta"></span>
           </span>
         </button>
+        <button class="card-bookmark-button" type="button" aria-label="즐겨찾기 추가" title="즐겨찾기">☆</button>
       </article>
     </template>
 
@@ -175,6 +164,8 @@
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
       crossorigin=""></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>

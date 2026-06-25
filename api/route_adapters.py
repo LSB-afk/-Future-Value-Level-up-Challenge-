@@ -345,30 +345,106 @@ def route_with_tmap(origin: dict[str, Any], destination: dict[str, Any]) -> dict
     return _normalize_tmap(_request_json(TMAP_TRANSIT_ENDPOINT, method="POST", headers={"appKey": app_key}, body=body), origin, destination)
 
 
-def fallback_route(origin: dict[str, Any], destination: dict[str, Any], reason: str) -> dict[str, Any]:
-    km = haversine_km(origin["lat"], origin["lng"], destination["lat"], destination["lng"])
-    total_minutes = max(12, round(10 + km * 2.9))
-    walk_meters = round(min(1800, 350 + km * 75))
+def fallback_route(
+    origin: dict[str, Any],
+    destination: dict[str, Any],
+    reason: str,
+    transport_mode: str = "transit",
+) -> dict[str, Any]:
+    mode = transport_mode if transport_mode in {"car", "transit", "bicycle", "walk"} else "transit"
+    direct_km = haversine_km(origin["lat"], origin["lng"], destination["lat"], destination["lng"])
+    distance_factors = {"car": 1.25, "transit": 1.18, "bicycle": 1.15, "walk": 1.12}
+    route_km = max(0.1, direct_km * distance_factors[mode])
+    distance_meters = round(route_km * 1000)
+
+    if mode == "car":
+        total_minutes = max(5, round(4 + route_km / 30 * 60))
+        estimated_cost = max(1000, round(route_km * 180 / 100) * 100)
+        summary = {
+            "totalMinutes": total_minutes,
+            "fare": estimated_cost,
+            "estimatedCost": estimated_cost,
+            "distanceMeters": distance_meters,
+            "totalWalkMeters": 0,
+            "transferCount": 0,
+            "trafficLabel": "보통",
+            "pathType": "estimated_car",
+        }
+        steps = [{
+            "mode": "자동차",
+            "route": "추천 자동차 경로",
+            "startName": origin["label"],
+            "endName": destination["label"],
+            "minutes": total_minutes,
+            "distanceMeters": distance_meters,
+        }]
+    elif mode == "bicycle":
+        total_minutes = max(5, round(route_km / 15 * 60))
+        summary = {
+            "totalMinutes": total_minutes,
+            "fare": 0,
+            "estimatedCalories": round(route_km * 28),
+            "distanceMeters": distance_meters,
+            "totalWalkMeters": 0,
+            "transferCount": 0,
+            "pathType": "estimated_bicycle",
+        }
+        steps = [{
+            "mode": "자전거",
+            "route": "추천 자전거 경로",
+            "startName": origin["label"],
+            "endName": destination["label"],
+            "minutes": total_minutes,
+            "distanceMeters": distance_meters,
+        }]
+    elif mode == "walk":
+        total_minutes = max(5, round(route_km / 4.5 * 60))
+        summary = {
+            "totalMinutes": total_minutes,
+            "fare": 0,
+            "stepCount": round(distance_meters / 0.72),
+            "distanceMeters": distance_meters,
+            "totalWalkMeters": distance_meters,
+            "transferCount": 0,
+            "pathType": "estimated_walk",
+        }
+        steps = [{
+            "mode": "도보",
+            "route": "추천 도보 경로",
+            "startName": origin["label"],
+            "endName": destination["label"],
+            "minutes": total_minutes,
+            "distanceMeters": distance_meters,
+        }]
+    else:
+        total_minutes = max(12, round(10 + direct_km * 2.9))
+        walk_meters = round(min(1800, 350 + direct_km * 75))
+        summary = {
+            "totalMinutes": total_minutes,
+            "fare": 1550 if direct_km < 10 else 1750,
+            "distanceMeters": distance_meters,
+            "totalWalkMeters": walk_meters,
+            "transferCount": 1 if direct_km > 7 else 0,
+            "pathType": "estimated_transit",
+        }
+        steps = [
+            {"mode": "도보", "route": "", "startName": origin["label"], "endName": "인근 역/정류장", "minutes": 7, "distanceMeters": min(walk_meters, 700)},
+            {"mode": "대중교통", "route": "추천 대중교통 경로", "startName": "인근 역/정류장", "endName": "목적지 인근", "minutes": max(5, total_minutes - 14), "distanceMeters": max(0, distance_meters - walk_meters)},
+            {"mode": "도보", "route": "", "startName": "목적지 인근", "endName": destination["label"], "minutes": 7, "distanceMeters": min(walk_meters, 700)},
+        ]
+
+    mode_label = {"car": "자동차", "transit": "대중교통", "bicycle": "자전거", "walk": "도보"}[mode]
     return {
         "ok": True,
         "provider": "fallback",
         "mode": "estimated_fallback",
+        "transportMode": mode,
         "origin": origin,
         "destination": destination,
-        "summary": {
-            "totalMinutes": total_minutes,
-            "fare": 1550 if km < 10 else 1750,
-            "totalWalkMeters": walk_meters,
-            "transferCount": 1 if km > 7 else 0,
-            "pathType": "estimated",
-        },
-        "steps": [
-            {"mode": "도보", "route": "", "startName": origin["label"], "endName": "인근 역/정류장", "minutes": 7, "distanceMeters": min(walk_meters, 700)},
-            {"mode": "대중교통", "route": "추정 경로", "startName": "인근 역/정류장", "endName": "목적지 인근", "minutes": max(5, total_minutes - 14), "distanceMeters": round(km * 1000)},
-            {"mode": "도보", "route": "", "startName": "목적지 인근", "endName": destination["label"], "minutes": 7, "distanceMeters": min(walk_meters, 700)},
-        ],
+        "summary": summary,
+        "steps": steps,
         "coordinates": [origin, destination],
-        "notice": f"실제 경로 API 호출이 불가해 거리 기반 추정값을 표시합니다. 사유: {reason}",
+        "notice": f"현재 프로토타입은 {mode_label} 이동을 거리 기반으로 추정합니다. 실제 경로 API 연동 시 도로망 기반 최적 경로로 대체됩니다. 사유: {reason}",
     }
 
 
@@ -376,21 +452,30 @@ def build_commute_route(
     origin: dict[str, Any],
     destination: dict[str, Any],
     provider: str = "auto",
+    transport_mode: str = "transit",
 ) -> dict[str, Any]:
     errors = []
+    selected_mode = transport_mode if transport_mode in {"car", "transit", "bicycle", "walk"} else "transit"
+    if selected_mode != "transit":
+        return fallback_route(origin, destination, "해당 이동수단 경로 API 연동 전", selected_mode)
+
     requested = provider if provider in {"auto", "odsay", "tmap"} else "auto"
     providers = ["odsay", "tmap"] if requested == "auto" else [requested]
 
     for name in providers:
         try:
             if name == "odsay":
-                return route_with_odsay(origin, destination)
+                route = route_with_odsay(origin, destination)
+                route["transportMode"] = selected_mode
+                return route
             if name == "tmap":
-                return route_with_tmap(origin, destination)
+                route = route_with_tmap(origin, destination)
+                route["transportMode"] = selected_mode
+                return route
         except Exception as exc:  # noqa: BLE001 - fallback keeps prototype available.
             errors.append(f"{name}: {exc}")
 
-    fallback = fallback_route(origin, destination, "; ".join(errors) or "사용 가능한 경로 API 키 없음")
+    fallback = fallback_route(origin, destination, "; ".join(errors) or "사용 가능한 경로 API 키 없음", selected_mode)
     fallback["errors"] = errors
     return fallback
 

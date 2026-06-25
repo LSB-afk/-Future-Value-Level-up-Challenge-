@@ -15,6 +15,7 @@ from property_model import build_property_preview
 
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT_PATH = ROOT / "data" / "apartments.seoul.snapshot.json"
+AREAS_PATH = ROOT / "data" / "areas.actual.json"
 API_NAME = "OpenAptInfo"
 API_URL = "http://openapi.seoul.go.kr:8088/{key}/json/OpenAptInfo/{start}/{end}/"
 API_KEY_ENVS = ("SEOUL_OPEN_API_KEY", "SEOUL_API_KEY", "MOVEVALUE_SEOUL_OPEN_API_KEY")
@@ -133,7 +134,58 @@ def fetch_live_dataset(key: str) -> dict:
 
 def load_snapshot() -> dict:
     with SNAPSHOT_PATH.open(encoding="utf-8") as file:
-        return json.load(file)
+        dataset = json.load(file)
+
+    with AREAS_PATH.open(encoding="utf-8") as file:
+        areas = json.load(file).get("areas", [])
+
+    suffixes = ("센트럴", "리버뷰", "파크힐")
+    offsets = ((-0.0038, -0.0032), (0.0031, 0.0044), (0.0052, -0.0021))
+    prototypes = []
+    for area_index, area in enumerate(areas):
+        district = str(area.get("district", "서울")).replace("서울 ", "").strip()
+        rent_dongs = area.get("evidence", {}).get("rentDongs", [])
+        dong = rent_dongs[0] if rent_dongs else area.get("name", "주요지역")
+        for variant, (suffix, offset) in enumerate(zip(suffixes, offsets), start=1):
+            approval_year = 1998 + (area_index * 5 + variant * 4) % 26
+            households = 280 + (area_index * 173 + variant * 137) % 1120
+            building_count = 3 + (area_index + variant * 2) % 12
+            prototypes.append(
+                {
+                    "id": f"P-{area.get('id', area_index)}-{variant}",
+                    "name": f"{area.get('name', '서울')} {suffix}",
+                    "category": "아파트",
+                    "address": f"서울특별시 {district} {dong} 프로토타입 단지 {variant}",
+                    "district": district,
+                    "dong": dong,
+                    "lat": round(float(area.get("lat", 37.55)) + offset[0], 7),
+                    "lng": round(float(area.get("lng", 126.98)) + offset[1], 7),
+                    "households": households,
+                    "buildingCount": building_count,
+                    "approvalDate": f"{approval_year}-03-01",
+                    "approvalYear": approval_year,
+                    "housingType": "분양",
+                    "heating": "개별난방" if variant != 2 else "지역난방",
+                    "managementMethod": "위탁관리",
+                    "parkingCount": round(households * (0.92 + variant * 0.08)),
+                    "grossFloorAreaM2": round(households * (82 + variant * 9), 2),
+                    "sourceUpdatedAt": "프로토타입",
+                    "prototype": True,
+                }
+            )
+
+    expanded = {**dataset, "apartments": [*dataset.get("apartments", []), *prototypes]}
+    expanded["meta"] = {
+        **dataset.get("meta", {}),
+        "recordsWithCoordinates": len(expanded["apartments"]),
+        "prototypeExpanded": True,
+        "prototypeRecords": len(prototypes),
+        "note": (
+            "OpenAptInfo 5건 미리보기에 UI 검증용 프로토타입 단지를 추가한 데이터입니다. "
+            "서울시 API 키 연결 시 전체 실데이터로 자동 교체됩니다."
+        ),
+    }
+    return expanded
 
 
 def load_apartment_dataset() -> tuple[dict, str, str]:
@@ -287,6 +339,8 @@ def apartments_response(raw: dict[str, list[str]]) -> dict:
             "complete": bool(meta.get("complete")),
             "totalRecords": int(meta.get("totalRecords") or len(apartments)),
             "availableRecords": int(meta.get("recordsWithCoordinates") or len(apartments)),
+            "prototypeExpanded": bool(meta.get("prototypeExpanded")),
+            "prototypeRecords": int(meta.get("prototypeRecords") or 0),
             "filteredRecords": len(filtered),
             "returnedFeatures": len(features),
             "clustered": cluster and cluster_step(zoom) > 0,
