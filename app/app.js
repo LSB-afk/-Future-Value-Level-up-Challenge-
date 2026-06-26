@@ -1994,6 +1994,7 @@ function renderPropertyDashboard() {
   nodes.propertyDashboard.classList.add("has-property-detail");
   const price = detail.price || {};
   const risk = detail.risk || {};
+  const summary = detail.aiSummary || {};
   const areaText = (detail.areaOptions || []).map((item) => `${item.exclusiveM2}㎡`).join(" / ");
   nodes.propertyDashboard.innerHTML = `
     <div class="property-grid">
@@ -2043,6 +2044,50 @@ function renderPropertyDashboard() {
         <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
       </section>
 
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>계약 전 확인 체크리스트</h4>
+          <span>주의 요소 안내</span>
+        </div>
+        ${renderContractChecklist(risk)}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>AI 요약</h4>
+          <span>가격·통근·입지 근거</span>
+        </div>
+        <p class="ai-headline">${escapeHtml(summary.headline || "선택한 단지의 가격·통근·생활권 데이터를 종합합니다.")}</p>
+        <div class="ai-summary-grid">
+          <div>
+            <strong>장점</strong>
+            <ul>${(summary.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </div>
+          <div>
+            <strong>주의</strong>
+            <ul>${([...(summary.weaknesses || []), ...(summary.cautions || [])]).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </div>
+        </div>
+        <p class="recommendation-text">${escapeHtml(summary.recommendation || "계약 전 등기부와 보증보험 가능 여부를 별도로 확인해야 합니다.")}</p>
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>AI Agent 질의응답</h4>
+          <span>근거 기반 설명</span>
+        </div>
+        <form id="propertyAgentForm" class="agent-form">
+          <input
+            id="propertyAgentQuestion"
+            type="text"
+            value="${escapeHtml(state.property.agentQuestion || `${detail.name} 전세 들어가도 괜찮아?`)}"
+            aria-label="AI Agent 질문"
+          >
+          <button class="primary-button compact-button" type="submit">질문</button>
+        </form>
+        ${renderAgentAnswer()}
+      </section>
+
       <section class="property-card wide data-status">
         <div class="property-card-title">
           <h4>데이터 연계 상태</h4>
@@ -2054,6 +2099,7 @@ function renderPropertyDashboard() {
       </section>
     </div>
   `;
+  bindPropertyDashboardEvents();
 }
 
 async function selectProperty(id) {

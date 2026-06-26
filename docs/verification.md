@@ -1,5 +1,25 @@
 # Verification Log
 
+확인일: 2026-06-26 (GitHub 최신 커밋 분석 + 제출자료 고도화 + 화면 캡처 + 신청서 렌더 검증)
+
+## 참가신청서 제출자료 검증 (2026-06-26)
+
+- GitHub `origin/main` 최신 커밋 `212f41c Refine apartment matching prototype` 기준으로 코드와 문서를 분석했다.
+- `docs/github-latest-analysis.md`: 최근 커밋 로그, 현재 구현 현황 요약표, 주요 컴포넌트, 라우팅 구조, 데이터 처리 로직, 구현/미완성 기능 구분을 작성했다.
+- `docs/system-flow-summary.md`: 전체 서비스 아키텍처, 사용자 입력, 지도 추천, 부동산 상세 대시보드, 전세 위험 신호, AI Agent, 데이터 파이프라인, 외부 API, 확장 모듈 구조를 정리했다.
+- `docs/mermaid-diagrams.md`: 전체 시스템 아키텍처, 사용자 플로우, 서비스 시퀀스, 데이터 파이프라인, AI Agent 의사결정, 지도 대시보드, 전세 위험 점검, 생활권 점수 산정, 공공데이터/API 연계 Mermaid 9종을 작성했다.
+- `docs/submission-screenshots.md`: 10개 필수 화면별 화면명, 기능 목적, 사용자 행동, 시스템 결과, 참가신청서 삽입 문장을 정리했다.
+- `deliverables/screenshots/`: 메인 화면, 조건 입력, 추천 결과, 지도 추천, 단지 상세 대시보드, 가격/전세가율/위험 지표, 후보 비교, 전세 위험 신호, AI Agent, 모바일 화면 10장을 캡처했다.
+- 브라우저 캡처 검증: Playwright 기반 캡처 시 콘솔 오류 없음(`[]`)을 확인했다.
+- `scripts/build_application_docx.py`: 참가신청서 양식 흐름을 유지하면서 서비스 개요, 핵심 기능, 차별성, 데이터 출처, 구현 현황, 점수 가중치, 위험 기준, 협력 방안, 기대효과, 일정, 예산, 로드맵을 표와 화면 중심으로 재작성했다.
+- `deliverables/MoveValue_참가신청서_보강본.docx`: 제출용 보강본 생성 완료.
+- DOCX 렌더링: `render_docx.py deliverables/MoveValue_참가신청서_보강본.docx --output_dir qa/docx-render-submission --emit_pdf`로 12페이지 PNG와 PDF 변환 성공.
+- 렌더 검수: 12개 페이지를 육안 확인했고 표/이미지/서약 확인/개인정보 확인 섹션에서 큰 텍스트 중첩이나 잘림이 없음을 확인했다.
+- 정적 검사: `node --check app/app.js`, `python3 -m json.tool data/areas.actual.json`, `python3 -m json.tool data/apartments.seoul.snapshot.json`, 주요 API/스크립트 `py_compile` 통과.
+- live 연동 폴백 검사: `python3 scripts/verify_live_integrations.py` 결과 `ok=true`, 외부 키 미설정 환경에서 통근 경로 `provider=fallback`, 아파트 데이터 `sourceMode=snapshot`, 부동산 가격 `sourceMode=public_area_proxy` 확인.
+- API 스모크: `/api/health`, `/api/property-detail?id=A15275101`, `/api/property-agent?id=A15275101&question=...`가 모두 `ok=true` 응답. Agent 응답은 가격/통근/위험/주변 입지/확인 필요 서류 근거 그룹을 반환.
+- 제출 전 남은 수동 확인: 전화번호, 서명, 개인정보 수집·이용 동의 체크, 실제 API 키 기반 live 검증 결과 반영.
+
 확인일: 2026-06-12 (실제 API live 검증 구조 + 부동산 가격 어댑터 + 지도 UX/Agent 근거 보강)
 
 ## 실제 API live 검증 구조 및 지도 UX 검증 (2026-06-12)

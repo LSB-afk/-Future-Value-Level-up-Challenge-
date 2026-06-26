@@ -3,10 +3,12 @@ __pycache__/
 *.pyc
 .env
 .env.*
+!.env.example
 .omx/
 .omc/
 .claude/settings.local.json
 node_modules/
 data/raw/
 qa/docx-render/
+qa/docx-render-submission/
 qa/screenshots/
