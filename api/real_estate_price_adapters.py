@@ -7,6 +7,7 @@ records when service keys are provided through environment variables.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import urllib.parse
@@ -15,13 +16,20 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any
 
+from env_loader import load_dotenv
+
+
+load_dotenv()
 
 MOLIT_TRADE_ENDPOINT = "https://apis.data.go.kr/1613000/RTMSDataSvcAptTradeDev/getRTMSDataSvcAptTradeDev"
 MOLIT_RENT_ENDPOINT = "https://apis.data.go.kr/1613000/RTMSDataSvcAptRent/getRTMSDataSvcAptRent"
+PUBLIC_PRICE_ENDPOINT = "https://api.vworld.kr/ned/data/getApartHousingPriceAttr"
+KAKAO_ADDRESS_ENDPOINT = "https://dapi.kakao.com/v2/local/search/address.json"
 
 TRADE_KEY_ENVS = ("MOLIT_APT_TRADE_KEY", "MOLIT_SERVICE_KEY", "MOLIT_API_KEY", "PUBLIC_DATA_API_KEY")
 RENT_KEY_ENVS = ("MOLIT_APT_RENT_KEY", "MOLIT_SERVICE_KEY", "MOLIT_API_KEY", "PUBLIC_DATA_API_KEY")
 PUBLIC_PRICE_KEY_ENVS = ("PUBLIC_PRICE_API_KEY", "OFFICIAL_PRICE_API_KEY", "MOLIT_PUBLIC_PRICE_KEY", "NSDI_API_KEY")
+KAKAO_KEY_ENVS = ("KAKAO_REST_API_KEY", "MOVEVALUE_KAKAO_REST_API_KEY")
 
 SEOUL_LAWD_CODES = {
     "종로구": "11110",
@@ -118,8 +126,20 @@ def text_of(item: ET.Element, *names: str) -> str:
 def request_xml(endpoint: str, params: dict[str, str]) -> ET.Element:
     encoded = urllib.parse.urlencode(params, safe="%")
     request = urllib.request.Request(f"{endpoint}?{encoded}", headers={"User-Agent": "MoveValue/0.1"})
-    with urllib.request.urlopen(request, timeout=18) as response:  # noqa: S310 - official public API endpoint.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=18) as response:  # noqa: S310 - official public API endpoint.
         return ET.fromstring(response.read())
+
+
+def request_json(endpoint: str, params: dict[str, str], headers: dict[str, str] | None = None) -> dict[str, Any]:
+    encoded = urllib.parse.urlencode(params, safe="%")
+    request = urllib.request.Request(
+        f"{endpoint}?{encoded}",
+        headers={"User-Agent": "MoveValue/0.1", **(headers or {})},
+    )
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=15) as response:  # noqa: S310 - official public API endpoint.
+        return json.loads(response.read().decode("utf-8"))
 
 
 def response_error(root: ET.Element) -> str:
@@ -207,6 +227,125 @@ def fetch_molit_records(
     return records, last_error
 
 
+def pnu_from_address(address: str) -> tuple[str, str]:
+    kakao_key = env_key(*KAKAO_KEY_ENVS)
+    if not kakao_key:
+        return "", "Kakao REST key is required to convert an address to PNU."
+    if not address:
+        return "", "Apartment address is empty."
+
+    try:
+        payload = request_json(
+            KAKAO_ADDRESS_ENDPOINT,
+            {"query": address},
+            {"Authorization": f"KakaoAK {kakao_key}"},
+        )
+    except Exception as exc:  # noqa: BLE001 - live adapter must not break prototype.
+        return "", f"Kakao address lookup failed: {exc}"
+
+    documents = payload.get("documents") or []
+    if not documents:
+        return "", "Kakao address lookup returned no document."
+
+    land = documents[0].get("address") or {}
+    b_code = str(land.get("b_code") or "")
+    main_no = str(land.get("main_address_no") or "")
+    sub_no = str(land.get("sub_address_no") or "0")
+    if len(b_code) < 10 or not main_no:
+        return "", "Kakao address result did not include enough land-lot fields for PNU."
+
+    san_flag = "2" if str(land.get("mountain_yn") or "").upper() == "Y" else "1"
+    try:
+        pnu = f"{b_code[:10]}{san_flag}{int(main_no):04d}{int(sub_no or 0):04d}"
+    except ValueError:
+        return "", "Kakao address lot number could not be converted to PNU."
+    return pnu, ""
+
+
+def _as_rows(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
+def _public_price_to_10k(value: Any) -> int:
+    amount = money_10k(value)
+    if amount > 100000:
+        return round(amount / 10000)
+    return amount
+
+
+def _public_price_from_row(row: dict[str, Any]) -> int:
+    for name in ("pblntfPc", "aphusPc", "hsprc", "housePc", "price", "pblntfPrc"):
+        amount = _public_price_to_10k(row.get(name))
+        if amount:
+            return amount
+    for key, value in row.items():
+        lowered = str(key).lower()
+        if "pc" in lowered or "price" in lowered or "prc" in lowered:
+            amount = _public_price_to_10k(value)
+            if amount:
+                return amount
+    return 0
+
+
+def fetch_public_price(apartment: dict[str, Any]) -> tuple[dict[str, Any] | None, str]:
+    api_key = env_key(*PUBLIC_PRICE_KEY_ENVS)
+    if not api_key:
+        return None, "not_configured"
+
+    pnu = str(apartment.get("pnu") or "")
+    pnu_error = ""
+    if not pnu:
+        pnu, pnu_error = pnu_from_address(str(apartment.get("address") or ""))
+    if not pnu:
+        return None, pnu_error or "missing_pnu"
+
+    current_year = datetime.now().year
+    last_error = ""
+    for year in (current_year, current_year - 1, current_year - 2):
+        params = {
+            "key": api_key,
+            "pnu": pnu,
+            "stdrYear": str(year),
+            "format": "json",
+            "numOfRows": "1000",
+            "pageNo": "1",
+        }
+        try:
+            payload = request_json(PUBLIC_PRICE_ENDPOINT, params)
+        except Exception as exc:  # noqa: BLE001 - live adapter must not break prototype.
+            last_error = str(exc)
+            continue
+
+        result = payload.get("apartHousingPrices") or {}
+        code = str(result.get("resultCode") or "")
+        message = str(result.get("resultMsg") or "")
+        if code and code not in {"0", "00", "000", "NORMAL_CODE"}:
+            last_error = f"{code}: {message}"
+            if code == "INCORRECT_KEY":
+                break
+            continue
+
+        rows = _as_rows(result.get("field"))
+        prices = sorted(amount for amount in (_public_price_from_row(row) for row in rows) if amount)
+        if not prices:
+            last_error = f"no public price record for PNU {pnu} in {year}"
+            continue
+
+        return {
+            "officialPrice10k": prices[len(prices) // 2],
+            "pnu": pnu,
+            "stdrYear": year,
+            "recordCount": len(rows),
+            "sampleRecords": rows[:6],
+        }, ""
+
+    return None, last_error or "no public price record"
+
+
 def status_base(configured: bool, lawd_code: str, label: str) -> dict[str, Any]:
     if not configured:
         mode = "not_configured"
@@ -280,6 +419,28 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
             market["molitRentRecords"] = records[:6]
             market["sourceMode"] = "molit_live_trade_rent_partial"
             market["sourceLabel"] = "국토교통부 실거래가 live 보정 + 공개 단지정보"
+
+    if public_price_key:
+        public_record, public_error = fetch_public_price(apartment)
+        live_status["publicPrice"].update(
+            {
+                "mode": "live_api"
+                if public_record
+                else ("invalid_key" if "INCORRECT_KEY" in str(public_error) else "no_matching_record"),
+                "recordCount": int(public_record.get("recordCount") or 0) if public_record else 0,
+                "error": public_error,
+                "pnu": public_record.get("pnu") if public_record else "",
+                "stdrYear": public_record.get("stdrYear") if public_record else "",
+                "note": "공동주택가격속성조회 API 값을 상세 가격에 반영했습니다."
+                if public_record
+                else "공동주택가격속성조회 API에서 live 공시가격을 가져오지 못해 추정값을 유지했습니다.",
+            }
+        )
+        if public_record:
+            market["officialPrice10k"] = public_record["officialPrice10k"]
+            market["publicPriceRecords"] = public_record["sampleRecords"]
+            market["sourceMode"] = "public_price_live_partial"
+            market["sourceLabel"] = "공동주택 공시가격 live 보정 + 공개 집계 정보"
 
     if market.get("recentSale10k"):
         market["jeonseRatio"] = round((float(market.get("recentJeonse10k") or 0) / float(market["recentSale10k"])) * 100, 1)

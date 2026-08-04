@@ -1660,6 +1660,25 @@ details > summary span {
   font-weight: 900;
 }
 
+.route-destination-pin-wrapper {
+  background: transparent;
+  border: 0;
+}
+
+.route-destination-pin {
+  display: block;
+  width: 32px;
+  height: 40px;
+  line-height: 0;
+  filter: drop-shadow(0 5px 10px rgba(15, 23, 42, 0.28));
+}
+
+.route-destination-pin svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .area-marker {
   position: absolute;
   width: var(--size);

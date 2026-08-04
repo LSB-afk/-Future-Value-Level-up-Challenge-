@@ -10,11 +10,21 @@ from __future__ import annotations
 import json
 import math
 import os
+import sys
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any
 
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "api"))
+
+from env_loader import load_dotenv  # noqa: E402
+
+
+load_dotenv()
 
 DESTINATIONS = {
     "gangnam": {"name": "강남 업무지구", "lat": 37.4979, "lng": 127.0276},

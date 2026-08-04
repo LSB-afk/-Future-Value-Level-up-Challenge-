@@ -15,7 +15,8 @@ python3 api/movevalue_api.py --port 5173
 ```bash
 export KAKAO_REST_API_KEY="카카오 REST API 키"
 export ODSAY_API_KEY="ODsay API 키"
-export TMAP_APP_KEY="TMAP appKey"
+export TMAP_APP_KEY="TMAP 대중교통 appKey"
+export TMAP_GENERAL_APP_KEY="TMAP 일반 appKey"
 export SEOUL_OPEN_API_KEY="서울 열린데이터광장 인증키"
 export MOLIT_SERVICE_KEY="공공데이터포털 일반 인증키"
 python3 api/movevalue_api.py --port 5173
@@ -24,7 +25,7 @@ python3 api/movevalue_api.py --port 5173
 실제 키가 주입됐는지, 어느 항목이 live API이고 어느 항목이 폴백인지 한 번에 확인하는 검증 스크립트도 제공한다. 이 스크립트는 키 값을 출력하지 않는다.
 
 ```bash
-KAKAO_REST_API_KEY=... ODSAY_API_KEY=... TMAP_APP_KEY=... SEOUL_OPEN_API_KEY=... MOLIT_SERVICE_KEY=... \
+KAKAO_REST_API_KEY=... ODSAY_API_KEY=... TMAP_APP_KEY=... TMAP_GENERAL_APP_KEY=... SEOUL_OPEN_API_KEY=... MOLIT_SERVICE_KEY=... \
   python3 scripts/verify_live_integrations.py
 ```
 

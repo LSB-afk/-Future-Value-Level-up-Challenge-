@@ -27,6 +27,12 @@ from route_adapters import build_commute_route, credential_status, resolve_locat
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 DATA_PATH = ROOT / "data" / "areas.actual.json"
+TMAP_TRANSIT_SOURCE_META = {
+    "name": "TMAP 대중교통 경로 API 어댑터",
+    "url": "https://transit.tmapmobility.com/guide/procedure",
+    "apiKeyEnv": "TMAP_APP_KEY",
+    "fallback": "API 키 미설정 또는 호출 실패 시 거리 기반 폴백 경로를 사용합니다.",
+}
 
 
 DESTINATIONS = {
@@ -48,7 +54,7 @@ AREA_ADDRESSES = {
     "gimpoairport": "서울 강서구 공항동",
 }
 
-DEFAULT_WEIGHTS = {"commute": 35, "cost": 30, "service": 20, "safety": 15}
+DEFAULT_WEIGHTS = {"commute": 25, "cost": 25, "service": 25, "safety": 25}
 VALID_PERSONAS = {"single", "commuter", "newlywed", "senior"}
 SOC_CATEGORY_DEFINITIONS = {
     "medical": {
@@ -294,6 +300,13 @@ def load_dataset() -> dict:
         return json.load(file)
 
 
+def runtime_meta(meta: dict) -> dict:
+    return {
+        **meta,
+        "transitSource": TMAP_TRANSIT_SOURCE_META,
+    }
+
+
 def destination_addresses() -> dict[str, str]:
     return {key: value["address"] for key, value in DESTINATIONS.items()}
 
@@ -301,7 +314,7 @@ def destination_addresses() -> dict[str, str]:
 def decorate_dataset(dataset: dict) -> dict:
     decorated = dict(dataset)
     decorated["meta"] = {
-        **dataset.get("meta", {}),
+        **runtime_meta(dataset.get("meta", {})),
         "destinationAddresses": destination_addresses(),
         "integrations": credential_status(),
     }
@@ -654,7 +667,7 @@ class Handler(BaseHTTPRequestHandler):
                     {
                         "ok": True,
                         "areas": len(dataset["areas"]),
-                        "source": dataset["meta"],
+                        "source": runtime_meta(dataset["meta"]),
                         "apartments": apartment_health(),
                         "integrations": integration_status(),
                     },

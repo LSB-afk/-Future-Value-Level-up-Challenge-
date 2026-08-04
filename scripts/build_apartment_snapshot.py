@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from json import JSONDecodeError
@@ -13,6 +14,13 @@ from urllib.request import urlopen
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "api"))
+
+from env_loader import load_dotenv  # noqa: E402
+
+
+load_dotenv()
+
 OUTPUT_PATH = ROOT / "data" / "apartments.seoul.snapshot.json"
 API_NAME = "OpenAptInfo"
 API_URL = "http://openapi.seoul.go.kr:8088/{key}/json/OpenAptInfo/{start}/{end}/"

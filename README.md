@@ -75,7 +75,8 @@ python3 scripts/build_real_dataset.py
 ```bash
 export KAKAO_REST_API_KEY="카카오 REST API 키"
 export ODSAY_API_KEY="ODsay API 키"
-export TMAP_APP_KEY="TMAP appKey"
+export TMAP_APP_KEY="TMAP 대중교통 appKey"
+export TMAP_GENERAL_APP_KEY="TMAP 일반 appKey"
 export SEOUL_OPEN_API_KEY="서울 열린데이터광장 인증키"
 export MOLIT_SERVICE_KEY="공공데이터포털 일반 인증키"
 python3 api/movevalue_api.py --port 5173
@@ -86,7 +87,7 @@ python3 api/movevalue_api.py --port 5173
 키 주입 후 live 연동 상태만 먼저 확인하려면 아래 스크립트를 사용합니다. 출력에는 키 값이 나오지 않고, `mode=live_api` 또는 폴백 상태만 표시됩니다.
 
 ```bash
-KAKAO_REST_API_KEY=... ODSAY_API_KEY=... TMAP_APP_KEY=... SEOUL_OPEN_API_KEY=... MOLIT_SERVICE_KEY=... \
+KAKAO_REST_API_KEY=... ODSAY_API_KEY=... TMAP_APP_KEY=... TMAP_GENERAL_APP_KEY=... SEOUL_OPEN_API_KEY=... MOLIT_SERVICE_KEY=... \
   python3 scripts/verify_live_integrations.py
 ```
 

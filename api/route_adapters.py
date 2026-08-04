@@ -13,25 +13,60 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
+from env_loader import load_dotenv
+
+
+load_dotenv()
 
 OD_SAY_ENDPOINT = "https://api.odsay.com/v1/api/searchPubTransPathT"
 TMAP_TRANSIT_ENDPOINT = "https://apis.openapi.sk.com/transit/routes"
+TMAP_CAR_ENDPOINT = "https://apis.openapi.sk.com/tmap/routes?version=1&format=json"
+TMAP_WALK_ENDPOINT = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json"
 KAKAO_ADDRESS_ENDPOINT = "https://dapi.kakao.com/v2/local/search/address.json"
 
 OD_SAY_KEY_ENV = "ODSAY_API_KEY"
 OD_SAY_ALT_KEY_ENV = "MOVEVALUE_ODSAY_API_KEY"
 TMAP_KEY_ENV = "TMAP_APP_KEY"
 TMAP_ALT_KEY_ENV = "MOVEVALUE_TMAP_APP_KEY"
+TMAP_GENERAL_KEY_ENV = "TMAP_GENERAL_APP_KEY"
+TMAP_GENERAL_ALT_KEY_ENV = "MOVEVALUE_TMAP_GENERAL_APP_KEY"
+TMAP_CAR_KEY_ENV = "TMAP_CAR_APP_KEY"
+TMAP_CAR_ALT_KEY_ENV = "MOVEVALUE_TMAP_CAR_APP_KEY"
+TMAP_WALK_KEY_ENV = "TMAP_WALK_APP_KEY"
+TMAP_WALK_ALT_KEY_ENV = "MOVEVALUE_TMAP_WALK_APP_KEY"
 KAKAO_KEY_ENV = "KAKAO_REST_API_KEY"
 KAKAO_ALT_KEY_ENV = "MOVEVALUE_KAKAO_REST_API_KEY"
 
 
 def env_key(*names: str) -> str:
+    load_dotenv()
     for name in names:
         value = os.getenv(name, "").strip()
         if value:
             return value
     return ""
+
+
+def tmap_general_key() -> str:
+    return env_key(TMAP_GENERAL_KEY_ENV, TMAP_GENERAL_ALT_KEY_ENV)
+
+
+def tmap_car_key() -> str:
+    return env_key(
+        TMAP_GENERAL_KEY_ENV,
+        TMAP_GENERAL_ALT_KEY_ENV,
+        TMAP_CAR_KEY_ENV,
+        TMAP_CAR_ALT_KEY_ENV,
+    )
+
+
+def tmap_walk_key() -> str:
+    return env_key(
+        TMAP_GENERAL_KEY_ENV,
+        TMAP_GENERAL_ALT_KEY_ENV,
+        TMAP_WALK_KEY_ENV,
+        TMAP_WALK_ALT_KEY_ENV,
+    )
 
 
 def haversine_km(a_lat: float, a_lng: float, b_lat: float, b_lng: float) -> float:
@@ -79,7 +114,8 @@ def geocode_with_kakao(query: str) -> dict[str, Any] | None:
         f"{KAKAO_ADDRESS_ENDPOINT}?{params}",
         headers={"Authorization": f"KakaoAK {api_key}", "User-Agent": "MoveValue/0.1"},
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=10) as response:
         payload = json.loads(response.read().decode("utf-8"))
 
     documents = payload.get("documents") or []
@@ -142,7 +178,8 @@ def _request_json(url: str, *, method: str = "GET", headers: dict[str, str] | No
         encoded_body = json.dumps(body).encode("utf-8")
         request_headers.setdefault("Content-Type", "application/json")
     request = urllib.request.Request(url, data=encoded_body, method=method, headers=request_headers)
-    with urllib.request.urlopen(request, timeout=15) as response:
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    with opener.open(request, timeout=15) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -158,6 +195,13 @@ def _seconds_to_minutes(value: Any, default: int = 0) -> int:
     return round(seconds / 60) if seconds > 180 else seconds
 
 
+def _tmap_seconds_to_minutes(value: Any, default: int = 0) -> int:
+    seconds = _safe_int(value, default)
+    if seconds <= 0:
+        return default
+    return max(1, round(seconds / 60))
+
+
 def _parse_linestring(linestring: Any) -> list[dict[str, Any]]:
     coordinates: list[dict[str, Any]] = []
     if not isinstance(linestring, str):
@@ -170,6 +214,25 @@ def _parse_linestring(linestring: Any) -> list[dict[str, Any]]:
             coordinates.append({"lng": float(parts[0]), "lat": float(parts[1])})
         except ValueError:
             pass
+    return coordinates
+
+
+def _parse_geojson_coordinates(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    if len(value) >= 2 and not isinstance(value[0], list):
+        try:
+            lng = float(value[0])
+            lat = float(value[1])
+        except (TypeError, ValueError):
+            return []
+        if 33 <= lat <= 39 and 124 <= lng <= 132:
+            return [{"lng": lng, "lat": lat}]
+        return []
+
+    coordinates: list[dict[str, Any]] = []
+    for item in value:
+        coordinates.extend(_parse_geojson_coordinates(item))
     return coordinates
 
 
@@ -340,9 +403,344 @@ def route_with_tmap(origin: dict[str, Any], destination: dict[str, Any]) -> dict
         "endY": str(destination["lat"]),
         "lang": 0,
         "format": "json",
-        "count": 3,
+        "count": 1,
     }
-    return _normalize_tmap(_request_json(TMAP_TRANSIT_ENDPOINT, method="POST", headers={"appKey": app_key}, body=body), origin, destination)
+    return _normalize_tmap(
+        _request_json(
+            TMAP_TRANSIT_ENDPOINT,
+            method="POST",
+            headers={"accept": "application/json", "appKey": app_key},
+            body=body,
+        ),
+        origin,
+        destination,
+    )
+
+
+def _normalize_tmap_car(payload: dict[str, Any], origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
+    features = payload.get("features") or []
+    if not isinstance(features, list) or not features:
+        message = payload.get("error", {}).get("message") or payload.get("message") or "TMAP 자동차 경로 응답이 비어 있습니다."
+        raise RuntimeError(message)
+
+    summary_props = next(
+        (
+            feature.get("properties", {})
+            for feature in features
+            if isinstance(feature, dict) and feature.get("properties", {}).get("totalDistance") is not None
+        ),
+        {},
+    )
+    total_distance = _safe_int(summary_props.get("totalDistance"))
+    total_seconds = _safe_int(summary_props.get("totalTime"))
+    total_minutes = _tmap_seconds_to_minutes(total_seconds) if total_seconds else 0
+    toll_fare = _safe_int(summary_props.get("totalFare"))
+    taxi_fare = _safe_int(summary_props.get("taxiFare"))
+
+    steps = []
+    coordinates = [origin]
+    line_distance_sum = 0
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        geometry = feature.get("geometry") or {}
+        properties = feature.get("properties") or {}
+        line_coordinates = _parse_geojson_coordinates(geometry.get("coordinates"))
+        if geometry.get("type") != "LineString" or len(line_coordinates) < 2:
+            continue
+
+        distance = _safe_int(properties.get("distance"))
+        line_distance_sum += distance
+        seconds = _safe_int(properties.get("time"))
+        minutes = _tmap_seconds_to_minutes(seconds) if seconds else 0
+        if not minutes and total_minutes and total_distance and distance:
+            minutes = max(1, round(total_minutes * distance / total_distance))
+
+        route_name = properties.get("name") or properties.get("description") or "주행 구간"
+        steps.append(
+            {
+                "mode": "자동차",
+                "route": route_name,
+                "startName": origin["label"] if not steps else "",
+                "endName": "",
+                "minutes": minutes,
+                "distanceMeters": distance,
+                "coordinates": line_coordinates,
+            }
+        )
+        coordinates.extend(line_coordinates)
+
+    if steps:
+        steps[-1]["endName"] = destination["label"]
+    if not total_distance:
+        total_distance = line_distance_sum
+    if not total_minutes and total_distance:
+        total_minutes = max(1, round(total_distance / 1000 / 30 * 60))
+    if not steps:
+        steps = [
+            {
+                "mode": "자동차",
+                "route": "TMAP 자동차 경로",
+                "startName": origin["label"],
+                "endName": destination["label"],
+                "minutes": total_minutes,
+                "distanceMeters": total_distance,
+            }
+        ]
+    coordinates.append(destination)
+
+    return {
+        "ok": True,
+        "provider": "tmap",
+        "mode": "live_api",
+        "transportMode": "car",
+        "origin": origin,
+        "destination": destination,
+        "summary": {
+            "totalMinutes": total_minutes,
+            "fare": toll_fare,
+            "estimatedCost": toll_fare or taxi_fare,
+            "taxiFare": taxi_fare,
+            "distanceMeters": total_distance,
+            "totalWalkMeters": 0,
+            "transferCount": 0,
+            "trafficLabel": "실시간 교통 반영",
+            "pathType": "tmap_car",
+        },
+        "steps": steps,
+        "coordinates": coordinates,
+        "notice": "TMAP 자동차 경로안내 API 결과입니다. 교통정보 옵션을 포함해 실제 도로 경로를 표시합니다.",
+    }
+
+
+def route_with_tmap_car(origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
+    app_key = tmap_car_key()
+    if not app_key:
+        raise RuntimeError(f"{TMAP_GENERAL_KEY_ENV} 또는 {TMAP_CAR_KEY_ENV}가 설정되어 있지 않습니다.")
+    body = {
+        "startX": str(origin["lng"]),
+        "startY": str(origin["lat"]),
+        "endX": str(destination["lng"]),
+        "endY": str(destination["lat"]),
+        "reqCoordType": "WGS84GEO",
+        "resCoordType": "WGS84GEO",
+        "startName": urllib.parse.quote(str(origin.get("label") or "출발")),
+        "endName": urllib.parse.quote(str(destination.get("label") or "도착")),
+        "searchOption": "0",
+        "trafficInfo": "Y",
+        "totalValue": 1,
+    }
+    return _normalize_tmap_car(
+        _request_json(
+            TMAP_CAR_ENDPOINT,
+            method="POST",
+            headers={"accept": "application/json", "appKey": app_key},
+            body=body,
+        ),
+        origin,
+        destination,
+    )
+
+
+def _normalize_tmap_walk(payload: dict[str, Any], origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
+    features = payload.get("features") or []
+    if not isinstance(features, list) or not features:
+        message = payload.get("error", {}).get("message") or payload.get("message") or "TMAP 보행자 경로 응답이 비어 있습니다."
+        raise RuntimeError(message)
+
+    summary_props = next(
+        (
+            feature.get("properties", {})
+            for feature in features
+            if isinstance(feature, dict) and feature.get("properties", {}).get("totalDistance") is not None
+        ),
+        {},
+    )
+    total_distance = _safe_int(summary_props.get("totalDistance"))
+    total_seconds = _safe_int(summary_props.get("totalTime"))
+    total_minutes = _tmap_seconds_to_minutes(total_seconds) if total_seconds else 0
+
+    steps = []
+    coordinates = [origin]
+    line_distance_sum = 0
+    for feature in features:
+        if not isinstance(feature, dict):
+            continue
+        geometry = feature.get("geometry") or {}
+        properties = feature.get("properties") or {}
+        line_coordinates = _parse_geojson_coordinates(geometry.get("coordinates"))
+        if geometry.get("type") != "LineString" or len(line_coordinates) < 2:
+            continue
+
+        distance = _safe_int(properties.get("distance"))
+        line_distance_sum += distance
+        seconds = _safe_int(properties.get("time"))
+        minutes = _tmap_seconds_to_minutes(seconds) if seconds else 0
+        if not minutes and total_minutes and total_distance and distance:
+            minutes = max(1, round(total_minutes * distance / total_distance))
+
+        route_name = properties.get("description") or properties.get("name") or "도보 이동"
+        steps.append(
+            {
+                "mode": "도보",
+                "route": route_name,
+                "startName": origin["label"] if not steps else "",
+                "endName": "",
+                "minutes": minutes,
+                "distanceMeters": distance,
+                "coordinates": line_coordinates,
+            }
+        )
+        coordinates.extend(line_coordinates)
+
+    if steps:
+        steps[-1]["endName"] = destination["label"]
+    if not total_distance:
+        total_distance = line_distance_sum
+    if not total_minutes and total_distance:
+        total_minutes = max(1, round(total_distance / 1000 / 4.5 * 60))
+    if not steps:
+        steps = [
+            {
+                "mode": "도보",
+                "route": "TMAP 보행자 경로",
+                "startName": origin["label"],
+                "endName": destination["label"],
+                "minutes": total_minutes,
+                "distanceMeters": total_distance,
+            }
+        ]
+    coordinates.append(destination)
+
+    return {
+        "ok": True,
+        "provider": "tmap",
+        "mode": "live_api",
+        "transportMode": "walk",
+        "origin": origin,
+        "destination": destination,
+        "summary": {
+            "totalMinutes": total_minutes,
+            "fare": 0,
+            "stepCount": round(total_distance / 0.72) if total_distance else 0,
+            "distanceMeters": total_distance,
+            "totalWalkMeters": total_distance,
+            "transferCount": 0,
+            "pathType": "tmap_walk",
+        },
+        "steps": steps,
+        "coordinates": coordinates,
+        "notice": "TMAP 보행자 경로안내 API 결과입니다. 실제 보행 경로를 지도에 표시합니다.",
+    }
+
+
+def route_with_tmap_walk(origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
+    app_key = tmap_walk_key()
+    if not app_key:
+        raise RuntimeError(f"{TMAP_GENERAL_KEY_ENV} 또는 {TMAP_WALK_KEY_ENV}가 설정되어 있지 않습니다.")
+    body = {
+        "startX": str(origin["lng"]),
+        "startY": str(origin["lat"]),
+        "endX": str(destination["lng"]),
+        "endY": str(destination["lat"]),
+        "angle": 20,
+        "speed": 30,
+        "reqCoordType": "WGS84GEO",
+        "resCoordType": "WGS84GEO",
+        "startName": urllib.parse.quote(str(origin.get("label") or "출발")),
+        "endName": urllib.parse.quote(str(destination.get("label") or "도착")),
+        "searchOption": "0",
+        "sort": "index",
+    }
+    return _normalize_tmap_walk(
+        _request_json(
+            TMAP_WALK_ENDPOINT,
+            method="POST",
+            headers={"accept": "application/json", "appKey": app_key},
+            body=body,
+        ),
+        origin,
+        destination,
+    )
+
+
+def _bicycle_minutes(distance_meters: int) -> int:
+    if distance_meters <= 0:
+        return 0
+    return max(3, round((distance_meters / 1000) / 15 * 60))
+
+
+def _normalize_tmap_bicycle(payload: dict[str, Any], origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
+    route = _normalize_tmap_walk(payload, origin, destination)
+    summary = dict(route.get("summary") or {})
+    steps = [dict(step) for step in route.get("steps") or []]
+    distance_meters = _safe_int(summary.get("distanceMeters"))
+    total_minutes = _bicycle_minutes(distance_meters)
+
+    if not total_minutes:
+        total_minutes = max(3, round(_safe_int(summary.get("totalMinutes")) * 0.45))
+
+    for step in steps:
+        step_distance = _safe_int(step.get("distanceMeters"))
+        step["mode"] = "자전거"
+        step["route"] = step.get("route") or "자전거 이동"
+        if step_distance and distance_meters and total_minutes:
+            step["minutes"] = max(1, round(total_minutes * step_distance / distance_meters))
+        elif step.get("minutes"):
+            step["minutes"] = max(1, round(_safe_int(step.get("minutes")) * 0.45))
+
+    summary.update(
+        {
+            "totalMinutes": total_minutes,
+            "fare": 0,
+            "estimatedCalories": round((distance_meters / 1000) * 28) if distance_meters else 0,
+            "distanceMeters": distance_meters,
+            "totalWalkMeters": 0,
+            "transferCount": 0,
+            "pathType": "tmap_walk_derived_bicycle",
+            "routeBasis": "tmap_walk_api",
+        }
+    )
+
+    return {
+        **route,
+        "provider": "tmap",
+        "mode": "derived_estimate",
+        "transportMode": "bicycle",
+        "summary": summary,
+        "steps": steps,
+        "notice": "TMAP 보행자 경로안내 API의 실제 보행 경로선을 기반으로 자전거 평균 주행속도 15km/h를 적용한 예상 경로입니다. 자전거 전용 경로 API 결과는 아닙니다.",
+    }
+
+
+def route_with_tmap_bicycle(origin: dict[str, Any], destination: dict[str, Any]) -> dict[str, Any]:
+    app_key = tmap_walk_key()
+    if not app_key:
+        raise RuntimeError(f"{TMAP_GENERAL_KEY_ENV} 또는 {TMAP_WALK_KEY_ENV}가 설정되어 있지 않습니다.")
+    body = {
+        "startX": str(origin["lng"]),
+        "startY": str(origin["lat"]),
+        "endX": str(destination["lng"]),
+        "endY": str(destination["lat"]),
+        "angle": 20,
+        "speed": 30,
+        "reqCoordType": "WGS84GEO",
+        "resCoordType": "WGS84GEO",
+        "startName": urllib.parse.quote(str(origin.get("label") or "출발")),
+        "endName": urllib.parse.quote(str(destination.get("label") or "도착")),
+        "searchOption": "30",
+        "sort": "index",
+    }
+    return _normalize_tmap_bicycle(
+        _request_json(
+            TMAP_WALK_ENDPOINT,
+            method="POST",
+            headers={"accept": "application/json", "appKey": app_key},
+            body=body,
+        ),
+        origin,
+        destination,
+    )
 
 
 def fallback_route(
@@ -456,6 +854,33 @@ def build_commute_route(
 ) -> dict[str, Any]:
     errors = []
     selected_mode = transport_mode if transport_mode in {"car", "transit", "bicycle", "walk"} else "transit"
+    if selected_mode == "car":
+        try:
+            return route_with_tmap_car(origin, destination)
+        except Exception as exc:  # noqa: BLE001 - fallback keeps prototype available.
+            errors.append(f"tmap_car: {exc}")
+            fallback = fallback_route(origin, destination, "; ".join(errors), selected_mode)
+            fallback["errors"] = errors
+            return fallback
+
+    if selected_mode == "walk":
+        try:
+            return route_with_tmap_walk(origin, destination)
+        except Exception as exc:  # noqa: BLE001 - fallback keeps prototype available.
+            errors.append(f"tmap_walk: {exc}")
+            fallback = fallback_route(origin, destination, "; ".join(errors), selected_mode)
+            fallback["errors"] = errors
+            return fallback
+
+    if selected_mode == "bicycle":
+        try:
+            return route_with_tmap_bicycle(origin, destination)
+        except Exception as exc:  # noqa: BLE001 - fallback keeps prototype available.
+            errors.append(f"tmap_bicycle: {exc}")
+            fallback = fallback_route(origin, destination, "; ".join(errors), selected_mode)
+            fallback["errors"] = errors
+            return fallback
+
     if selected_mode != "transit":
         return fallback_route(origin, destination, "해당 이동수단 경로 API 연동 전", selected_mode)
 
@@ -481,8 +906,17 @@ def build_commute_route(
 
 
 def credential_status() -> dict[str, bool]:
+    tmap_transit = bool(env_key(TMAP_KEY_ENV, TMAP_ALT_KEY_ENV))
+    tmap_general = bool(tmap_general_key())
+    tmap_car = bool(tmap_car_key())
+    tmap_walk = bool(tmap_walk_key())
     return {
         "odsay": bool(env_key(OD_SAY_KEY_ENV, OD_SAY_ALT_KEY_ENV)),
-        "tmap": bool(env_key(TMAP_KEY_ENV, TMAP_ALT_KEY_ENV)),
+        "tmap": tmap_transit,
+        "tmapTransit": tmap_transit,
+        "tmapGeneral": tmap_general,
+        "tmapCar": tmap_car,
+        "tmapWalk": tmap_walk,
+        "tmapBicycle": tmap_walk,
         "kakao": bool(env_key(KAKAO_KEY_ENV, KAKAO_ALT_KEY_ENV)),
     }

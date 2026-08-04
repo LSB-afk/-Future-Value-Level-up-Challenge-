@@ -975,6 +975,43 @@ function buildRouteSegments(route) {
     .filter((segment) => segment.points.length >= 2);
 }
 
+function shouldRenderRouteStepMarkers(route = {}) {
+  return (route.transportMode || "transit") === "transit";
+}
+
+function shouldMergeRouteSegments(route = {}) {
+  return ["car", "bicycle", "walk"].includes(route.transportMode || "");
+}
+
+function isSameRoutePoint(a, b) {
+  return Boolean(a && b && Math.abs(a.lat - b.lat) < 0.000001 && Math.abs(a.lng - b.lng) < 0.000001);
+}
+
+function appendRoutePoint(points, point) {
+  if (!point || isSameRoutePoint(points.at(-1), point)) return;
+  points.push(point);
+}
+
+function mergeRouteSegments(route, segments) {
+  const mergedPoints = [];
+  const globalPoints = validRoutePoints(route.coordinates);
+  const sourcePoints = globalPoints.length >= 2
+    ? globalPoints
+    : segments.flatMap((segment) => segment.points || []);
+
+  sourcePoints.forEach((point) => appendRoutePoint(mergedPoints, point));
+  if (mergedPoints.length < 2) return segments;
+
+  return [{
+    step: {
+      mode: route.transportMode || "route",
+      route: routeModeLabel(route)
+    },
+    points: mergedPoints,
+    actual: segments.some((segment) => segment.actual)
+  }];
+}
+
 function initializeLeafletMap() {
   if (state.map || !window.L) return;
 
@@ -1061,7 +1098,11 @@ function drawRouteLine(bounds) {
   const route = state.route.result;
   if (!route || route.origin?.lat == null || route.destination?.lat == null) return;
 
-  const segments = buildRouteSegments(route);
+  let segments = buildRouteSegments(route);
+  if (shouldMergeRouteSegments(route)) {
+    segments = mergeRouteSegments(route, segments);
+  }
+  const showStepMarkers = shouldRenderRouteStepMarkers(route);
   const allLatLngs = segments.flatMap((segment) => (
     segment.points.map((point) => [Number(point.lat), Number(point.lng)])
   ));
@@ -1102,7 +1143,7 @@ function drawRouteLine(bounds) {
     }).addTo(state.map.routeLayer);
 
     const start = latLngs[0];
-    if (index > 0 && start) {
+    if (showStepMarkers && index > 0 && start) {
       L.marker(start, {
         title: `${step.mode || "이동"} ${step.route || ""}`.trim(),
         icon: L.divIcon({
@@ -1123,12 +1164,22 @@ function drawRouteLine(bounds) {
     fillOpacity: 1
   }).bindTooltip(route.origin.label || "출발지", { direction: "top" }).addTo(state.map.routeLayer);
 
-  L.circleMarker(allLatLngs[allLatLngs.length - 1], {
-    radius: 7,
-    color: "#ffffff",
-    weight: 2,
-    fillColor: "#EF4444",
-    fillOpacity: 1
+  L.marker(allLatLngs[allLatLngs.length - 1], {
+    title: route.destination.label || "도착지",
+    icon: L.divIcon({
+      className: "route-destination-pin-wrapper",
+      html: `
+        <span class="route-destination-pin" aria-hidden="true">
+          <svg viewBox="0 0 24 30" role="img" focusable="false">
+            <path d="M12 29C12 29 22 18.8 22 10.8C22 4.8 17.5 1 12 1C6.5 1 2 4.8 2 10.8C2 18.8 12 29 12 29Z" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+            <circle cx="12" cy="10.8" r="3.4" fill="#ffffff"/>
+          </svg>
+        </span>
+      `,
+      iconSize: [32, 40],
+      iconAnchor: [16, 38],
+      popupAnchor: [0, -34]
+    })
   }).bindTooltip(route.destination.label || "도착지", { direction: "top" }).addTo(state.map.routeLayer);
 
   allLatLngs.forEach((point) => bounds.push(point));
@@ -1148,7 +1199,8 @@ function renderLeafletMap() {
   state.map.markersById = {};
 
   const bounds = [];
-  state.results.forEach((item, index) => {
+  const visibleResults = mapResultsForCurrentView();
+  visibleResults.forEach((item, index) => {
     const selected = item.id === state.selectedId;
     const marker = L.marker([item.lat, item.lng], {
       title: `${index + 1}위 ${item.name}`,
@@ -1178,9 +1230,11 @@ function renderLeafletMap() {
   });
 
   drawRouteLine(bounds);
-
   if (bounds.length && !state.map.fitted) {
-    instance.fitBounds(bounds, { padding: [26, 26], maxZoom: 12 });
+    const maxZoom = isRouteSubpanelActive() && state.route.result
+      ? routeFocusMaxZoom(state.route.result)
+      : 12;
+    instance.fitBounds(bounds, { padding: [26, 26], maxZoom });
     state.map.fitted = true;
   }
 
@@ -1205,6 +1259,16 @@ function beginMapCameraTransition() {
 
 function isCurrentMapCameraTransition(requestId) {
   return Boolean(state.map && state.map.cameraRequestId === requestId);
+}
+
+function routeFocusMaxZoom(route = {}) {
+  const meters = Number(route.summary?.distanceMeters || 0);
+  if (!Number.isFinite(meters) || meters <= 0) return 16;
+  if (meters <= 900) return 18;
+  if (meters <= 1800) return 17;
+  if (meters <= 3500) return 16;
+  if (meters <= 8000) return 15;
+  return 14;
 }
 
 function focusSelectedMarker(options = {}) {
@@ -1249,10 +1313,20 @@ function focusRouteOnMap() {
     state.map.instance.flyToBounds(L.latLngBounds(latLngs), {
       paddingTopLeft: [72, 108],
       paddingBottomRight: [360, 190],
-      maxZoom: 14,
+      maxZoom: routeFocusMaxZoom(state.route.result),
       duration: 0.75
     });
   });
+}
+
+function isRouteSubpanelActive() {
+  return Boolean(state.detailPanelOpen && state.detailSubpanelTab === "route");
+}
+
+function mapResultsForCurrentView() {
+  if (!isRouteSubpanelActive()) return state.results;
+  const selected = state.results.find((item) => item.id === state.selectedId);
+  return selected ? [selected] : [];
 }
 
 function apartmentLayerKey() {
@@ -1281,6 +1355,11 @@ function apartmentBoundsParam() {
 
 function renderApartmentLayerStatus() {
   if (!nodes.apartmentLayerStatus) return;
+  if (isRouteSubpanelActive()) {
+    nodes.apartmentLayerStatus.textContent = "선택 아파트만 표시";
+    nodes.apartmentLayerStatus.className = "map-layer-status is-ready";
+    return;
+  }
   if (state.hasMatched && state.results.length) {
     nodes.apartmentLayerStatus.textContent = `추천 상위 ${formatNumber(state.results.length)}개 표시`;
     nodes.apartmentLayerStatus.className = "map-layer-status is-ready";
@@ -1464,6 +1543,7 @@ function renderFallbackMap() {
   nodes.mapCanvas.innerHTML = "";
   nodes.mapCanvas.classList.add("synthetic-map");
 
+  const visibleResults = mapResultsForCurrentView();
   const mapCandidates = state.results.length ? state.results : state.apartmentCandidates;
   if (!mapCandidates.length) {
     nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
@@ -1477,7 +1557,7 @@ function renderFallbackMap() {
   const minLng = Math.min(...lngValues);
   const maxLng = Math.max(...lngValues);
 
-  state.results.forEach((item) => {
+  visibleResults.forEach((item) => {
     const x = 10 + ((item.lng - minLng) / (maxLng - minLng || 1)) * 80;
     const y = 84 - ((item.lat - minLat) / (maxLat - minLat || 1)) * 68;
     const marker = document.createElement("button");
@@ -1563,6 +1643,7 @@ function renderDetailSubpanelState() {
 function activateDetailSubpanelTab(tab) {
   state.detailSubpanelTab = tab;
   renderDetailSubpanelState();
+  renderMap();
   if (tab !== "route") {
     focusSelectedMarker({ zoom: true });
     return;
@@ -2316,7 +2397,32 @@ function renderRouteSummary(route) {
   `;
 }
 
+function shouldCondenseRouteSteps(route = {}) {
+  return ["car", "bicycle", "walk"].includes(route.transportMode || "");
+}
+
+function renderRouteEndpointSteps(route) {
+  return `
+    <ol class="route-steps">
+      <li style="--route-color:#03C75A">
+        <span class="route-mode">S</span>
+        <strong>출발지</strong>
+        <span>${escapeHtml(route.origin?.label || "출발지")}</span>
+      </li>
+      <li style="--route-color:#EF4444">
+        <span class="route-mode">E</span>
+        <strong>도착지</strong>
+        <span>${escapeHtml(route.destination?.label || "도착지")}</span>
+      </li>
+    </ol>
+  `;
+}
+
 function renderRouteSteps(route) {
+  if (shouldCondenseRouteSteps(route)) {
+    return renderRouteEndpointSteps(route);
+  }
+
   const steps = Array.isArray(route.steps) ? route.steps : [];
   if (!steps.length) {
     return `<p class="muted route-empty">표시할 세부 단계가 없습니다.</p>`;
@@ -2576,7 +2682,7 @@ async function calculateCommuteRoute(selected, options = {}) {
   const destination = currentDestinationCoordinates();
   const params = new URLSearchParams({
     origin,
-    provider: "auto",
+    provider: "tmap",
     transportMode,
     destinationLat: destination.lat,
     destinationLng: destination.lng
@@ -3051,6 +3157,7 @@ function bindEvents() {
     button?.addEventListener("click", () => {
       state.detailPanelOpen = false;
       renderDetailSubpanelState();
+      renderMap();
     });
   });
 

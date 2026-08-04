@@ -8,8 +8,9 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
-from urllib.request import urlopen
+import urllib.request
 
+from env_loader import load_dotenv
 from property_model import build_property_preview
 
 
@@ -27,6 +28,8 @@ SOURCE_META = {
 }
 
 _CACHE: dict[str, dict] = {}
+
+load_dotenv()
 
 
 def seoul_open_api_key() -> str:
@@ -97,7 +100,8 @@ def normalize_row(row: dict) -> dict | None:
 def fetch_page(key: str, start: int, end: int) -> dict:
     url = API_URL.format(key=key, start=start, end=end)
     try:
-        with urlopen(url, timeout=20) as response:  # noqa: S310 - official public API endpoint.
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        with opener.open(url, timeout=20) as response:  # noqa: S310 - official public API endpoint.
             return json.loads(response.read().decode("utf-8"))
     except (URLError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"서울 공동주택 API 호출 실패: {exc}") from exc
@@ -135,6 +139,16 @@ def fetch_live_dataset(key: str) -> dict:
 def load_snapshot() -> dict:
     with SNAPSHOT_PATH.open(encoding="utf-8") as file:
         dataset = json.load(file)
+
+    if dataset.get("meta", {}).get("complete"):
+        return {
+            **dataset,
+            "meta": {
+                **dataset.get("meta", {}),
+                "prototypeExpanded": False,
+                "prototypeRecords": 0,
+            },
+        }
 
     with AREAS_PATH.open(encoding="utf-8") as file:
         areas = json.load(file).get("areas", [])
