@@ -7,6 +7,12 @@
       "runtimeArgs": ["api/movevalue_api.py", "--port", "5173"],
       "port": 5173,
       "autoPort": false
+    },
+    {
+      "name": "movevalue-static",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8788", "-d", "site"],
+      "port": 8788
     }
   ]
 }
