@@ -388,6 +388,7 @@ input[type="text"] {
 
 .search-input-wrap input {
   min-height: 44px;
+  padding-right: 42px;
   padding-left: 42px;
   border-radius: 10px;
   background: #fff;
@@ -396,6 +397,156 @@ input[type="text"] {
 
 .search-input-wrap input::placeholder {
   color: #94a3b8;
+}
+
+.search-clear-button {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  top: 50%;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  background: #e5e7eb;
+  color: #64748b;
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.search-clear-button:hover,
+.search-clear-button:focus-visible {
+  background: #cbd5e1;
+  color: #334155;
+  outline: 0;
+}
+
+.destination-validation {
+  grid-column: 1 / -1;
+  margin-top: -10px;
+}
+
+.destination-validation.is-error {
+  color: #dc2626;
+  font-weight: 800;
+}
+
+.location-suggestions {
+  position: absolute;
+  z-index: 2400;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 278px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.16);
+}
+
+.location-suggestion,
+.location-suggestion-status {
+  width: 100%;
+  min-height: 54px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+
+.location-suggestion {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.location-suggestion.is-text-only {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 38px;
+  padding: 9px 16px;
+}
+
+.location-suggestion:last-child {
+  border-bottom: 0;
+}
+
+.location-suggestion:hover,
+.location-suggestion:focus-visible {
+  background: #f8fafc;
+  outline: 0;
+}
+
+.location-suggestion.is-incomplete {
+  color: var(--ink);
+}
+
+.location-suggestion strong,
+.location-suggestion small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.location-suggestion strong {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.location-suggestion.is-scope strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.location-suggestion-accent {
+  color: var(--naver-strong);
+}
+
+.location-suggestion small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.location-suggestion-pin {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border: 3px solid #475569;
+  border-radius: 50%;
+}
+
+.location-suggestion-pin::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  width: 3px;
+  height: 9px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  background: #475569;
+}
+
+.location-suggestion-status {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.location-suggestion-status.is-error {
+  color: #dc2626;
 }
 
 select:focus,
@@ -1594,40 +1745,14 @@ details > summary span {
   position: relative;
   display: grid;
   place-items: center;
-  min-width: 82px;
-  min-height: 40px;
-  padding: 8px 9px;
+  width: 34px;
+  height: 34px;
   border: 2px solid #fff;
-  border-radius: 8px;
-  background: #fff;
-  color: var(--ink);
-  text-align: center;
-  box-shadow: 0 7px 18px rgba(15, 23, 42, 0.24);
-}
-
-.property-price-marker::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -5px;
-  width: 9px;
-  height: 9px;
-  transform: translateX(-50%) rotate(45deg);
-  border-right: 2px solid #fff;
-  border-bottom: 2px solid #fff;
-  background: inherit;
-}
-
-.property-price-marker.safe {
-  border-color: rgba(3, 199, 90, 0.72);
-}
-
-.property-price-marker.warn {
-  border-color: rgba(185, 138, 0, 0.82);
-}
-
-.property-price-marker.danger {
-  border-color: rgba(239, 68, 68, 0.82);
+  border-radius: 50% 50% 50% 0;
+  background: var(--naver);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(3, 199, 90, 0.34);
+  transform: rotate(-45deg);
 }
 
 .property-price-marker.is-selected {
@@ -1635,15 +1760,51 @@ details > summary span {
   outline-offset: 2px;
 }
 
-.property-price-marker strong {
-  font-size: 12px;
-  line-height: 1;
+.property-home-icon,
+.property-home-icon svg {
+  display: block;
+  width: 19px;
+  height: 19px;
 }
 
-.property-price-marker small {
+.property-home-icon {
+  transform: rotate(45deg);
+}
+
+.property-marker-tooltip-shell {
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 8px;
+  background: #fff;
+  opacity: 1;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+}
+
+.property-marker-tooltip-shell::before {
+  background: #fff;
+}
+
+.property-marker-tooltip {
+  display: grid;
+  gap: 5px;
+  width: max-content;
+  min-width: max-content;
+  max-width: 260px;
+  padding: 3px 4px;
+}
+
+.property-marker-tooltip strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.property-marker-tooltip span {
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
 .route-step-node {

@@ -143,7 +143,23 @@ def building_age(apartment: dict) -> int:
     return max(0, CURRENT_YEAR - year) if year else 0
 
 
-def area_options(apartment: dict) -> list[dict]:
+def area_options(apartment: dict, market: dict | None = None) -> list[dict]:
+    if market:
+        raw_areas = sorted(
+            round(number(record.get("exclusiveM2")), 1)
+            for record in [
+                *market.get("molitTradeRecords", []),
+                *market.get("molitRentRecords", []),
+            ]
+            if number(record.get("exclusiveM2")) > 0
+        )
+        live_areas: list[float] = []
+        for value in raw_areas:
+            if not live_areas or abs(value - live_areas[-1]) > 1:
+                live_areas.append(value)
+        if live_areas:
+            return [{"exclusiveM2": value, "pyeong": round(value / 3.3058, 1), "sourceMode": "molit_live"} for value in live_areas]
+
     households = max(1, integer(apartment.get("households"), 1))
     gross_area = number(apartment.get("grossFloorAreaM2"))
     if gross_area:
@@ -151,7 +167,7 @@ def area_options(apartment: dict) -> list[dict]:
     else:
         base = stable_ratio(apartment.get("id", "property"), 49, 84)
     options = sorted({round(clamp(base * factor, 18, 165), 1) for factor in (0.82, 1.0, 1.22)})
-    return [{"exclusiveM2": value, "pyeong": round(value / 3.3058, 1)} for value in options]
+    return [{"exclusiveM2": value, "pyeong": round(value / 3.3058, 1), "sourceMode": "gross_area_estimate"} for value in options]
 
 
 def estimate_market(apartment: dict, area: dict) -> dict:
@@ -449,6 +465,8 @@ def build_property_preview(apartment: dict, destination: str = "gangnam") -> dic
         "sale10k": market["recentSale10k"],
         "saleLabel": format_money_10k(market["recentSale10k"]),
         "jeonse10k": market["recentJeonse10k"],
+        "monthlyRent10k": market["monthlyRent10k"],
+        "monthlyDeposit10k": market["monthlyDeposit10k"],
         "jeonseRatio": market["jeonseRatio"],
         "riskScore": risk["score"],
         "riskLevel": risk["level"],
@@ -467,7 +485,7 @@ def build_property_detail(apartment: dict) -> dict:
     risk = build_risk(apartment, market)
     lifestyle = lifestyle_summary(area)
     age = building_age(apartment)
-    options = area_options(apartment)
+    options = area_options(apartment, market)
 
     return {
         "id": apartment.get("id"),

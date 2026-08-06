@@ -48,8 +48,13 @@
                   type="text"
                   value=""
                   autocomplete="off"
+                  aria-autocomplete="list"
+                  aria-controls="destinationSuggestions"
                   placeholder="주소를 입력하세요.">
+                <button id="destinationClearButton" class="search-clear-button" type="button" aria-label="목적지 입력 지우기" hidden>×</button>
+                <div id="destinationSuggestions" class="location-suggestions" role="listbox" hidden></div>
               </span>
+              <small id="destinationValidation" class="field-hint destination-validation" aria-live="polite"></small>
             </label>
 
             <fieldset class="segmented" aria-label="가구 유형">

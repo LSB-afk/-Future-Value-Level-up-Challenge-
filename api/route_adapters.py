@@ -23,6 +23,7 @@ TMAP_TRANSIT_ENDPOINT = "https://apis.openapi.sk.com/transit/routes"
 TMAP_CAR_ENDPOINT = "https://apis.openapi.sk.com/tmap/routes?version=1&format=json"
 TMAP_WALK_ENDPOINT = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1&format=json"
 KAKAO_ADDRESS_ENDPOINT = "https://dapi.kakao.com/v2/local/search/address.json"
+KAKAO_KEYWORD_ENDPOINT = "https://dapi.kakao.com/v2/local/search/keyword.json"
 
 OD_SAY_KEY_ENV = "ODSAY_API_KEY"
 OD_SAY_ALT_KEY_ENV = "MOVEVALUE_ODSAY_API_KEY"
@@ -69,6 +70,10 @@ def tmap_walk_key() -> str:
     )
 
 
+def kakao_key() -> str:
+    return env_key(KAKAO_KEY_ENV, KAKAO_ALT_KEY_ENV)
+
+
 def haversine_km(a_lat: float, a_lng: float, b_lat: float, b_lng: float) -> float:
     radius = 6371.0088
     phi1 = math.radians(a_lat)
@@ -105,7 +110,7 @@ def parse_coordinate_text(value: str) -> dict[str, Any] | None:
 
 
 def geocode_with_kakao(query: str) -> dict[str, Any] | None:
-    api_key = env_key(KAKAO_KEY_ENV, KAKAO_ALT_KEY_ENV)
+    api_key = kakao_key()
     if not api_key:
         return None
 
@@ -130,6 +135,81 @@ def geocode_with_kakao(query: str) -> dict[str, Any] | None:
         "lng": float(top["x"]),
         "source": "kakao_address_api",
     }
+
+
+def _kakao_location_from_document(document: dict[str, Any], source: str) -> dict[str, Any] | None:
+    try:
+        lat = float(document["y"])
+        lng = float(document["x"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    road = document.get("road_address") or {}
+    jibun = document.get("address") or {}
+    road_address = document.get("road_address_name") or road.get("address_name") or ""
+    address = document.get("address_name") or jibun.get("address_name") or road_address
+    label = document.get("place_name") or road_address or address
+    if not label:
+        return None
+
+    return {
+        "label": label,
+        "address": address,
+        "roadAddress": road_address,
+        "lat": lat,
+        "lng": lng,
+        "category": document.get("category_name", ""),
+        "phone": document.get("phone", ""),
+        "source": source,
+    }
+
+
+def search_locations_with_kakao(query: str, limit: int = 8) -> list[dict[str, Any]]:
+    value = (query or "").strip()
+    api_key = kakao_key()
+    if not value or not api_key:
+        return []
+
+    endpoints = [
+        (KAKAO_KEYWORD_ENDPOINT, "kakao_keyword_api"),
+        (KAKAO_ADDRESS_ENDPOINT, "kakao_address_api"),
+    ]
+    locations: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    for endpoint, source in endpoints:
+        params = urllib.parse.urlencode({"query": value, "size": max(1, min(limit, 15))})
+        request = urllib.request.Request(
+            f"{endpoint}?{params}",
+            headers={"Authorization": f"KakaoAK {api_key}", "User-Agent": "MoveValue/0.1"},
+        )
+        try:
+            with opener.open(request, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception:
+            continue
+
+        for document in payload.get("documents") or []:
+            location = _kakao_location_from_document(document, source)
+            if not location:
+                continue
+            key = "|".join(
+                [
+                    str(location.get("label", "")),
+                    str(location.get("address", "")),
+                    f"{location.get('lat'):.6f}",
+                    f"{location.get('lng'):.6f}",
+                ]
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            locations.append(location)
+            if len(locations) >= limit:
+                return locations
+
+    return locations
 
 
 def resolve_location(query: str, known_locations: dict[str, dict[str, Any]]) -> dict[str, Any]:

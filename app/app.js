@@ -3,6 +3,7 @@ const MATCH_RESULT_LIMIT = 10;
 const SEOUL_CENTER = [37.5665, 126.9780];
 const SEOUL_OVERVIEW_ZOOM = 12;
 const BOOKMARK_STORAGE_KEY = "movevalue-apartment-bookmarks";
+const DEFAULT_ROUTE_TRANSPORT_MODE = "transit";
 const ROUTE_TRANSPORT_MODES = [
   { key: "car", label: "자동차", icon: "car-front" },
   { key: "transit", label: "대중교통", icon: "bus-front" },
@@ -61,6 +62,7 @@ const state = {
   selectedId: null,
   destination: "gangnam",
   destinationQuery: "",
+  destinationLocation: null,
   budget: 70,
   persona: "single",
   apiMeta: null,
@@ -74,6 +76,15 @@ const state = {
   requestId: 0,
   routeRequestId: 0,
   map: null,
+  locationSearch: {
+    target: "main",
+    requestId: 0,
+    timer: null,
+    isLoading: false,
+    open: false,
+    items: [],
+    error: ""
+  },
   activeSection: "recommend",
   route: {
     selectedId: null,
@@ -81,7 +92,7 @@ const state = {
     result: null,
     error: "",
     focusMap: false,
-    transportMode: "transit"
+    transportMode: DEFAULT_ROUTE_TRANSPORT_MODE
   },
   apartments: {
     enabled: true,
@@ -233,6 +244,9 @@ const nodes = {
   budgetInput: document.querySelector("#budgetInput"),
   budgetOutput: document.querySelector("#budgetOutput"),
   destinationInput: document.querySelector("#destinationInput"),
+  destinationClearButton: document.querySelector("#destinationClearButton"),
+  destinationSuggestions: document.querySelector("#destinationSuggestions"),
+  destinationValidation: document.querySelector("#destinationValidation"),
   commuteWeight: document.querySelector("#commuteWeight"),
   costWeight: document.querySelector("#costWeight"),
   serviceWeight: document.querySelector("#serviceWeight"),
@@ -386,6 +400,75 @@ function normalizeSearchText(value = "") {
   return String(value).replace(/\s+/g, "").toLowerCase();
 }
 
+function seoulDongPartsFromText(...values) {
+  const compact = normalizeSearchText(values.filter(Boolean).join(" "));
+  const districtMatch = compact.match(/서울(?:특별시)?([가-힣]+구)/);
+  const tail = districtMatch ? compact.slice(districtMatch.index + districtMatch[0].length) : "";
+  const dongMatch = districtMatch ? tail.match(/([가-힣]+동(?:\d가)?)/) : null;
+  const roadMatch = districtMatch ? tail.match(/([가-힣0-9]+(?:대로|로|길)(?:\d+길)?)/) : null;
+  return {
+    ok: Boolean(compact.includes("서울") && districtMatch && (dongMatch || roadMatch)),
+    district: districtMatch?.[1] || "",
+    dong: dongMatch?.[1] || "",
+    road: roadMatch?.[1] || ""
+  };
+}
+
+function validateDestinationInput(value = state.destinationQuery, location = state.destinationLocation) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return { ok: false, message: "회사/목적지를 입력해주세요." };
+  }
+  const parts = seoulDongPartsFromText(text, location?.address, location?.roadAddress, location?.label);
+  if (!parts.ok) {
+    return { ok: false, message: "서울특별시 + 구 + 동 또는 도로명까지 입력하거나 목록에서 선택해주세요." };
+  }
+  if (location && location.selectable === false) {
+    return { ok: false, message: "구 단위가 아니라 동까지 선택해야 이동할 수 있습니다." };
+  }
+  return { ok: true, ...parts, message: "" };
+}
+
+function localDestinationLocationFor(value = state.destinationQuery) {
+  const parts = seoulDongPartsFromText(value);
+  if (!parts.ok) return null;
+  const matches = state.apartmentCandidates.filter((item) => (
+    normalizeSearchText(item.district) === normalizeSearchText(parts.district)
+    && normalizeSearchText(item.dong) === normalizeSearchText(parts.dong)
+    && item.lat != null
+    && item.lng != null
+  ));
+  if (!matches.length) return null;
+  const lat = matches.reduce((sum, item) => sum + Number(item.lat), 0) / matches.length;
+  const lng = matches.reduce((sum, item) => sum + Number(item.lng), 0) / matches.length;
+  const address = `서울특별시 ${parts.district} ${parts.dong}`;
+  return {
+    label: address,
+    address,
+    lat,
+    lng,
+    source: "local_apartment_dong",
+    selectable: true
+  };
+}
+
+function selectedDestinationLocation() {
+  const validation = validateDestinationInput();
+  if (!validation.ok) return null;
+  if (state.destinationLocation?.lat != null && state.destinationLocation?.lng != null) {
+    return state.destinationLocation;
+  }
+  return localDestinationLocationFor();
+}
+
+function destinationCoordinatesForRequest() {
+  const selectedLocation = selectedDestinationLocation();
+  if (selectedLocation?.lat != null && selectedLocation?.lng != null) {
+    return { lat: Number(selectedLocation.lat), lng: Number(selectedLocation.lng) };
+  }
+  return null;
+}
+
 function inferDestinationKey(value = "") {
   const normalized = normalizeSearchText(value);
   if (!normalized) return state.destination || "gangnam";
@@ -404,6 +487,11 @@ function inferDestinationKey(value = "") {
 }
 
 function currentDestinationCoordinates() {
+  const selectedLocation = selectedDestinationLocation();
+  if (selectedLocation?.lat != null && selectedLocation?.lng != null) {
+    return { lat: Number(selectedLocation.lat), lng: Number(selectedLocation.lng) };
+  }
+
   const query = state.destinationQuery?.trim();
   if (!query) return destinationCoordinates[state.destination] || destinationCoordinates.gangnam;
 
@@ -421,12 +509,13 @@ function currentDestinationCoordinates() {
 
 function destinationDisplayLabel() {
   const query = state.destinationQuery?.trim();
-  return query || destinationLabels[state.destination] || "목적지";
+  return state.destinationLocation?.label || query || destinationLabels[state.destination] || "목적지";
 }
 
 function destinationAddressFor() {
   const query = state.destinationQuery?.trim();
-  return query
+  return state.destinationLocation?.address
+    || query
     || state.apiMeta?.destinationAddresses?.[state.destination]
     || destinationAddresses[state.destination]
     || destinationLabels[state.destination]
@@ -450,6 +539,291 @@ async function fetchJson(path) {
     throw new Error(`${response.status} ${response.statusText}`);
   }
   return response.json();
+}
+
+function locationSearchNodes(target = "main") {
+  if (target === "route") {
+    return {
+      input: document.querySelector("#routeDestinationInput"),
+      list: document.querySelector("#routeDestinationSuggestions"),
+      validation: document.querySelector("#routeDestinationValidation")
+    };
+  }
+  return {
+    input: nodes.destinationInput,
+    list: nodes.destinationSuggestions,
+    validation: nodes.destinationValidation
+  };
+}
+
+function locationSuggestionInputValue(item = {}) {
+  return item.address || item.label || "";
+}
+
+function isLocalScopeSuggestion(item = {}) {
+  return ["city", "district", "dong", "apartment"].includes(item.type);
+}
+
+function locationSuggestionLabelHtml(item = {}) {
+  const label = item.label || item.address || "위치";
+  if (item.type === "city") {
+    return `<span class="location-suggestion-accent">${escapeHtml(label)}</span>`;
+  }
+  if (item.type === "district") {
+    const district = item.district || label.replace(/^서울(?:특별시|시)?\s*/, "");
+    return `<span class="location-suggestion-accent">서울시</span> ${escapeHtml(district)}`;
+  }
+  if (item.type === "dong") {
+    return `<span class="location-suggestion-accent">${escapeHtml(item.district || "")}</span> ${escapeHtml(item.dong || label)}`.trim();
+  }
+  if (item.type === "apartment") {
+    const prefix = item.dong ? `${item.dong} ` : "";
+    const name = item.apartmentName || (prefix && label.startsWith(prefix) ? label.slice(prefix.length) : label);
+    return `<span class="location-suggestion-accent">${escapeHtml(item.dong || "")}</span> ${escapeHtml(name)}`.trim();
+  }
+  return escapeHtml(label);
+}
+
+function locationSuggestionSubtitle(item = {}) {
+  if (isLocalScopeSuggestion(item)) return "";
+  if (item.type === "dong") return "";
+  if (item.type === "district") return item.hint || "동까지 선택 필요";
+  if (item.label && item.address && item.label !== item.address) return item.address;
+  return item.roadAddress || item.hint || "";
+}
+
+function renderDestinationValidation(target = "main") {
+  const { validation } = locationSearchNodes(target);
+  if (!validation) return;
+  const result = validateDestinationInput();
+  validation.textContent = state.destinationQuery.trim() ? result.message : "";
+  validation.classList.toggle("is-error", Boolean(state.destinationQuery.trim() && !result.ok));
+}
+
+function renderLocationSuggestions(target = state.locationSearch.target) {
+  const { list, input } = locationSearchNodes(target);
+  if (!list || !input) return;
+  const isActiveTarget = state.locationSearch.target === target;
+  const shouldShow = isActiveTarget
+    && state.locationSearch.open
+    && Boolean(input.value.trim())
+    && (state.locationSearch.isLoading || state.locationSearch.items.length || state.locationSearch.error);
+
+  list.hidden = !shouldShow;
+  if (!shouldShow) {
+    input.setAttribute("aria-expanded", "false");
+    renderDestinationValidation(target);
+    return;
+  }
+
+  input.setAttribute("aria-expanded", "true");
+  if (state.locationSearch.isLoading) {
+    list.innerHTML = `<div class="location-suggestion-status">검색 중</div>`;
+    renderDestinationValidation(target);
+    return;
+  }
+  if (state.locationSearch.error) {
+    list.innerHTML = `<div class="location-suggestion-status is-error">${escapeHtml(state.locationSearch.error)}</div>`;
+    renderDestinationValidation(target);
+    return;
+  }
+
+  list.innerHTML = state.locationSearch.items.map((item, index) => {
+    const subtitle = locationSuggestionSubtitle(item);
+    const selectable = item.selectable !== false;
+    const hasPin = !isLocalScopeSuggestion(item);
+    const classes = [
+      "location-suggestion",
+      selectable ? "" : "is-incomplete",
+      hasPin ? "has-pin" : "is-text-only",
+      isLocalScopeSuggestion(item) ? "is-scope" : ""
+    ].filter(Boolean).join(" ");
+    return `
+      <button
+        class="${classes}"
+        type="button"
+        role="option"
+        data-location-index="${index}"
+        aria-disabled="${selectable ? "false" : "true"}"
+      >
+        ${hasPin ? `<span class="location-suggestion-pin" aria-hidden="true"></span>` : ""}
+        <span>
+          <strong>${locationSuggestionLabelHtml(item)}</strong>
+          ${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ""}
+        </span>
+      </button>
+    `;
+  }).join("");
+  renderDestinationValidation(target);
+}
+
+function hideLocationSuggestions() {
+  state.locationSearch.open = false;
+  renderLocationSuggestions("main");
+  renderLocationSuggestions("route");
+}
+
+function setDestinationFromSuggestion(item = {}, target = "main") {
+  const value = locationSuggestionInputValue(item);
+  state.destinationQuery = value;
+  state.destinationLocation = {
+    label: item.label || value,
+    address: item.address || value,
+    roadAddress: item.roadAddress || "",
+    lat: item.lat,
+    lng: item.lng,
+    source: item.source || "location_suggestion",
+    selectable: item.selectable !== false
+  };
+  if (value.trim()) {
+    state.destination = inferDestinationKey(value);
+  }
+  state.apartments.lastKey = "";
+  state.locationSearch.open = false;
+  state.locationSearch.items = [];
+  resetRouteState();
+
+  const { input } = locationSearchNodes(target);
+  if (input) input.value = value;
+  if (nodes.destinationInput) nodes.destinationInput.value = value;
+
+  if (target === "route") {
+    renderControls();
+    renderRoutePanel();
+  } else {
+    scheduleRefresh(0);
+  }
+}
+
+function drillDownLocationSuggestion(item = {}, target = "main") {
+  const value = locationSuggestionInputValue(item);
+  state.destinationQuery = value;
+  state.destinationLocation = null;
+  state.matchValidationMessage = "";
+  state.locationSearch.open = Boolean(value.trim());
+  state.locationSearch.items = [];
+  resetRouteState();
+
+  const { input } = locationSearchNodes(target);
+  if (input) input.value = value;
+  if (nodes.destinationInput) nodes.destinationInput.value = value;
+
+  requestLocationSuggestions(value, target);
+  if (target === "route") {
+    renderControls();
+    renderRoutePanel();
+  } else {
+    renderControls();
+  }
+}
+
+function clearDestinationInput() {
+  window.clearTimeout(state.locationSearch.timer);
+  state.destinationQuery = "";
+  state.destinationLocation = null;
+  state.locationSearch.open = false;
+  state.locationSearch.isLoading = false;
+  state.locationSearch.items = [];
+  state.locationSearch.error = "";
+  state.matchValidationMessage = "";
+  if (nodes.destinationInput) nodes.destinationInput.value = "";
+  if (nodes.destinationClearButton) nodes.destinationClearButton.hidden = true;
+  resetRouteState();
+  scheduleRefresh(0);
+  window.setTimeout(() => nodes.destinationInput?.focus(), 0);
+}
+
+function fallbackLocationSuggestions(query = "", limit = 8) {
+  const compactQuery = normalizeSearchText(query).replace("서울특별시", "서울");
+  if (!compactQuery) return [];
+
+  const groups = new Map();
+  state.apartmentCandidates.forEach((item) => {
+    if (!item.district || !item.dong || item.lat == null || item.lng == null) return;
+    const key = `${item.district}|${item.dong}`;
+    const group = groups.get(key) || { district: item.district, dong: item.dong, lat: 0, lng: 0, count: 0 };
+    group.lat += Number(item.lat);
+    group.lng += Number(item.lng);
+    group.count += 1;
+    groups.set(key, group);
+  });
+
+  return [...groups.values()]
+    .map((group) => {
+      const label = `서울특별시 ${group.district} ${group.dong}`;
+      return {
+        type: "dong",
+        label,
+        address: label,
+        lat: group.lat / group.count,
+        lng: group.lng / group.count,
+        district: group.district,
+        dong: group.dong,
+        source: "local_apartment_dong",
+        selectable: true,
+        hint: "서울 구·동 기준 위치"
+      };
+    })
+    .filter((item) => {
+      const blob = `${item.label} ${item.label.replace("서울특별시", "서울")}`;
+      return normalizeSearchText(blob).includes(compactQuery);
+    })
+    .slice(0, limit);
+}
+
+function requestLocationSuggestions(query, target = "main") {
+  window.clearTimeout(state.locationSearch.timer);
+  const value = String(query || "").trim();
+  state.locationSearch.target = target;
+  state.locationSearch.open = Boolean(value);
+  state.locationSearch.error = "";
+  state.locationSearch.items = value ? state.locationSearch.items : [];
+  if (!value) {
+    state.locationSearch.isLoading = false;
+    state.locationSearch.items = [];
+    renderLocationSuggestions(target);
+    return;
+  }
+
+  const requestId = ++state.locationSearch.requestId;
+  state.locationSearch.isLoading = true;
+  renderLocationSuggestions(target);
+  state.locationSearch.timer = window.setTimeout(async () => {
+    try {
+      const payload = await fetchJson(`/api/location-suggestions?query=${encodeURIComponent(value)}&limit=30`);
+      if (requestId !== state.locationSearch.requestId) return;
+      state.locationSearch.items = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+      state.locationSearch.error = "";
+    } catch (error) {
+      if (requestId !== state.locationSearch.requestId) return;
+      state.locationSearch.items = fallbackLocationSuggestions(value);
+      state.locationSearch.error = state.locationSearch.items.length ? "" : `위치 검색 실패: ${error.message}`;
+    } finally {
+      if (requestId === state.locationSearch.requestId) {
+        state.locationSearch.isLoading = false;
+        renderLocationSuggestions(target);
+      }
+    }
+  }, 180);
+}
+
+function bindLocationSuggestionList(target = "main") {
+  const { list } = locationSearchNodes(target);
+  if (!list) return;
+  list.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+  list.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-location-index]");
+    if (!button) return;
+    const item = state.locationSearch.items[Number(button.dataset.locationIndex)];
+    if (!item) return;
+    if (item.drilldown) {
+      drillDownLocationSuggestion(item, target);
+      return;
+    }
+    setDestinationFromSuggestion(item, target);
+  });
 }
 
 function applyDataset(dataset) {
@@ -499,13 +873,12 @@ async function loadApartmentCandidates() {
 }
 
 function buildRecommendationQuery() {
-  const destination = currentDestinationCoordinates();
-  return new URLSearchParams({
+  const destinationLocation = selectedDestinationLocation();
+  const params = new URLSearchParams({
     budget: state.budget,
     destination: state.destination,
     destinationQuery: state.destinationQuery.trim(),
-    destinationLat: destination.lat,
-    destinationLng: destination.lng,
+    destinationAddress: destinationLocation?.address || state.destinationQuery.trim(),
     persona: state.persona,
     commuteWeight: state.weights.commute,
     costWeight: state.weights.cost,
@@ -513,6 +886,12 @@ function buildRecommendationQuery() {
     safetyWeight: state.weights.safety,
     limit: MATCH_RESULT_LIMIT
   });
+  const destination = destinationCoordinatesForRequest();
+  if (destination) {
+    params.set("destinationLat", destination.lat);
+    params.set("destinationLng", destination.lng);
+  }
+  return params;
 }
 
 function haversineKm(aLat, aLng, bLat, bLng) {
@@ -760,6 +1139,7 @@ function calculateFallback() {
 
 async function refreshRecommendations() {
   const requestId = ++state.requestId;
+  cancelApartmentLayerWork();
   state.isLoading = true;
   state.hasMatched = true;
   if (!state.results.length) {
@@ -774,6 +1154,17 @@ async function refreshRecommendations() {
       const payload = await fetchJson(`/api/apartment-recommendations?${buildRecommendationQuery().toString()}`);
       if (requestId !== state.requestId) return;
       state.apiMeta = payload.meta || state.apiMeta;
+      if (payload.meta?.destinationLocation?.lat != null && payload.meta?.destinationLocation?.lng != null) {
+        state.destinationLocation = {
+          label: payload.meta.destinationLabel || state.destinationQuery.trim() || payload.meta.destinationLocation.label || "목적지",
+          address: payload.meta.destinationAddress || payload.meta.destinationLocation.address || state.destinationQuery.trim(),
+          roadAddress: payload.meta.destinationLocation.roadAddress || "",
+          lat: payload.meta.destinationLocation.lat,
+          lng: payload.meta.destinationLocation.lng,
+          source: payload.meta.destinationLocation.source || "recommendation_destination",
+          selectable: true
+        };
+      }
       state.results = Array.isArray(payload.results) ? payload.results.map(enrichRecommendationResult) : [];
       state.lastError = "";
     } else {
@@ -976,7 +1367,7 @@ function buildRouteSegments(route) {
 }
 
 function shouldRenderRouteStepMarkers(route = {}) {
-  return (route.transportMode || "transit") === "transit";
+  return (route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE) === "transit";
 }
 
 function shouldMergeRouteSegments(route = {}) {
@@ -1075,14 +1466,16 @@ function initializeLeafletMap() {
     markerLayer,
     apartmentLayer,
     routeLayer: L.layerGroup().addTo(instance),
+    destinationLayer: L.layerGroup().addTo(instance),
     markersById: {},
+    propertyMarkersById: {},
     fitted: false,
     cameraRequestId: 0
   };
 
   instance.on("moveend zoomend", () => {
     updateMapScaleUI();
-    if (state.apartments.enabled) {
+    if (state.apartments.enabled && !state.hasMatched) {
       scheduleApartmentLayerLoad();
     }
   });
@@ -1190,6 +1583,41 @@ function drawRouteLine(bounds) {
   }
 }
 
+function destinationPinIcon() {
+  return L.divIcon({
+    className: "route-destination-pin-wrapper",
+    html: `
+      <span class="route-destination-pin" aria-hidden="true">
+        <svg viewBox="0 0 24 30" role="img" focusable="false">
+          <path d="M12 29C12 29 22 18.8 22 10.8C22 4.8 17.5 1 12 1C6.5 1 2 4.8 2 10.8C2 18.8 12 29 12 29Z" fill="#2563EB" stroke="#ffffff" stroke-width="2"/>
+          <circle cx="12" cy="10.8" r="3.4" fill="#ffffff"/>
+        </svg>
+      </span>
+    `,
+    iconSize: [32, 40],
+    iconAnchor: [16, 38],
+    popupAnchor: [0, -34]
+  });
+}
+
+function renderDestinationMarker(bounds) {
+  if (!state.map?.destinationLayer) return;
+  state.map.destinationLayer.clearLayers();
+  if (!state.hasMatched || isRouteSubpanelActive()) return;
+
+  const destinationLocation = selectedDestinationLocation();
+  if (!destinationLocation?.lat || !destinationLocation?.lng) return;
+
+  const latLng = [Number(destinationLocation.lat), Number(destinationLocation.lng)];
+  L.marker(latLng, {
+    title: destinationDisplayLabel(),
+    icon: destinationPinIcon(),
+    zIndexOffset: 900
+  }).bindTooltip(destinationDisplayLabel(), { direction: "top" }).addTo(state.map.destinationLayer);
+
+  bounds.push(latLng);
+}
+
 function renderLeafletMap() {
   initializeLeafletMap();
   if (!state.map) return false;
@@ -1203,42 +1631,61 @@ function renderLeafletMap() {
   visibleResults.forEach((item, index) => {
     const selected = item.id === state.selectedId;
     const marker = L.marker([item.lat, item.lng], {
-      title: `${index + 1}위 ${item.name}`,
       icon: L.divIcon({
         className: "mv-map-icon-wrapper",
-        html: `<span class="mv-map-icon ${markerTone(item.total)}${selected ? " is-selected" : ""}" style="--size:64px"><strong>${escapeHtml(item.name)}</strong></span>`,
-        iconSize: [70, 70],
-        iconAnchor: [35, 35],
-        popupAnchor: [0, -20]
+        html: `
+          <span class="property-price-marker${selected ? " is-selected" : ""}">
+            <span class="property-home-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M4 11.2 12 4l8 7.2v8.1a.7.7 0 0 1-.7.7h-4.6v-5.4H9.3V20H4.7a.7.7 0 0 1-.7-.7v-8.1Z" fill="currentColor"/>
+              </svg>
+            </span>
+          </span>
+        `,
+        iconSize: [38, 44],
+        iconAnchor: [19, 41],
+        popupAnchor: [0, -38]
       })
     });
 
-    marker.bindPopup(`
-      <div class="match-popup">
-        <strong class="match-popup-name">${escapeHtml(item.name)}</strong>
-        <div class="match-popup-prices">
-          <div><span>매매</span><strong>${formatMoney10k(item.sale10k)}</strong></div>
-          <div><span>전세</span><strong>${formatMoney10k(item.jeonse10k)}</strong></div>
-          <div><span>월세</span><strong>${formatNumber(item.rentMonthly10k)}만원</strong></div>
+    marker
+      .bindPopup(`
+        <div class="match-popup">
+          <strong class="match-popup-name">${escapeHtml(item.name)}</strong>
+          <div class="match-popup-prices">
+            <div><span>매매</span><strong>${formatMoney10k(item.sale10k)}</strong></div>
+            <div><span>전세</span><strong>${formatMoney10k(item.jeonse10k)}</strong></div>
+            <div><span>월세</span><strong>${formatNumber(item.rentMonthly10k)}만원</strong></div>
+          </div>
         </div>
-      </div>
-    `, { className: "match-price-popup" });
-    marker.on("click", () => selectApartmentMatch(item.id, { source: "map", openDetailPanel: true }));
+      `, { className: "match-price-popup" })
+      .on("click", () => selectApartmentMatch(item.id, { source: "map", openDetailPanel: true }));
     marker.addTo(markerLayer);
     state.map.markersById[item.id] = marker;
     bounds.push([item.lat, item.lng]);
   });
 
+  renderDestinationMarker(bounds);
   drawRouteLine(bounds);
   if (bounds.length && !state.map.fitted) {
-    const maxZoom = isRouteSubpanelActive() && state.route.result
+    const destinationLocation = selectedDestinationLocation();
+    const routePanelFocused = isRouteSubpanelActive() && state.route.result;
+    const matchFocusBounds = state.hasMatched && destinationLocation && !routePanelFocused
+      ? [
+          [destinationLocation.lat, destinationLocation.lng],
+          ...visibleResults.slice(0, 5).map((item) => [item.lat, item.lng])
+        ]
+      : bounds;
+    const maxZoom = routePanelFocused
       ? routeFocusMaxZoom(state.route.result)
-      : 12;
-    instance.fitBounds(bounds, { padding: [26, 26], maxZoom });
+      : state.hasMatched
+        ? 15
+        : 12;
+    instance.fitBounds(matchFocusBounds, { padding: [44, 44], maxZoom, animate: false });
     state.map.fitted = true;
   }
 
-  if (state.hasMatched && state.results.length) {
+  if (state.hasMatched) {
     renderApartmentLayer();
   } else if (state.apartments.enabled) {
     scheduleApartmentLayerLoad();
@@ -1396,17 +1843,16 @@ function renderApartmentLayerStatus() {
 }
 
 function apartmentPopup(feature) {
-  const approval = feature.approvalDate || (feature.approvalYear ? `${feature.approvalYear}년` : "사용승인일 없음");
-  const parking = feature.parkingCount ? ` · 주차 ${formatNumber(feature.parkingCount)}대` : "";
   const preview = feature.pricePreview || {};
-  const price = preview.saleLabel ? `추정 매매 ${escapeHtml(preview.saleLabel)} · 전세가율 ${formatPercent(preview.jeonseRatio)}` : "가격 미리보기 준비 중";
   return `
-    <strong>${escapeHtml(feature.name)}</strong><br>
-    ${escapeHtml(feature.address || `${feature.district || ""} ${feature.dong || ""}`.trim())}<br>
-    ${formatNumber(feature.households)}세대 · ${formatNumber(feature.buildingCount)}개동 · ${escapeHtml(approval)}${parking}<br>
-    <span class="popup-muted">${escapeHtml(feature.housingType || "공동주택")} · ${escapeHtml(feature.heating || "난방 정보 없음")}</span><br>
-    <span class="popup-muted">${price}</span><br>
-    <span class="popup-muted">클릭하면 아파트 상세 정보가 열립니다.</span>
+    <div class="match-popup">
+      <strong class="match-popup-name">${escapeHtml(feature.name || "아파트")}</strong>
+      <div class="match-popup-prices">
+        <div><span>매매</span><strong>${preview.sale10k ? formatMoney10k(preview.sale10k) : "준비 중"}</strong></div>
+        <div><span>전세</span><strong>${preview.jeonse10k ? formatMoney10k(preview.jeonse10k) : "준비 중"}</strong></div>
+        <div><span>월세</span><strong>${preview.monthlyRent10k ? `${formatNumber(preview.monthlyRent10k)}만원` : "준비 중"}</strong></div>
+      </div>
+    </div>
   `;
 }
 
@@ -1428,8 +1874,9 @@ function renderApartmentLayer() {
   if (!state.map?.apartmentLayer) return;
   const layer = state.map.apartmentLayer;
   layer.clearLayers();
+  state.map.propertyMarkersById = {};
 
-  if (state.hasMatched && state.results.length) {
+  if (state.hasMatched) {
     renderApartmentLayerStatus();
     return;
   }
@@ -1463,32 +1910,41 @@ function renderApartmentLayer() {
       return;
     }
 
-    const preview = feature.pricePreview || {};
     const selected = feature.id === state.property.selectedId;
-    const label = propertyLabel(feature);
     const marker = L.marker([feature.lat, feature.lng], {
-      title: feature.name,
       icon: L.divIcon({
         className: "property-price-wrapper",
         html: `
-          <span class="property-price-marker ${riskTone(preview.riskLevelKey)}${selected ? " is-selected" : ""}">
-            <strong>${label.primary}</strong>
+          <span class="property-price-marker${selected ? " is-selected" : ""}">
+            <span class="property-home-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <path d="M4 11.2 12 4l8 7.2v8.1a.7.7 0 0 1-.7.7h-4.6v-5.4H9.3V20H4.7a.7.7 0 0 1-.7-.7v-8.1Z" fill="currentColor"/>
+              </svg>
+            </span>
           </span>
         `,
-        iconSize: [94, 44],
-        iconAnchor: [47, 22],
-        popupAnchor: [0, -21]
+        iconSize: [38, 44],
+        iconAnchor: [19, 41],
+        popupAnchor: [0, -38]
       })
     });
     marker
-      .bindPopup(apartmentPopup(feature))
-      .bindTooltip(feature.name, { direction: "top", offset: [0, -4] })
+      .bindPopup(apartmentPopup(feature), { className: "match-price-popup" })
       .on("click", () => selectProperty(feature.id))
       .addTo(layer);
+    state.map.propertyMarkersById[feature.id] = marker;
   });
   renderApartmentLayerStatus();
   updateMapScaleUI();
   renderMapSidebar();
+}
+
+function openSelectedPropertyPopup() {
+  const marker = state.map?.propertyMarkersById?.[state.property.selectedId];
+  if (!marker) return;
+  window.requestAnimationFrame(() => {
+    marker.openPopup();
+  });
 }
 
 async function loadApartmentsForMap(force = false) {
@@ -2169,15 +2625,6 @@ function renderPropertyDashboard() {
         ${renderAgentAnswer()}
       </section>
 
-      <section class="property-card wide data-status">
-        <div class="property-card-title">
-          <h4>데이터 연계 상태</h4>
-          <span>실데이터와 추정 구분</span>
-        </div>
-        <dl>
-          ${Object.entries(detail.dataStatus || {}).map(([key, value]) => `<div><dt>${escapeHtml(key)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("")}
-        </dl>
-      </section>
     </div>
   `;
   bindPropertyDashboardEvents();
@@ -2196,6 +2643,7 @@ async function selectProperty(id) {
   state.property.requestId += 1;
   const requestId = state.property.requestId;
   renderApartmentLayer();
+  openSelectedPropertyPopup();
   renderPropertyDashboard();
   renderDetailSubpanelState();
   try {
@@ -2213,6 +2661,7 @@ async function selectProperty(id) {
     if (requestId === state.property.requestId) {
       state.property.isLoading = false;
       renderApartmentLayer();
+      openSelectedPropertyPopup();
       renderPropertyDashboard();
       renderDetailSubpanelState();
     }
@@ -2335,8 +2784,8 @@ function scoreRow(label, value, tip) {
   `;
 }
 
-function transportModeLabel(mode = "transit") {
-  return ROUTE_TRANSPORT_MODES.find((item) => item.key === mode)?.label || "대중교통";
+function transportModeLabel(mode = DEFAULT_ROUTE_TRANSPORT_MODE) {
+  return ROUTE_TRANSPORT_MODES.find((item) => item.key === mode)?.label || "자동차";
 }
 
 function routeModeLabel(route = {}) {
@@ -2344,7 +2793,7 @@ function routeModeLabel(route = {}) {
 }
 
 function renderRouteModeSelector() {
-  const activeMode = state.route.transportMode || "transit";
+  const activeMode = state.route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE;
   return `
     <div class="route-mode-selector" role="group" aria-label="이동수단 선택">
       ${ROUTE_TRANSPORT_MODES.map((mode) => `
@@ -2364,7 +2813,7 @@ function renderRouteModeSelector() {
 
 function renderRouteSummary(route) {
   const summary = route.summary || {};
-  const transportMode = route.transportMode || "transit";
+  const transportMode = route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE;
   if (transportMode === "car") {
     return `
       ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
@@ -2465,9 +2914,7 @@ function renderRouteResult(selected) {
       <div class="route-summary-grid">
         ${renderRouteSummary(route)}
       </div>
-      <p class="route-label">${escapeHtml(route.origin?.label)} → ${escapeHtml(route.destination?.label)}</p>
       ${renderRouteSteps(route)}
-      ${route.notice ? `<p class="score-note">${escapeHtml(route.notice)}</p>` : ""}
     </div>
   `;
 }
@@ -2485,7 +2932,18 @@ function renderRoutePlanner(selected) {
       <div class="route-form">
         <label class="field compact route-destination-field">
           <span>회사/목적지</span>
-          <input id="routeDestinationInput" type="text" value="${escapeHtml(destinationValue)}" placeholder="주소를 입력하세요.">
+          <span class="search-input-wrap">
+            <input
+              id="routeDestinationInput"
+              type="text"
+              value="${escapeHtml(destinationValue)}"
+              autocomplete="off"
+              aria-autocomplete="list"
+              aria-controls="routeDestinationSuggestions"
+              placeholder="주소를 입력하세요.">
+            <div id="routeDestinationSuggestions" class="location-suggestions" role="listbox" hidden></div>
+          </span>
+          <small id="routeDestinationValidation" class="field-hint destination-validation" aria-live="polite"></small>
         </label>
       </div>
       ${renderRouteModeSelector()}
@@ -2655,7 +3113,7 @@ function renderInfrastructurePanel() {
 }
 
 function resetRouteState() {
-  const transportMode = state.route.transportMode || "transit";
+  const transportMode = state.route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE;
   state.routeRequestId += 1;
   state.route = {
     selectedId: null,
@@ -2674,19 +3132,32 @@ async function calculateCommuteRoute(selected, options = {}) {
   const destinationInput = document.querySelector("#routeDestinationInput");
   if (!destinationInput) return;
 
-  const transportMode = options.transportMode || state.route.transportMode || "transit";
+  const transportMode = options.transportMode || state.route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE;
   const requestId = state.routeRequestId + 1;
   state.routeRequestId = requestId;
   const origin = representativeAddressFor(selected);
   const destinationText = destinationInput.value.trim();
-  const destination = currentDestinationCoordinates();
+  const destinationValidation = validateDestinationInput(destinationText, state.destinationLocation);
+  if (!destinationValidation.ok) {
+    state.route = { selectedId: selected.id, isLoading: false, result: null, error: destinationValidation.message, focusMap: false, transportMode };
+    state.locationSearch.open = true;
+    state.locationSearch.target = "route";
+    requestLocationSuggestions(destinationText, "route");
+    renderRoutePanel();
+    return;
+  }
+  const destinationLocation = selectedDestinationLocation();
   const params = new URLSearchParams({
     origin,
     provider: "tmap",
     transportMode,
-    destinationLat: destination.lat,
-    destinationLng: destination.lng
+    destinationAddress: destinationLocation?.address || destinationText
   });
+  const destination = destinationCoordinatesForRequest();
+  if (destination) {
+    params.set("destinationLat", destination.lat);
+    params.set("destinationLng", destination.lng);
+  }
 
   if (!origin) {
     state.route = { selectedId: selected.id, isLoading: false, result: null, error: "아파트 주소를 확인할 수 없습니다.", focusMap: false, transportMode };
@@ -2732,12 +3203,26 @@ function bindRoutePlanner(selected) {
 
   destinationInput?.addEventListener("input", (event) => {
     state.destinationQuery = event.target.value;
+    state.destinationLocation = null;
     if (state.destinationQuery.trim()) {
       state.destination = inferDestinationKey(state.destinationQuery);
     }
     if (nodes.destinationInput) {
       nodes.destinationInput.value = state.destinationQuery;
     }
+    requestLocationSuggestions(state.destinationQuery, "route");
+  });
+
+  destinationInput?.addEventListener("focus", () => {
+    if (destinationInput.value.trim()) {
+      state.locationSearch.open = true;
+      state.locationSearch.target = "route";
+      requestLocationSuggestions(destinationInput.value, "route");
+    }
+  });
+
+  destinationInput?.addEventListener("blur", () => {
+    window.setTimeout(hideLocationSuggestions, 120);
   });
 
   destinationInput?.addEventListener("change", () => calculateCommuteRoute(selected));
@@ -2766,6 +3251,9 @@ function bindRoutePlanner(selected) {
       focusRouteOnMap();
     }
   });
+
+  bindLocationSuggestionList("route");
+  renderLocationSuggestions("route");
 }
 
 function renderEvidenceTable() {
@@ -2838,6 +3326,13 @@ function renderLoadingHint() {
   nodes.cards.setAttribute("aria-busy", state.isLoading ? "true" : "false");
 }
 
+function cancelApartmentLayerWork() {
+  window.clearTimeout(state.apartments.timer);
+  state.apartments.requestId += 1;
+  state.apartments.isLoading = false;
+  state.map?.apartmentLayer?.clearLayers();
+}
+
 function syncRangeProgress(input) {
   if (!input) return;
   const min = Number(input.min || 0);
@@ -2858,8 +3353,6 @@ function syncAllRangeProgress() {
 }
 
 function renderControls() {
-  const sourceYear = state.apiMeta?.housingSource?.year;
-  const modeLabel = state.apiOnline ? "API" : "로컬";
   nodes.budgetOutput.textContent = `${state.budget}만원`;
   nodes.commuteWeightOutput.textContent = `${state.weights.commute}%`;
   nodes.costWeightOutput.textContent = `${state.weights.cost}%`;
@@ -2871,24 +3364,19 @@ function renderControls() {
   if (nodes.destinationInput && nodes.destinationInput.value !== state.destinationQuery) {
     nodes.destinationInput.value = state.destinationQuery;
   }
+  if (nodes.destinationClearButton) {
+    nodes.destinationClearButton.hidden = !String(state.destinationQuery || nodes.destinationInput?.value || "").trim();
+  }
   if (nodes.matchButton) {
     nodes.matchButton.disabled = state.isLoading || !state.neighborhoods.length || !state.apartmentCandidates.length;
     nodes.matchButton.textContent = state.isLoading ? "매칭 중" : "매칭하기";
   }
   syncAllRangeProgress();
+  renderLocationSuggestions("main");
 
   nodes.resultSummary.textContent = "";
 
-  const stamp = state.lastUpdated
-    ? state.lastUpdated.toLocaleTimeString("ko-KR", { hour12: false })
-    : "";
-  nodes.updatedAt.textContent = state.isLoading
-    ? "매칭 계산 중…"
-    : !state.hasMatched
-      ? ""
-      : sourceYear
-        ? `${modeLabel} 계산 · 아파트 단지 스냅샷 + ${sourceYear} 서울 전월세 데이터${stamp ? ` · ${stamp} 기준` : ""}`
-        : "데이터 준비 중";
+  nodes.updatedAt.textContent = state.isLoading ? "매칭 계산 중…" : "";
 }
 
 function render() {
@@ -2990,6 +3478,7 @@ function resetUserSettings() {
   state.budget = 70;
   state.destination = "gangnam";
   state.destinationQuery = "";
+  state.destinationLocation = null;
   state.persona = "single";
   state.weights = { commute: 25, cost: 25, service: 25, safety: 25 };
   state.results = [];
@@ -3008,6 +3497,10 @@ function resetUserSettings() {
   state.property.error = "";
   state.bookmarks.panelOpen = false;
   state.evidenceRendered = false;
+  state.locationSearch.open = false;
+  state.locationSearch.items = [];
+  state.locationSearch.error = "";
+  state.locationSearch.isLoading = false;
 
   nodes.budgetInput.value = state.budget;
   nodes.destinationInput.value = state.destinationQuery;
@@ -3061,12 +3554,15 @@ function bindEvents() {
     const query = String(value || "");
     const normalizedQuery = query.trim();
     state.destinationQuery = query;
+    state.destinationLocation = null;
     if (normalizedQuery) {
       state.destination = inferDestinationKey(normalizedQuery);
     }
     state.apartments.lastKey = "";
     resetRouteState();
+    requestLocationSuggestions(query, "main");
     scheduleRefresh(delay);
+    if (nodes.destinationClearButton) nodes.destinationClearButton.hidden = !normalizedQuery;
     if (state.apartments.enabled) {
       scheduleApartmentLayerLoad(true);
     }
@@ -3076,9 +3572,25 @@ function bindEvents() {
     updateDestinationFromInput(event.target.value, 220);
   });
 
+  nodes.destinationInput.addEventListener("focus", () => {
+    if (nodes.destinationInput.value.trim()) {
+      state.locationSearch.open = true;
+      state.locationSearch.target = "main";
+      requestLocationSuggestions(nodes.destinationInput.value, "main");
+    }
+  });
+
+  nodes.destinationInput.addEventListener("blur", () => {
+    window.setTimeout(hideLocationSuggestions, 120);
+  });
+
   nodes.destinationInput.addEventListener("change", (event) => {
     updateDestinationFromInput(event.target.value, 0);
   });
+
+  nodes.destinationClearButton?.addEventListener("click", clearDestinationInput);
+
+  bindLocationSuggestionList("main");
 
   document.querySelectorAll("input[name='persona']").forEach((radio) => {
     radio.addEventListener("change", (event) => {
@@ -3110,6 +3622,7 @@ function bindEvents() {
   nodes.matchButton?.addEventListener("click", () => {
     if (!nodes.destinationInput.value.trim()) {
       state.destinationQuery = "";
+      state.destinationLocation = null;
       nodes.destinationInput.value = "";
       state.hasMatched = false;
       state.matchValidationMessage = "주소를 입력해주세요.";
@@ -3117,6 +3630,22 @@ function bindEvents() {
       state.selectedId = null;
       state.showAllCards = false;
       state.detailPanelOpen = false;
+      render();
+      nodes.destinationInput.focus();
+      return;
+    }
+
+    const destinationValidation = validateDestinationInput(nodes.destinationInput.value, state.destinationLocation);
+    if (!destinationValidation.ok) {
+      state.hasMatched = false;
+      state.matchValidationMessage = destinationValidation.message;
+      state.results = [];
+      state.selectedId = null;
+      state.showAllCards = false;
+      state.detailPanelOpen = false;
+      state.locationSearch.open = true;
+      state.locationSearch.target = "main";
+      requestLocationSuggestions(nodes.destinationInput.value, "main");
       render();
       nodes.destinationInput.focus();
       return;

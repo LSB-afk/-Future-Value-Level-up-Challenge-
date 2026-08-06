@@ -148,7 +148,7 @@ def response_error(root: ET.Element) -> str:
         return ""
     code = text_of(header, "resultCode")
     message = text_of(header, "resultMsg")
-    if code and code != "00":
+    if code and code not in {"00", "000", "NORMAL_CODE"}:
         return f"{code}: {message or '공공데이터 API 오류'}"
     return ""
 

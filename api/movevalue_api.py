@@ -11,6 +11,7 @@ import argparse
 import json
 import math
 import mimetypes
+import re
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -21,7 +22,7 @@ from apartment_adapters import apartment_credential_status, apartments_response,
 from property_adapters import property_agent_response, property_detail_response
 from property_model import build_property_preview, estimate_market, nearest_living_area
 from real_estate_price_adapters import price_credential_status
-from route_adapters import build_commute_route, credential_status, resolve_location
+from route_adapters import build_commute_route, credential_status, resolve_location, search_locations_with_kakao
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -246,6 +247,9 @@ def normalize_query(raw: dict[str, list[str]]) -> Query:
         destination = "gangnam"
 
     destination_query = raw.get("destinationQuery", [""])[0].strip()
+    destination_address = raw.get("destinationAddress", [""])[0].strip()
+    if destination_query:
+        validate_destination_scope(destination_query, destination_address)
     destination_location = dict(DESTINATIONS[destination])
     destination_lat = raw.get("destinationLat", [""])[0].strip()
     destination_lng = raw.get("destinationLng", [""])[0].strip()
@@ -253,7 +257,7 @@ def normalize_query(raw: dict[str, list[str]]) -> Query:
         try:
             destination_location = {
                 "label": destination_query or DESTINATIONS[destination]["label"],
-                "address": destination_query or DESTINATIONS[destination]["address"],
+                "address": destination_address or destination_query or DESTINATIONS[destination]["address"],
                 "lat": float(destination_lat),
                 "lng": float(destination_lng),
                 "source": "prototype_address_input" if destination_query else "preset",
@@ -261,11 +265,11 @@ def normalize_query(raw: dict[str, list[str]]) -> Query:
         except ValueError:
             destination_location = dict(DESTINATIONS[destination])
     elif destination_query:
-        resolved = resolve_location(destination_query, known_locations())
+        resolved = resolve_location(destination_address or destination_query, known_locations())
         destination_location = {
             **resolved,
             "label": destination_query,
-            "address": destination_query,
+            "address": destination_address or destination_query,
         }
 
     persona = raw.get("persona", ["single"])[0]
@@ -309,6 +313,384 @@ def runtime_meta(meta: dict) -> dict:
 
 def destination_addresses() -> dict[str, str]:
     return {key: value["address"] for key, value in DESTINATIONS.items()}
+
+
+def compact_location_text(value: object) -> str:
+    return re.sub(r"\s+", "", str(value or "")).lower()
+
+
+def seoul_dong_parts(*values: object) -> dict:
+    text = " ".join(str(value or "") for value in values)
+    compact = compact_location_text(text)
+    district_match = re.search(r"서울(?:특별시)?([가-힣]+구)", compact)
+    tail = compact[district_match.end():] if district_match else ""
+    dong_match = re.search(r"([가-힣]+동(?:\d가)?)", tail) if district_match else None
+    road_match = re.search(r"([가-힣0-9]+(?:대로|로|길)(?:\d+길)?)", tail) if district_match else None
+    return {
+        "ok": bool("서울" in compact and district_match and (dong_match or road_match)),
+        "district": district_match.group(1) if district_match else "",
+        "dong": dong_match.group(1) if dong_match else "",
+        "road": road_match.group(1) if road_match else "",
+    }
+
+
+def _average_location(items: list[dict]) -> tuple[float, float]:
+    lat_values = [float(item.get("lat")) for item in items if item.get("lat") is not None]
+    lng_values = [float(item.get("lng")) for item in items if item.get("lng") is not None]
+    return sum(lat_values) / len(lat_values), sum(lng_values) / len(lng_values)
+
+
+SEOUL_DISTRICT_DISPLAY_ORDER = [
+    "강서구",
+    "강북구",
+    "영등포구",
+    "양천구",
+    "성동구",
+    "동대문구",
+    "중랑구",
+    "강남구",
+    "종로구",
+    "강동구",
+    "관악구",
+    "광진구",
+    "구로구",
+    "금천구",
+    "노원구",
+    "도봉구",
+    "동작구",
+    "마포구",
+    "서대문구",
+    "서초구",
+    "성북구",
+    "송파구",
+    "용산구",
+    "은평구",
+    "중구",
+]
+
+
+def _scope_match_text(*values: object) -> str:
+    return compact_location_text(" ".join(str(value or "") for value in values)).replace("서울특별시", "서울시")
+
+
+def _district_sort_key(district: str) -> tuple[int, str]:
+    try:
+        return (SEOUL_DISTRICT_DISPLAY_ORDER.index(district), district)
+    except ValueError:
+        return (len(SEOUL_DISTRICT_DISPLAY_ORDER), district)
+
+
+def _find_district_in_query(compact_query: str, districts: list[str]) -> str:
+    for district in sorted(districts, key=len, reverse=True):
+        district_compact = _scope_match_text(district)
+        if district_compact and district_compact in compact_query:
+            return district
+    return ""
+
+
+def _find_dong_in_query(compact_query: str, dongs: list[str]) -> str:
+    for dong in sorted(dongs, key=len, reverse=True):
+        dong_compact = _scope_match_text(dong)
+        if dong_compact and dong_compact in compact_query:
+            return dong
+    return ""
+
+
+def hierarchical_local_location_suggestions(query: str, limit: int) -> list[dict]:
+    compact_query = _scope_match_text(query)
+    if not compact_query:
+        return []
+
+    apartment_dataset, _, _ = load_apartment_dataset()
+    by_district: dict[str, list[dict]] = {}
+    by_dong: dict[tuple[str, str], list[dict]] = {}
+    for apartment in apartment_dataset.get("apartments", []):
+        district = str(apartment.get("district") or "").strip()
+        dong = str(apartment.get("dong") or "").strip()
+        if not district or apartment.get("lat") is None or apartment.get("lng") is None:
+            continue
+        by_district.setdefault(district, []).append(apartment)
+        if dong:
+            by_dong.setdefault((district, dong), []).append(apartment)
+
+    districts = sorted(by_district, key=_district_sort_key)
+    selected_district = _find_district_in_query(compact_query, districts)
+    dongs = sorted({dong for district, dong in by_dong if district == selected_district}) if selected_district else []
+    selected_dong = _find_dong_in_query(compact_query, dongs) if dongs else ""
+    suggestions: list[dict] = []
+
+    if not selected_district:
+        city_query = compact_query in {"서", "서울", "서울시", "서울특별시"} or "서울시".startswith(compact_query)
+        if city_query:
+            suggestions.append(
+                {
+                    "type": "city",
+                    "label": "서울시",
+                    "address": "서울시",
+                    "lat": 37.5665,
+                    "lng": 126.9780,
+                    "district": "",
+                    "dong": "",
+                    "source": "local_city_scope",
+                    "selectable": False,
+                    "drilldown": True,
+                }
+            )
+        for district in districts:
+            label = f"서울시 {district}"
+            match_text = _scope_match_text(label, label.replace("서울시", "서울특별시"), label.replace("서울시", "서울"))
+            if not city_query and compact_query not in match_text:
+                continue
+            lat, lng = _average_location(by_district[district])
+            suggestions.append(
+                {
+                    "type": "district",
+                    "label": label,
+                    "address": label,
+                    "lat": lat,
+                    "lng": lng,
+                    "district": district,
+                    "dong": "",
+                    "source": "local_apartment_district",
+                    "selectable": False,
+                    "drilldown": True,
+                }
+            )
+            if len(suggestions) >= limit:
+                return suggestions[:limit]
+        return suggestions[:limit]
+
+    district_items = by_district[selected_district]
+    district_label = f"서울시 {selected_district}"
+    district_lat, district_lng = _average_location(district_items)
+
+    if not selected_dong:
+        district_index = compact_query.find(_scope_match_text(selected_district))
+        district_tail = compact_query[district_index + len(_scope_match_text(selected_district)):] if district_index >= 0 else ""
+        if not district_tail:
+            suggestions.append(
+                {
+                    "type": "district",
+                    "label": district_label,
+                    "address": district_label,
+                    "lat": district_lat,
+                    "lng": district_lng,
+                    "district": selected_district,
+                    "dong": "",
+                    "source": "local_apartment_district",
+                    "selectable": False,
+                    "drilldown": True,
+                }
+            )
+        for dong in dongs:
+            label = f"{selected_district} {dong}"
+            address = f"서울시 {selected_district} {dong}"
+            if compact_query not in _scope_match_text(address, label) and not _scope_match_text(address).startswith(compact_query):
+                continue
+            dong_lat, dong_lng = _average_location(by_dong[(selected_district, dong)])
+            suggestions.append(
+                {
+                    "type": "dong",
+                    "label": label,
+                    "address": address,
+                    "lat": dong_lat,
+                    "lng": dong_lng,
+                    "district": selected_district,
+                    "dong": dong,
+                    "source": "local_apartment_dong",
+                    "selectable": True,
+                    "drilldown": True,
+                }
+            )
+            if len(suggestions) >= limit:
+                return suggestions[:limit]
+        return suggestions[:limit]
+
+    dong_items = sorted(
+        by_dong.get((selected_district, selected_dong), []),
+        key=lambda item: (-(int(item.get("households") or 0)), str(item.get("name") or "")),
+    )
+    dong_label = f"{selected_district} {selected_dong}"
+    dong_address = f"서울시 {selected_district} {selected_dong}"
+    dong_lat, dong_lng = _average_location(dong_items)
+    suggestions.append(
+        {
+            "type": "dong",
+            "label": dong_label,
+            "address": dong_address,
+            "lat": dong_lat,
+            "lng": dong_lng,
+            "district": selected_district,
+            "dong": selected_dong,
+            "source": "local_apartment_dong",
+            "selectable": True,
+        }
+    )
+
+    for apartment in dong_items:
+        name = str(apartment.get("name") or "").strip()
+        if not name:
+            continue
+        label = f"{selected_dong} {name}"
+        address = str(apartment.get("address") or dong_address)
+        blob = _scope_match_text(label, address, name)
+        if compact_query not in blob and not _scope_match_text(dong_address).startswith(compact_query):
+            continue
+        suggestions.append(
+            {
+                "type": "apartment",
+                "label": label,
+                "address": address,
+                "lat": apartment.get("lat"),
+                "lng": apartment.get("lng"),
+                "district": selected_district,
+                "dong": selected_dong,
+                "apartmentName": name,
+                "source": "local_apartment_name",
+                "selectable": True,
+            }
+        )
+        if len(suggestions) >= limit:
+            break
+
+    return suggestions[:limit]
+
+
+def local_location_suggestions(query: str, limit: int) -> list[dict]:
+    return hierarchical_local_location_suggestions(query, limit)
+    compact_query = compact_location_text(query).replace("서울특별시", "서울")
+    if not compact_query:
+        return []
+
+    apartment_dataset, _, _ = load_apartment_dataset()
+    by_district: dict[str, list[dict]] = {}
+    by_dong: dict[tuple[str, str], list[dict]] = {}
+    for apartment in apartment_dataset.get("apartments", []):
+        district = str(apartment.get("district") or "").strip()
+        dong = str(apartment.get("dong") or "").strip()
+        if not district or apartment.get("lat") is None or apartment.get("lng") is None:
+            continue
+        by_district.setdefault(district, []).append(apartment)
+        if dong:
+            by_dong.setdefault((district, dong), []).append(apartment)
+
+    suggestions: list[dict] = []
+    for district, items in sorted(by_district.items()):
+        label = f"서울특별시 {district}"
+        match_blob = f"{label} {label.replace('서울특별시', '서울')}"
+        if compact_query not in compact_location_text(match_blob):
+            continue
+
+        lat, lng = _average_location(items)
+        suggestions.append(
+            {
+                "type": "district",
+                "label": label,
+                "address": label,
+                "lat": lat,
+                "lng": lng,
+                "district": district,
+                "dong": "",
+                "source": "local_apartment_district",
+                "selectable": False,
+                "hint": "동까지 선택하면 이동할 수 있습니다.",
+            }
+        )
+        for (dong_district, dong), dong_items in sorted(by_dong.items()):
+            if dong_district != district:
+                continue
+            dong_label = f"서울특별시 {district} {dong}"
+            dong_blob = f"{dong_label} {dong_label.replace('서울특별시', '서울')}"
+            if compact_query not in compact_location_text(dong_blob) and compact_query not in compact_location_text(match_blob):
+                continue
+            dong_lat, dong_lng = _average_location(dong_items)
+            suggestions.append(
+                {
+                    "type": "dong",
+                    "label": dong_label,
+                    "address": dong_label,
+                    "lat": dong_lat,
+                    "lng": dong_lng,
+                    "district": district,
+                    "dong": dong,
+                    "source": "local_apartment_dong",
+                    "selectable": True,
+                    "hint": "서울 구·동 기준 위치",
+                }
+            )
+            if len(suggestions) >= limit:
+                break
+        if len(suggestions) >= limit:
+            break
+
+    return suggestions[:limit]
+
+
+def normalize_location_suggestion(location: dict) -> dict:
+    parts = seoul_dong_parts(location.get("address"), location.get("roadAddress"), location.get("label"))
+    address = str(location.get("address") or location.get("roadAddress") or location.get("label") or "")
+    source = str(location.get("source") or "")
+    return {
+        "type": "place" if "keyword" in source else "address",
+        "label": location.get("label") or address,
+        "address": address,
+        "roadAddress": location.get("roadAddress", ""),
+        "lat": location.get("lat"),
+        "lng": location.get("lng"),
+        "district": parts["district"],
+        "dong": parts["dong"],
+        "category": location.get("category", ""),
+        "source": source,
+        "selectable": parts["ok"],
+        "hint": "장소 주소의 서울 구·동 확인됨" if parts["ok"] else "서울 구·동이 확인되는 후보만 이동할 수 있습니다.",
+    }
+
+
+def location_suggestions_response(raw: dict[str, list[str]]) -> dict:
+    query = single_value(raw, "query").strip()
+    try:
+        limit = int(single_value(raw, "limit", "8"))
+    except ValueError:
+        limit = 8
+    limit = max(1, min(limit, 30))
+
+    suggestions = local_location_suggestions(query, limit)
+    compact_query = compact_location_text(query)
+    has_scope_drilldown = any(item.get("drilldown") for item in suggestions)
+    should_search_kakao = (
+        len(compact_query) >= 2
+        and compact_query not in {"서울", "서울시", "서울특별시"}
+        and not has_scope_drilldown
+    )
+    if should_search_kakao and len(suggestions) < limit:
+        for location in search_locations_with_kakao(query, limit=limit):
+            suggestions.append(normalize_location_suggestion(location))
+            if len(suggestions) >= limit:
+                break
+
+    deduped: list[dict] = []
+    seen: set[str] = set()
+    for item in suggestions:
+        key = compact_location_text(f"{item.get('label')}|{item.get('address')}|{item.get('lat')}|{item.get('lng')}")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+
+    return {
+        "ok": True,
+        "query": query,
+        "requires": "서울특별시 + 구 + 동",
+        "suggestions": deduped[:limit],
+        "integrations": credential_status(),
+    }
+
+
+def validate_destination_scope(label: str, address: str = "") -> None:
+    if not label and not address:
+        return
+    if not seoul_dong_parts(label, address)["ok"]:
+        raise ValueError("회사/목적지는 서울특별시 + 구 + 동까지 확인되는 주소나 장소를 선택해주세요.")
 
 
 def decorate_dataset(dataset: dict) -> dict:
@@ -355,6 +737,7 @@ def known_locations() -> dict[str, dict]:
             locations[area["station"]] = location
 
     apartment_dataset, _, _ = load_apartment_dataset()
+    dong_groups: dict[tuple[str, str], list[dict]] = {}
     for apartment in apartment_dataset.get("apartments", []):
         location = {
             "label": apartment.get("name", "아파트"),
@@ -368,6 +751,22 @@ def known_locations() -> dict[str, dict]:
             locations[apartment["name"]] = location
         if apartment.get("address"):
             locations[apartment["address"]] = location
+        district = str(apartment.get("district") or "").strip()
+        dong = str(apartment.get("dong") or "").strip()
+        if district and dong and apartment.get("lat") is not None and apartment.get("lng") is not None:
+            dong_groups.setdefault((district, dong), []).append(apartment)
+    for (district, dong), apartments in dong_groups.items():
+        lat, lng = _average_location(apartments)
+        address = f"서울특별시 {district} {dong}"
+        location = {
+            "label": address,
+            "address": address,
+            "name": address,
+            "lat": lat,
+            "lng": lng,
+        }
+        locations[address] = location
+        locations[address.replace("서울특별시", "서울")] = location
     return locations
 
 
@@ -590,10 +989,14 @@ def resolve_route_location(raw: dict[str, list[str]], prefix: str, fallback_key:
 def commute_route(raw: dict[str, list[str]]) -> dict:
     origin = resolve_route_location(raw, "origin")
     destination_query = single_value(raw, "destinationQuery")
+    destination_address = single_value(raw, "destinationAddress")
+    if destination_query:
+        validate_destination_scope(destination_query, destination_address)
     destination_key = single_value(raw, "destination", "gangnam")
-    destination = resolve_route_location(raw, "destination", destination_query or destination_key)
+    destination = resolve_route_location(raw, "destination", destination_address or destination_query or destination_key)
     if destination_query:
         destination["label"] = destination_query
+        destination["address"] = destination_address or destination_query
     provider = single_value(raw, "provider", "auto")
     transport_mode = single_value(raw, "transportMode", "transit")
     route = build_commute_route(origin, destination, provider, transport_mode)
@@ -680,6 +1083,9 @@ class Handler(BaseHTTPRequestHandler):
                 raw = parse_qs(parsed.query)
                 location = resolve_location(single_value(raw, "query"), known_locations())
                 self.send_json(HTTPStatus.OK, {"ok": True, "location": location, "integrations": credential_status()})
+                return
+            if path == "/api/location-suggestions":
+                self.send_json(HTTPStatus.OK, location_suggestions_response(parse_qs(parsed.query)))
                 return
             if path == "/api/commute-route":
                 self.send_json(HTTPStatus.OK, commute_route(parse_qs(parsed.query)))
