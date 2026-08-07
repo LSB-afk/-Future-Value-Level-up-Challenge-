@@ -2126,6 +2126,22 @@ function resetMapToSeoul() {
   state.map.fitted = true;
 }
 
+// 접힘 상태는 재렌더링과 단지 전환에도 유지되도록 전역으로 들고 간다.
+const propertySectionsOpen = new Set(["basic", "price"]);
+
+function propertySection({ key, title, badge = "", badgeTone = "", body, wide = true }) {
+  const open = propertySectionsOpen.has(key);
+  return `
+    <details class="property-card ${wide ? "wide" : ""} is-collapsible" data-property-section="${escapeHtml(key)}"${open ? " open" : ""}>
+      <summary class="property-card-title">
+        <h4>${escapeHtml(title)}</h4>
+        ${badge ? `<span class="section-badge${badgeTone ? ` tone-${escapeHtml(badgeTone)}` : ""}">${escapeHtml(badge)}</span>` : ""}
+      </summary>
+      <div class="property-card-body">${body}</div>
+    </details>
+  `;
+}
+
 function propertyMetric(label, value, note = "") {
   return `
     <div class="property-metric">
@@ -2780,6 +2796,13 @@ function bindPropertyDashboardEvents() {
     button.addEventListener("click", () => handleClauseCopy(button));
   });
   document.querySelector("#openAgentFromDashboard")?.addEventListener("click", openAgentPanel);
+  document.querySelectorAll("[data-property-section]").forEach((section) => {
+    section.addEventListener("toggle", () => {
+      const key = section.dataset.propertySection;
+      if (section.open) propertySectionsOpen.add(key);
+      else propertySectionsOpen.delete(key);
+    });
+  });
 }
 
 function renderPropertyDashboard() {
@@ -2822,113 +2845,119 @@ function renderPropertyDashboard() {
   const areaText = (detail.areaOptions || []).map((item) => `${item.exclusiveM2}㎡`).join(" / ");
   nodes.propertyDashboard.innerHTML = `
     <div class="property-grid">
-      <section class="property-card">
-        <div class="property-card-title">
-          <h4>기본 정보</h4>
-          <span>${detail.prototype ? "프로토타입 데이터" : "OpenAptInfo"}</span>
-        </div>
-        <div class="property-metrics two">
-          ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
-          ${propertyMetric("주택 유형", detail.housingType || "확인 필요")}
-          ${propertyMetric("준공/사용승인", detail.approvalYear ? `${detail.approvalYear}년` : "확인 필요", `${formatNumber(detail.buildingAge)}년 경과`)}
-          ${propertyMetric(
-            "세대/동수",
-            detail.households ? `${formatNumber(detail.households)}세대` : "미제공",
-            detail.buildingCount ? `${formatNumber(detail.buildingCount)}개동` : "건축물대장 확인 필요"
-          )}
-          ${propertyMetric("면적 옵션", areaText || "확인 필요")}
-          ${propertyMetric("용도지역", detail.landUse || "연계 예정")}
-        </div>
-      </section>
-
-      <section class="property-card">
-        <div class="property-card-title">
-          <h4>가격 정보</h4>
-          <span>${escapeHtml(price.sourceLabel || "공공 데이터 기반")}</span>
-        </div>
-        <div class="property-metrics two">
-          ${propertyMetric("최근 매매가", formatMoney10k(price.recentSale10k), "실거래 API 연계 전 추정")}
-          ${propertyMetric("최근 전세가", formatMoney10k(price.recentJeonse10k), `전세가율 ${formatPercent(price.jeonseRatio)}`)}
-          ${propertyMetric("월세", `${formatMoney10k(price.monthlyDeposit10k)} / 월 ${formatMoney10k(price.monthlyRent10k)}`, "인근 전월세 데이터 기반")}
-          ${propertyMetric("공시가격", formatMoney10k(price.officialPrice10k), "공시가격 API 연계 전 추정")}
-        </div>
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>거래 추이</h4>
-          <span>최근 12개월</span>
-        </div>
-        ${renderTrendChart(detail.transactions)}
-      </section>
-
-      <section class="property-card">
-        <div class="property-card-title">
-          <h4>전세 위험 신호 점검</h4>
-          <span>법적 판정 아님</span>
-        </div>
-        ${renderGaptongVerdict(safeguard)}
-        <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
-        <ul class="risk-list">${renderRiskSignals(risk)}</ul>
-        <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>계약 전 확인 체크리스트</h4>
-          <span>주의 요소 안내</span>
-        </div>
-        ${renderContractChecklist(risk)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>정보 사각지대</h4>
-          <span>어떤 시세 데이터에도 안 잡히는 항목</span>
-        </div>
-        ${renderBlindSpots(safeguard)}
-        <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
-        ${renderSelfServeChecks(safeguard)}
-        <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
-        ${renderConsentChecks(safeguard)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>대항력 확보 타임라인</h4>
-          <span>전입신고 익일 0시까지의 공백</span>
-        </div>
-        ${renderTenancyTimeline(safeguard)}
-        <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
-        ${renderSpecialClauses(safeguard)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>가까운 안전계약 컨설팅</h4>
-          <span>계약 전 전문가 검토</span>
-        </div>
-        ${renderSupportCenter(safeguard)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>AI 요약</h4>
-          <span>가격·통근·입지 근거</span>
-        </div>
-        <p class="ai-headline">${escapeHtml(summary.headline || "선택한 단지의 가격·통근·생활권 데이터를 종합합니다.")}</p>
-        <div class="ai-summary-grid">
-          <div>
-            <strong>장점</strong>
-            <ul>${(summary.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+      ${propertySection({
+        key: "basic",
+        title: "기본 정보",
+        badge: detail.prototype ? "프로토타입 데이터" : "OpenAptInfo",
+        body: `
+          <div class="property-metrics two">
+            ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
+            ${propertyMetric("주택 유형", detail.housingType || "확인 필요")}
+            ${propertyMetric("준공/사용승인", detail.approvalYear ? `${detail.approvalYear}년` : "확인 필요", `${formatNumber(detail.buildingAge)}년 경과`)}
+            ${propertyMetric(
+              "세대/동수",
+              detail.households ? `${formatNumber(detail.households)}세대` : "미제공",
+              detail.buildingCount ? `${formatNumber(detail.buildingCount)}개동` : "건축물대장 확인 필요"
+            )}
+            ${propertyMetric("면적 옵션", areaText || "확인 필요")}
+            ${propertyMetric("용도지역", detail.landUse || "연계 예정")}
           </div>
-          <div>
-            <strong>주의</strong>
-            <ul>${([...(summary.weaknesses || []), ...(summary.cautions || [])]).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        `
+      })}
+
+      ${propertySection({
+        key: "price",
+        title: "가격 정보",
+        badge: `전세가율 ${formatPercent(price.jeonseRatio)}`,
+        body: `
+          <div class="property-metrics two">
+            ${propertyMetric("최근 매매가", formatMoney10k(price.recentSale10k), "실거래 API 연계 전 추정")}
+            ${propertyMetric("최근 전세가", formatMoney10k(price.recentJeonse10k), `전세가율 ${formatPercent(price.jeonseRatio)}`)}
+            ${propertyMetric("월세", `${formatMoney10k(price.monthlyDeposit10k)} / 월 ${formatMoney10k(price.monthlyRent10k)}`, "인근 전월세 데이터 기반")}
+            ${propertyMetric("공시가격", formatMoney10k(price.officialPrice10k), "공시가격 API 연계 전 추정")}
           </div>
-        </div>
-        <p class="recommendation-text">${escapeHtml(summary.recommendation || "계약 전 등기부와 보증보험 가능 여부를 별도로 확인해야 합니다.")}</p>
-      </section>
+          <p class="property-note">${escapeHtml(price.sourceLabel || "공공 데이터 기반")}</p>
+        `
+      })}
+
+      ${propertySection({
+        key: "trend",
+        title: "거래 추이",
+        badge: "최근 12개월",
+        body: renderTrendChart(detail.transactions)
+      })}
+
+      ${propertySection({
+        key: "risk",
+        title: "전세 위험 신호 점검",
+        badge: risk.level || "점검",
+        badgeTone: riskTone(risk.levelKey === "low" ? "ok" : risk.levelKey),
+        body: `
+          ${renderGaptongVerdict(safeguard)}
+          <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
+          <ul class="risk-list">${renderRiskSignals(risk)}</ul>
+          <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
+        `
+      })}
+
+      ${propertySection({
+        key: "checklist",
+        title: "계약 전 확인 체크리스트",
+        badge: `필수 ${(risk.contractChecklist || []).filter((item) => item.priority === "high").length}건`,
+        badgeTone: "warn",
+        body: renderContractChecklist(risk)
+      })}
+
+      ${propertySection({
+        key: "blindspots",
+        title: "정보 사각지대",
+        badge: `${(safeguard.blindSpots || []).length}건`,
+        body: `
+          ${renderBlindSpots(safeguard)}
+          <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
+          ${renderSelfServeChecks(safeguard)}
+          <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
+          ${renderConsentChecks(safeguard)}
+        `
+      })}
+
+      ${propertySection({
+        key: "tenancy",
+        title: "대항력 확보 타임라인",
+        badge: `특약 ${(safeguard.timeline?.clauses || []).length}종`,
+        body: `
+          ${renderTenancyTimeline(safeguard)}
+          <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
+          ${renderSpecialClauses(safeguard)}
+        `
+      })}
+
+      ${propertySection({
+        key: "center",
+        title: "가까운 안전계약 컨설팅",
+        badge: safeguard.center ? `약 ${safeguard.center.distanceKm}km` : "계약 전 전문가 검토",
+        body: renderSupportCenter(safeguard)
+      })}
+
+      ${propertySection({
+        key: "summary",
+        title: "AI 요약",
+        badge: "가격·통근·입지 근거",
+        body: `
+          <p class="ai-headline">${escapeHtml(summary.headline || "선택한 단지의 가격·통근·생활권 데이터를 종합합니다.")}</p>
+          <div class="ai-summary-grid">
+            <div>
+              <strong>장점</strong>
+              <ul>${(summary.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+            </div>
+            <div>
+              <strong>주의</strong>
+              <ul>${([...(summary.weaknesses || []), ...(summary.cautions || [])]).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+            </div>
+          </div>
+          <p class="recommendation-text">${escapeHtml(summary.recommendation || "계약 전 등기부와 보증보험 가능 여부를 별도로 확인해야 합니다.")}</p>
+        `
+      })}
 
       <section class="property-card wide agent-cta">
         <div class="property-card-title">
