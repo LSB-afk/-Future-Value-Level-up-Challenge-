@@ -587,13 +587,37 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
         key=lambda item: (item["preview"]["riskScore"], abs(item["preview"]["sale10k"] - price["recentSale10k"])),
     )[:3]
 
+    safeguard = detail.get("safeguard") or {}
+    gaptong = safeguard.get("gaptong") or {}
+    timeline = safeguard.get("timeline") or {}
+    center = safeguard.get("center") or {}
+
     if any(token in text for token in ["비슷", "더 안전", "대안", "찾아"]):
         if safer:
             names = ", ".join(f"{item['name']}({item['preview']['riskLevel']})" for item in safer)
             answer = f"현재 스냅샷 기준 더 낮은 위험 점수 후보는 {names}입니다. 비교표에 추가해 전세가율과 입지 점수를 함께 보세요."
         else:
             answer = "현재 로딩된 단지 중에는 더 낮은 위험 점수 후보가 충분하지 않습니다. 서울 OpenAptInfo 키를 연결하면 전체 단지에서 대안을 찾을 수 있습니다."
-    elif any(token in text for token in ["전세", "괜찮", "안전", "사기", "깡통"]):
+    elif any(token in text for token in ["깡통", "근저당", "담보", "빚"]):
+        answer = (
+            f"{topic(detail['name'])} HUG 깡통주택 기준({gaptong.get('thresholdPct', 80)}%) 대비 '{gaptong.get('verdictLabel', '판정 불가')}'입니다. "
+            f"{gaptong.get('detail', '')} "
+            "등기부 을구의 채권최고액을 이 금액과 비교하면 바로 판단할 수 있습니다."
+        )
+    elif any(token in text for token in ["서류", "특약", "확인해야", "체크", "등기", "준비"]):
+        clauses = ", ".join(item["title"] for item in timeline.get("clauses", []))
+        answer = (
+            "계약 전에는 등기부등본 갑구(소유자·신탁·압류)와 을구(근저당)를 먼저 보고, 잔금 직전에 한 번 더 열람하세요. "
+            f"이 단지 화면에서는 {clauses} 문구를 바로 복사할 수 있습니다. "
+            "임대인 세금 체납은 동의가 필요하니, 거부당하면 특약으로 대체하는 편이 안전합니다."
+        )
+    elif any(token in text for token in ["상담", "센터", "컨설팅", "도움"]):
+        answer = (
+            f"가장 가까운 곳은 {center.get('name', '전세피해 및 예방지원센터')}(약 {center.get('distanceKm', '-')}km)입니다. "
+            f"운영 {center.get('days', '')} {center.get('hours', '')}, 전화 {center.get('phone', '')}. "
+            "공인중개사가 등기부등본과 건축물대장을 함께 검토해 주며 예비 임차인도 계약 전에 이용할 수 있습니다."
+        )
+    elif any(token in text for token in ["전세", "괜찮", "안전", "사기"]):
         answer = (
             f"{detail['name']} 전세는 '{risk['level']}' 단계로 보입니다. "
             f"전세가율 {price['jeonseRatio']}%, 공시가격 대비 보증금 비율 {price['depositOfficialRatio']}%가 핵심 근거입니다. "
@@ -616,6 +640,15 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
         "answer": answer,
         "basis": base_basis,
         "basisGroups": basis_groups,
+        # 규칙 기반 엔진이 실제로 답할 수 있는 갈래만 후속 질문으로 제안한다.
+        "followUps": [
+            "전세 들어가도 괜찮아?",
+            "깡통주택이야?",
+            "계약 전에 뭘 확인해야 해?",
+            "왜 추천한 거야?",
+            "비슷한 가격대에 더 안전한 곳 있어?",
+            "가까운 상담 센터 알려줘",
+        ],
         "suggestedComparisons": [
             {
                 "id": item["id"],

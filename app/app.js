@@ -110,11 +110,16 @@ const state = {
     isLoading: false,
     detail: null,
     error: "",
-    requestId: 0,
-    agentQuestion: "이 아파트 전세 들어가도 괜찮아?",
-    agentAnswer: null,
-    agentLoading: false,
-    agentError: ""
+    requestId: 0
+  },
+  agent: {
+    open: false,
+    messages: [],
+    followUps: [],
+    targetId: null,
+    targetName: "",
+    isLoading: false,
+    error: ""
   },
   bookmarks: {
     ids: [],
@@ -1203,8 +1208,6 @@ function scheduleRefresh(delay = 140) {
   state.property.detail = null;
   state.property.error = "";
   state.property.isLoading = false;
-  state.property.agentAnswer = null;
-  state.property.agentError = "";
   state.property.requestId += 1;
   resetRouteState();
   if (state.map) {
@@ -2373,33 +2376,20 @@ async function handleClauseCopy(button) {
   }, 1600);
 }
 
-function renderAgentAnswer() {
-  const answer = state.property.agentAnswer;
-  if (state.property.agentLoading) {
-    return `<div class="agent-answer is-loading">데이터 근거를 정리하는 중입니다.</div>`;
-  }
-  if (state.property.agentError) {
-    return `<div class="agent-answer is-error">${escapeHtml(state.property.agentError)}</div>`;
-  }
-  if (!answer) {
-    return `<div class="agent-answer">질문을 입력하면 가격·입지·전세 위험 신호 근거를 함께 답변합니다.</div>`;
-  }
-  return `
-    <div class="agent-answer">
-      <p>${escapeHtml(answer.answer)}</p>
-      ${renderAgentBasisGroups(answer)}
-      ${(answer.suggestedComparisons || []).length ? `
-        <div class="agent-suggestions">
-          ${(answer.suggestedComparisons || []).map((item) => `
-            <button type="button" class="chip-button" data-agent-property-id="${escapeHtml(item.id)}">
-              ${escapeHtml(item.name)} · ${escapeHtml(item.saleLabel)} · ${escapeHtml(item.riskLevel)}
-            </button>
-          `).join("")}
-        </div>
-      ` : ""}
-      <small>${escapeHtml(answer.disclaimer || "")}</small>
-    </div>
-  `;
+const AGENT_DEFAULT_FOLLOW_UPS = [
+  "전세 들어가도 괜찮아?",
+  "깡통주택이야?",
+  "계약 전에 뭘 확인해야 해?",
+  "왜 추천한 거야?",
+  "비슷한 가격대에 더 안전한 곳 있어?"
+];
+
+// 상세 패널에서 고른 단지를 우선하고, 없으면 추천 1순위를 대화 대상으로 삼는다.
+function agentTarget() {
+  const detail = state.property.detail;
+  if (detail?.id) return { id: detail.id, name: detail.name };
+  const top = state.results[0] || state.apartmentCandidates[0] || null;
+  return top?.id ? { id: top.id, name: top.name } : null;
 }
 
 function renderAgentBasisGroups(answer) {
@@ -2407,16 +2397,177 @@ function renderAgentBasisGroups(answer) {
   if (!groups) {
     return `<ul>${(answer?.basis || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   }
+  const filled = Object.entries(groups).filter(([, items]) => (items || []).length);
+  if (!filled.length) return "";
   return `
-    <div class="agent-basis-grid">
-      ${Object.entries(groups).map(([title, items]) => `
-        <section>
-          <strong>${escapeHtml(title)}</strong>
-          <ul>${(items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </section>
-      `).join("")}
+    <details class="agent-basis">
+      <summary>근거 ${filled.length}종 보기</summary>
+      <div class="agent-basis-grid">
+        ${filled.map(([title, items]) => `
+          <section>
+            <strong>${escapeHtml(title)}</strong>
+            <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </section>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function renderAgentMessage(message) {
+  if (message.role === "user") {
+    return `<div class="agent-msg is-user"><p>${escapeHtml(message.text)}</p></div>`;
+  }
+  const answer = message.answer || {};
+  const comparisons = answer.suggestedComparisons || [];
+  return `
+    <div class="agent-msg is-agent">
+      ${message.target ? `<span class="agent-msg-target">${escapeHtml(message.target)}</span>` : ""}
+      <p>${escapeHtml(answer.answer || message.text || "")}</p>
+      ${renderAgentBasisGroups(answer)}
+      ${comparisons.length ? `
+        <div class="agent-suggestions">
+          ${comparisons.map((item) => `
+            <button type="button" class="chip-button" data-agent-property-id="${escapeHtml(item.id)}">
+              ${escapeHtml(item.name)} · ${escapeHtml(item.saleLabel)} · ${escapeHtml(item.riskLevel)}
+            </button>
+          `).join("")}
+        </div>
+      ` : ""}
+      ${answer.disclaimer ? `<small>${escapeHtml(answer.disclaimer)}</small>` : ""}
     </div>
   `;
+}
+
+function renderAgentPanel() {
+  const panel = document.querySelector("#agentPanel");
+  const launcher = document.querySelector("#agentLauncher");
+  if (!panel || !launcher) return;
+
+  panel.hidden = !state.agent.open;
+  launcher.setAttribute("aria-expanded", String(state.agent.open));
+  launcher.classList.toggle("is-active", state.agent.open);
+  if (!state.agent.open) return;
+
+  const target = agentTarget();
+  const context = document.querySelector("#agentContextLabel");
+  if (context) {
+    context.textContent = target
+      ? `${target.name} 기준으로 답변합니다`
+      : "매칭을 실행하거나 단지를 선택하면 그 단지 기준으로 답변합니다";
+  }
+
+  const thread = document.querySelector("#agentThread");
+  if (thread) {
+    const intro = state.agent.messages.length
+      ? ""
+      : `<div class="agent-msg is-agent is-intro">
+           <p>가격·통근·전세 위험 신호 데이터를 근거로 답변합니다. 아래 질문을 눌러 시작해 보세요.</p>
+         </div>`;
+    thread.innerHTML = intro
+      + state.agent.messages.map(renderAgentMessage).join("")
+      + (state.agent.isLoading ? `<div class="agent-msg is-agent is-loading">근거를 정리하는 중입니다.</div>` : "")
+      + (state.agent.error ? `<div class="agent-msg is-agent is-error">${escapeHtml(state.agent.error)}</div>` : "");
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  const followUps = document.querySelector("#agentFollowUps");
+  if (followUps) {
+    const items = state.agent.followUps.length ? state.agent.followUps : AGENT_DEFAULT_FOLLOW_UPS;
+    followUps.innerHTML = items
+      .map((item) => `<button type="button" class="agent-followup" data-agent-followup="${escapeHtml(item)}">${escapeHtml(item)}</button>`)
+      .join("");
+  }
+
+  bindAgentThreadEvents();
+}
+
+function openAgentPanel() {
+  state.agent.open = true;
+  renderAgentPanel();
+  document.querySelector("#agentInput")?.focus();
+}
+
+function closeAgentPanel() {
+  state.agent.open = false;
+  renderAgentPanel();
+  document.querySelector("#agentLauncher")?.focus();
+}
+
+function resetAgentConversation() {
+  state.agent.messages = [];
+  state.agent.followUps = [];
+  state.agent.error = "";
+  renderAgentPanel();
+}
+
+async function sendAgentMessage(question) {
+  const text = String(question || "").trim();
+  if (!text || state.agent.isLoading) return;
+
+  const target = agentTarget();
+  if (!target) {
+    state.agent.error = "먼저 목적지를 입력해 매칭을 실행하거나 지도에서 단지를 선택하세요.";
+    renderAgentPanel();
+    return;
+  }
+
+  state.agent.messages.push({ role: "user", text });
+  state.agent.isLoading = true;
+  state.agent.error = "";
+  renderAgentPanel();
+
+  try {
+    const params = new URLSearchParams({ id: target.id, question: text });
+    const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
+    const answer = payload.agent || null;
+    state.agent.messages.push({ role: "agent", answer, target: target.name });
+    state.agent.followUps = answer?.followUps || [];
+  } catch (error) {
+    state.agent.error = `AI Agent 응답 실패: ${error.message}`;
+  } finally {
+    state.agent.isLoading = false;
+    renderAgentPanel();
+  }
+}
+
+function bindAgentThreadEvents() {
+  document.querySelectorAll("#agentThread [data-agent-property-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectProperty(button.dataset.agentPropertyId);
+    });
+  });
+  document.querySelectorAll("#agentFollowUps [data-agent-followup]").forEach((button) => {
+    button.addEventListener("click", () => sendAgentMessage(button.dataset.agentFollowup));
+  });
+}
+
+function bindAgentPanelEvents() {
+  document.querySelector("#agentLauncher")?.addEventListener("click", () => {
+    if (state.agent.open) closeAgentPanel();
+    else openAgentPanel();
+  });
+  document.querySelector("#agentCloseButton")?.addEventListener("click", closeAgentPanel);
+  document.querySelector("#agentResetButton")?.addEventListener("click", resetAgentConversation);
+  const submitAgentInput = () => {
+    const input = document.querySelector("#agentInput");
+    const value = input?.value || "";
+    if (input) input.value = "";
+    sendAgentMessage(value);
+  };
+  document.querySelector("#agentForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    submitAgentInput();
+  });
+  document.querySelector("#agentInput")?.addEventListener("keydown", (event) => {
+    // 한글 IME 조합 중 Enter는 글자 확정용이라 전송하면 안 된다.
+    if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    submitAgentInput();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.agent.open) closeAgentPanel();
+  });
 }
 
 function bookmarkSummary(id) {
@@ -2618,48 +2769,17 @@ function closePropertyDashboard() {
   state.property.detail = null;
   state.property.error = "";
   state.property.isLoading = false;
-  state.property.agentAnswer = null;
-  state.property.agentError = "";
   state.property.requestId += 1;
   renderApartmentLayer();
   renderPropertyDashboard();
   renderDetailSubpanelState();
 }
 
-async function askPropertyAgent(event) {
-  event?.preventDefault();
-  const detail = state.property.detail;
-  if (!detail) return;
-  const input = document.querySelector("#propertyAgentQuestion");
-  const question = input?.value?.trim() || state.property.agentQuestion;
-  state.property.agentQuestion = question;
-  state.property.agentLoading = true;
-  state.property.agentError = "";
-  renderPropertyDashboard();
-  try {
-    const params = new URLSearchParams({ id: detail.id, question });
-    const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
-    state.property.agentAnswer = payload.agent || null;
-  } catch (error) {
-    state.property.agentError = `AI Agent 응답 실패: ${error.message}`;
-  } finally {
-    state.property.agentLoading = false;
-    renderPropertyDashboard();
-  }
-}
-
 function bindPropertyDashboardEvents() {
-  bindPropertyAgentEvents();
   document.querySelectorAll(".clause-copy").forEach((button) => {
     button.addEventListener("click", () => handleClauseCopy(button));
   });
-}
-
-function bindPropertyAgentEvents() {
-  document.querySelector("#propertyAgentForm")?.addEventListener("submit", askPropertyAgent);
-  document.querySelectorAll("[data-agent-property-id]").forEach((button) => {
-    button.addEventListener("click", () => selectProperty(button.dataset.agentPropertyId));
-  });
+  document.querySelector("#openAgentFromDashboard")?.addEventListener("click", openAgentPanel);
 }
 
 function renderPropertyDashboard() {
@@ -2810,21 +2930,13 @@ function renderPropertyDashboard() {
         <p class="recommendation-text">${escapeHtml(summary.recommendation || "계약 전 등기부와 보증보험 가능 여부를 별도로 확인해야 합니다.")}</p>
       </section>
 
-      <section class="property-card wide">
+      <section class="property-card wide agent-cta">
         <div class="property-card-title">
           <h4>AI Agent 질의응답</h4>
           <span>근거 기반 설명</span>
         </div>
-        <form id="propertyAgentForm" class="agent-form">
-          <input
-            id="propertyAgentQuestion"
-            type="text"
-            value="${escapeHtml(state.property.agentQuestion || `${detail.name} 전세 들어가도 괜찮아?`)}"
-            aria-label="AI Agent 질문"
-          >
-          <button class="primary-button compact-button" type="submit">질문</button>
-        </form>
-        ${renderAgentAnswer()}
+        <p class="property-note">전세 안전성, 깡통 여부, 확인 서류를 대화로 물어볼 수 있습니다.</p>
+        <button id="openAgentFromDashboard" class="primary-button compact-button" type="button">AI Agent에게 물어보기</button>
       </section>
 
     </div>
@@ -2840,8 +2952,6 @@ async function selectProperty(id) {
   state.property.detail = null;
   state.property.isLoading = true;
   state.property.error = "";
-  state.property.agentAnswer = null;
-  state.property.agentError = "";
   state.property.requestId += 1;
   const requestId = state.property.requestId;
   renderApartmentLayer();
@@ -2852,9 +2962,6 @@ async function selectProperty(id) {
     const payload = await fetchJson(`/api/property-detail?id=${encodeURIComponent(id)}`);
     if (requestId !== state.property.requestId) return;
     state.property.detail = payload.detail || null;
-    if (state.property.detail) {
-      state.property.agentQuestion = `${state.property.detail.name} 전세 들어가도 괜찮아?`;
-    }
   } catch (error) {
     if (requestId !== state.property.requestId) return;
     state.property.detail = null;
@@ -3595,6 +3702,7 @@ function render() {
   renderInfrastructurePanel();
   renderDetailSubpanelState();
   renderEvidenceTable();
+  renderAgentPanel();
 }
 
 function selectApartmentMatch(id, options = {}) {
@@ -3609,8 +3717,6 @@ function selectApartmentMatch(id, options = {}) {
     state.property.detail = null;
     state.property.error = "";
     state.property.isLoading = false;
-    state.property.agentAnswer = null;
-    state.property.agentError = "";
     state.property.requestId += 1;
   }
   state.selectedId = id;
@@ -3862,8 +3968,6 @@ function bindEvents() {
     state.property.detail = null;
     state.property.error = "";
     state.property.isLoading = false;
-    state.property.agentAnswer = null;
-    state.property.agentError = "";
     state.property.requestId += 1;
     resetRouteState();
     refreshRecommendations();
@@ -3937,8 +4041,10 @@ function bindEvents() {
 async function init() {
   loadBookmarksFromStorage();
   bindEvents();
+  bindAgentPanelEvents();
   initNavigation();
   render();
+  renderAgentPanel();
   await loadAreas();
   await loadApartmentCandidates();
   render();
