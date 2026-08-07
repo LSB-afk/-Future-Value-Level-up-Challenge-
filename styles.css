@@ -2422,6 +2422,85 @@ details > summary span {
   gap: 10px;
 }
 
+/* 접이식 섹션: 헤더만 훑고 필요한 것만 펼치도록 한다. */
+.property-card.is-collapsible {
+  display: block;
+  padding: 0;
+  overflow: hidden;
+}
+
+.property-card.is-collapsible > summary {
+  padding: 14px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.property-card.is-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.property-card.is-collapsible > summary::after {
+  content: "";
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-left: 2px;
+  border-right: 2px solid var(--muted-2);
+  border-bottom: 2px solid var(--muted-2);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.15s ease;
+}
+
+.property-card.is-collapsible[open] > summary::after {
+  transform: rotate(-135deg) translate(-2px, -2px);
+}
+
+.property-card.is-collapsible > summary:hover {
+  background: #f1f5f9;
+}
+
+.property-card.is-collapsible > summary h4 {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.property-card-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 14px 14px;
+}
+
+.section-badge {
+  flex: 0 0 auto;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.section-badge.tone-safe {
+  border-color: rgba(3, 199, 90, 0.35);
+  background: var(--naver-soft);
+  color: var(--naver-strong);
+}
+
+.section-badge.tone-warn {
+  border-color: rgba(185, 138, 0, 0.35);
+  background: #fff8df;
+  color: #b98a00;
+}
+
+.section-badge.tone-danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: #fff1f2;
+  color: var(--danger);
+}
+
 .property-card-title span {
   color: var(--muted);
   font-size: 11px;
