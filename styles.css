@@ -1897,6 +1897,264 @@ details > summary span {
   display: none;
 }
 
+/* AI Agent 런처 + 대화 패널 */
+/* 상세 패널이 열려 지도 폭이 줄어도 크기가 유지되도록 뷰포트에 고정한다. */
+.agent-launcher {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 1340;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 10px 12px;
+  border: 1px solid rgba(3, 199, 90, 0.35);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--naver-strong);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  box-shadow: var(--shadow-strong);
+  transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.agent-launcher svg {
+  width: 20px;
+  height: 20px;
+}
+
+.agent-launcher:hover {
+  transform: translateY(-1px);
+  background: var(--naver-soft);
+}
+
+.agent-launcher.is-active {
+  background: var(--naver);
+  border-color: var(--naver);
+  color: #fff;
+}
+
+.agent-panel[hidden] {
+  display: none;
+}
+
+.agent-panel {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 1345;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  width: min(420px, calc(100vw - 36px));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--shadow-strong);
+}
+
+.agent-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-panel-title strong {
+  display: block;
+  font-size: 14px;
+}
+
+.agent-context {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.agent-panel-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.agent-icon-button {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agent-icon-button:hover {
+  border-color: var(--naver);
+  color: var(--naver-strong);
+}
+
+.agent-thread {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  background: #f8fafc;
+  scrollbar-width: thin;
+}
+
+.agent-msg {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.agent-msg p {
+  margin: 0;
+}
+
+.agent-msg.is-user {
+  justify-self: end;
+  border-bottom-right-radius: 4px;
+  background: var(--naver);
+  color: #fff;
+  font-weight: 700;
+}
+
+.agent-msg.is-agent {
+  justify-self: start;
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 4px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.agent-msg.is-loading,
+.agent-msg.is-intro {
+  color: var(--muted);
+}
+
+.agent-msg.is-error {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: #fff7f7;
+  color: var(--danger);
+}
+
+.agent-msg-target {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--naver-strong);
+}
+
+.agent-msg small {
+  display: block;
+  margin-top: 8px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--muted-2);
+}
+
+.agent-basis {
+  margin-top: 8px;
+}
+
+.agent-basis summary {
+  font-size: 11px;
+  font-weight: 900;
+  color: var(--naver-strong);
+  cursor: pointer;
+}
+
+.agent-basis .agent-basis-grid {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.agent-basis .agent-basis-grid section {
+  padding: 8px 10px;
+}
+
+.agent-basis .agent-basis-grid strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.agent-basis .agent-basis-grid ul {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.agent-followups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+
+.agent-followup {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.agent-followup:hover {
+  border-color: var(--naver);
+  color: var(--naver-strong);
+  background: var(--naver-soft);
+}
+
+.agent-composer {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+
+.agent-composer input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.agent-composer input:focus {
+  outline: none;
+  border-color: var(--naver);
+}
+
+.agent-cta {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
 .bookmark-panel[hidden] {
   display: none;
 }

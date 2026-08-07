@@ -147,7 +147,44 @@
         <section class="map-stage" aria-label="아파트 지도">
           <div class="map-canvas" id="mapCanvas" role="region" aria-label="추천 아파트와 대중교통 경로 지도"></div>
 
-          <aside id="bookmarkPanel" class="bookmark-panel" aria-label="즐겨찾기 아파트 비교" aria-live="polite" hidden></aside>
+          <button
+            id="agentLauncher"
+            class="agent-launcher"
+            type="button"
+            aria-label="AI Agent 대화 열기"
+            aria-expanded="false"
+            aria-controls="agentPanel">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M21 12a8 8 0 0 1-8 8H7.6L3 22.5V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z" fill="currentColor" opacity=".18"></path>
+              <path d="M21 12a8 8 0 0 1-8 8H7.6L3 22.5V12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path>
+              <path d="m12 8.2 1.05 2.55 2.55 1.05-2.55 1.05L12 15.4l-1.05-2.55L8.4 11.8l2.55-1.05Z" fill="currentColor"></path>
+            </svg>
+            <span>AI Agent</span>
+          </button>
+
+          <aside id="agentPanel" class="agent-panel" aria-label="AI Agent 대화" hidden>
+            <header class="agent-panel-head">
+              <div class="agent-panel-title">
+                <strong>MoveValue AI Agent</strong>
+                <span id="agentContextLabel" class="agent-context"></span>
+              </div>
+              <div class="agent-panel-actions">
+                <button id="agentResetButton" class="agent-icon-button" type="button" title="대화 초기화" aria-label="대화 초기화">&#8635;</button>
+                <button id="agentCloseButton" class="agent-icon-button" type="button" title="닫기" aria-label="AI Agent 대화 닫기">&times;</button>
+              </div>
+            </header>
+            <div id="agentThread" class="agent-thread" role="log" aria-live="polite"></div>
+            <div id="agentFollowUps" class="agent-followups"></div>
+            <form id="agentForm" class="agent-composer">
+              <input
+                id="agentInput"
+                type="text"
+                autocomplete="off"
+                placeholder="전세 안전성, 깡통 여부, 확인 서류를 물어보세요."
+                aria-label="AI Agent 질문 입력">
+              <button class="primary-button compact-button" type="submit">전송</button>
+            </form>
+          </aside>
         </section>
       </section>
     </main>
