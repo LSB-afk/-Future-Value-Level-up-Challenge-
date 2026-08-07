@@ -2210,6 +2210,169 @@ function renderContractChecklist(risk) {
   `;
 }
 
+function renderGaptongVerdict(safeguard) {
+  const verdict = safeguard?.gaptong;
+  if (!verdict) return "";
+  return `
+    <div class="gaptong-verdict tone-${escapeHtml(verdict.verdictKey || "unknown")}">
+      <div class="gaptong-head">
+        <strong>깡통주택 자동 판정 · ${escapeHtml(verdict.verdictLabel || "")}</strong>
+        <em>전세가율 ${formatPercent(verdict.ratioPct)} / 기준 ${formatPercent(verdict.thresholdPct)}</em>
+      </div>
+      <div class="gaptong-bar" role="img" aria-label="전세가율 ${formatPercent(verdict.ratioPct)}, 깡통주택 기준 ${formatPercent(verdict.thresholdPct)}">
+        <span class="gaptong-fill" style="width:${Math.min(100, Number(verdict.ratioPct) || 0)}%"></span>
+        <span class="gaptong-threshold" style="left:${Number(verdict.thresholdPct) || 80}%"></span>
+      </div>
+      <p class="gaptong-detail">${escapeHtml(verdict.detail || "")}</p>
+      <small class="property-note">${escapeHtml(verdict.basis || "")}</small>
+    </div>
+  `;
+}
+
+function renderBlindSpots(safeguard) {
+  const rows = Array.isArray(safeguard?.blindSpots) ? safeguard.blindSpots : [];
+  if (!rows.length) return "";
+  return `
+    <ul class="blindspot-list">
+      ${rows.map((row) => `
+        <li class="blindspot-item level-${escapeHtml(row.level || "info")}">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span>${escapeHtml(row.detail)}</span>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderSelfServeChecks(safeguard) {
+  const rows = Array.isArray(safeguard?.selfServeChecks) ? safeguard.selfServeChecks : [];
+  if (!rows.length) return "";
+  return `
+    <ul class="selfserve-list">
+      ${rows.map((row) => `
+        <li class="selfserve-item">
+          <div>
+            <strong>${escapeHtml(row.label)}</strong>
+            <span>${escapeHtml(row.target)}</span>
+            <small>${escapeHtml(row.how)}</small>
+          </div>
+          <a href="${escapeHtml(row.url)}" target="_blank" rel="noopener noreferrer">바로가기</a>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderConsentChecks(safeguard) {
+  const rows = Array.isArray(safeguard?.consentChecks) ? safeguard.consentChecks : [];
+  if (!rows.length) return "";
+  return `
+    <ul class="consent-list">
+      ${rows.map((row) => `
+        <li class="consent-item">
+          <strong>${escapeHtml(row.label)}</strong>
+          <span>${escapeHtml(row.why)}</span>
+          <p class="consent-refused"><em>거부당하면</em> ${escapeHtml(row.ifRefused)}</p>
+        </li>
+      `).join("")}
+    </ul>
+  `;
+}
+
+function renderTenancyTimeline(safeguard) {
+  const timeline = safeguard?.timeline;
+  const steps = Array.isArray(timeline?.steps) ? timeline.steps : [];
+  if (!steps.length) return "";
+  return `
+    <p class="timeline-summary">${escapeHtml(timeline.gapSummary || "")}</p>
+    <ol class="tenancy-timeline">
+      ${steps.map((step) => `
+        <li class="tenancy-step risk-${escapeHtml(step.risk || "safe")}">
+          <span class="tenancy-day">${escapeHtml(step.day)}</span>
+          <div>
+            <strong>${escapeHtml(step.action)}</strong>
+            <span>${escapeHtml(step.detail)}</span>
+          </div>
+        </li>
+      `).join("")}
+    </ol>
+  `;
+}
+
+function renderSpecialClauses(safeguard) {
+  const clauses = Array.isArray(safeguard?.timeline?.clauses) ? safeguard.timeline.clauses : [];
+  if (!clauses.length) return "";
+  return `
+    <div class="clause-list">
+      ${clauses.map((clause, index) => `
+        <article class="clause-card">
+          <div class="clause-head">
+            <strong>${escapeHtml(clause.title)}</strong>
+            <button type="button" class="clause-copy" data-clause-index="${index}">복사</button>
+          </div>
+          <p>${escapeHtml(clause.text)}</p>
+        </article>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderSupportCenter(safeguard) {
+  const center = safeguard?.center;
+  if (!center) return "";
+  return `
+    <div class="support-center">
+      <div class="support-center-head">
+        <strong>${escapeHtml(center.name)}</strong>
+        <em>약 ${escapeHtml(String(center.distanceKm))}km</em>
+      </div>
+      <p>${escapeHtml(center.service)}</p>
+      <div class="support-center-meta">
+        ${propertyMetric("운영 요일", center.days)}
+        ${propertyMetric("운영 시간", center.hours)}
+        ${propertyMetric("전화", center.phone)}
+        ${propertyMetric("주소", center.address)}
+      </div>
+      <a class="support-center-link" href="${escapeHtml(center.reserveUrl)}" target="_blank" rel="noopener noreferrer">안전계약 컨설팅 예약</a>
+      <small class="property-note">${escapeHtml(center.note)}</small>
+    </div>
+  `;
+}
+
+async function copyTextToClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // 클립보드 권한이 막힌 환경(비보안 컨텍스트, 일부 인앱 브라우저) 폴백.
+    const area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+    document.body.appendChild(area);
+    area.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+    area.remove();
+    return copied;
+  }
+}
+
+async function handleClauseCopy(button) {
+  const clauses = state.property.detail?.safeguard?.timeline?.clauses || [];
+  const clause = clauses[Number(button.dataset.clauseIndex)];
+  if (!clause) return;
+  const copied = await copyTextToClipboard(clause.text);
+  button.textContent = copied ? "복사됨" : "복사 실패";
+  window.setTimeout(() => {
+    button.textContent = "복사";
+  }, 1600);
+}
+
 function renderAgentAnswer() {
   const answer = state.property.agentAnswer;
   if (state.property.agentLoading) {
@@ -2487,6 +2650,9 @@ async function askPropertyAgent(event) {
 
 function bindPropertyDashboardEvents() {
   bindPropertyAgentEvents();
+  document.querySelectorAll(".clause-copy").forEach((button) => {
+    button.addEventListener("click", () => handleClauseCopy(button));
+  });
 }
 
 function bindPropertyAgentEvents() {
@@ -2531,6 +2697,7 @@ function renderPropertyDashboard() {
   nodes.propertyDashboard.classList.add("has-property-detail");
   const price = detail.price || {};
   const risk = detail.risk || {};
+  const safeguard = detail.safeguard || {};
   const summary = detail.aiSummary || {};
   const areaText = (detail.areaOptions || []).map((item) => `${item.exclusiveM2}㎡`).join(" / ");
   nodes.propertyDashboard.innerHTML = `
@@ -2544,7 +2711,11 @@ function renderPropertyDashboard() {
           ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
           ${propertyMetric("주택 유형", detail.housingType || "확인 필요")}
           ${propertyMetric("준공/사용승인", detail.approvalYear ? `${detail.approvalYear}년` : "확인 필요", `${formatNumber(detail.buildingAge)}년 경과`)}
-          ${propertyMetric("세대/동수", `${formatNumber(detail.households)}세대`, `${formatNumber(detail.buildingCount)}개동`)}
+          ${propertyMetric(
+            "세대/동수",
+            detail.households ? `${formatNumber(detail.households)}세대` : "미제공",
+            detail.buildingCount ? `${formatNumber(detail.buildingCount)}개동` : "건축물대장 확인 필요"
+          )}
           ${propertyMetric("면적 옵션", areaText || "확인 필요")}
           ${propertyMetric("용도지역", detail.landUse || "연계 예정")}
         </div>
@@ -2576,6 +2747,7 @@ function renderPropertyDashboard() {
           <h4>전세 위험 신호 점검</h4>
           <span>법적 판정 아님</span>
         </div>
+        ${renderGaptongVerdict(safeguard)}
         <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
         <ul class="risk-list">${renderRiskSignals(risk)}</ul>
         <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
@@ -2587,6 +2759,36 @@ function renderPropertyDashboard() {
           <span>주의 요소 안내</span>
         </div>
         ${renderContractChecklist(risk)}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>정보 사각지대</h4>
+          <span>어떤 시세 데이터에도 안 잡히는 항목</span>
+        </div>
+        ${renderBlindSpots(safeguard)}
+        <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
+        ${renderSelfServeChecks(safeguard)}
+        <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
+        ${renderConsentChecks(safeguard)}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>대항력 확보 타임라인</h4>
+          <span>전입신고 익일 0시까지의 공백</span>
+        </div>
+        ${renderTenancyTimeline(safeguard)}
+        <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
+        ${renderSpecialClauses(safeguard)}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>가까운 안전계약 컨설팅</h4>
+          <span>계약 전 전문가 검토</span>
+        </div>
+        ${renderSupportCenter(safeguard)}
       </section>
 
       <section class="property-card wide">

@@ -212,6 +212,49 @@ def search_locations_with_kakao(query: str, limit: int = 8) -> list[dict[str, An
     return locations
 
 
+# 데이터 출처마다 시·도 표기가 "서울", "서울시", "서울특별시"로 섞여 있어
+# 자동완성이 채운 주소가 매칭에 실패하는 일이 있다. 비교 직전에 한 형태로 모은다.
+_SIDO_ALIASES = {
+    "서울특별시": "서울",
+    "서울시": "서울",
+    "부산광역시": "부산",
+    "부산시": "부산",
+    "대구광역시": "대구",
+    "대구시": "대구",
+    "인천광역시": "인천",
+    "인천시": "인천",
+    "광주광역시": "광주",
+    "대전광역시": "대전",
+    "대전시": "대전",
+    "울산광역시": "울산",
+    "울산시": "울산",
+    "세종특별자치시": "세종",
+    "세종시": "세종",
+    "경기도": "경기",
+    "강원특별자치도": "강원",
+    "강원도": "강원",
+    "충청북도": "충북",
+    "충청남도": "충남",
+    "전북특별자치도": "전북",
+    "전라북도": "전북",
+    "전라남도": "전남",
+    "경상북도": "경북",
+    "경상남도": "경남",
+    "제주특별자치도": "제주",
+    "제주도": "제주",
+}
+# 긴 별칭부터 확인해야 "서울특별시"가 "서울시"보다 먼저 잡힌다.
+_SIDO_ORDER = sorted(_SIDO_ALIASES, key=len, reverse=True)
+
+
+def normalize_address_key(value: str) -> str:
+    text = str(value or "").replace(" ", "").lower()
+    for alias in _SIDO_ORDER:
+        if text.startswith(alias):
+            return _SIDO_ALIASES[alias] + text[len(alias):]
+    return text
+
+
 def resolve_location(query: str, known_locations: dict[str, dict[str, Any]]) -> dict[str, Any]:
     value = (query or "").strip()
     if not value:
@@ -221,7 +264,7 @@ def resolve_location(query: str, known_locations: dict[str, dict[str, Any]]) -> 
     if coordinate:
         return coordinate
 
-    normalized = value.replace(" ", "").lower()
+    normalized = normalize_address_key(value)
     for key, location in known_locations.items():
         candidates = [
             ("address", location.get("address", "")),
@@ -231,7 +274,7 @@ def resolve_location(query: str, known_locations: dict[str, dict[str, Any]]) -> 
             ("key", key),
         ]
         matched_kind = next(
-            (kind for kind, candidate in candidates if normalized == str(candidate).replace(" ", "").lower()),
+            (kind for kind, candidate in candidates if normalized == normalize_address_key(candidate)),
             "",
         )
         if matched_kind:

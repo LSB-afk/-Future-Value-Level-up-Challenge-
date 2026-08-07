@@ -14,6 +14,7 @@ import json
 import math
 from pathlib import Path
 
+from jeonse_safeguard import build_safeguard
 from real_estate_price_adapters import enrich_market_from_live
 
 
@@ -281,8 +282,9 @@ def build_risk(apartment: dict, market: dict) -> dict:
         {
             "label": "매매가 대비 전세가율",
             "value": f"{jeonse_ratio:.1f}%",
-            "status": signal_status(jeonse_ratio >= 85, jeonse_ratio >= 75),
-            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다.",
+            # HUG 깡통주택 기준선이 80%라 경고 임계값을 그 기준에 맞춘다.
+            "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
+            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. HUG 깡통주택 기준은 보증금+대출 80%입니다.",
         },
         {
             "label": "공시가격 대비 보증금 비율",
@@ -365,10 +367,18 @@ def contract_checklist(apartment: dict, market: dict, signals: list[dict]) -> li
             "reason": "보증금·공시가격·선순위 권리 조건에 따라 가입 가능성이 달라집니다.",
         },
         {
-            "label": "임대인 세금 체납·신탁 여부",
-            "status": "확인 필요",
-            "priority": "medium",
-            "reason": "국세·지방세 체납, 신탁등기 여부는 보증금 회수 위험과 직접 연결됩니다.",
+            "label": "임대인 세금 체납 여부",
+            "status": "임대인 동의 필요",
+            "priority": "high",
+            "consent": "landlord",
+            "reason": "당해세는 확정일자보다 앞서 배당됩니다. 열람에 임대인 동의가 필요하므로, 거부당하면 그 자체를 위험 신호로 보고 특약으로 대체하세요.",
+        },
+        {
+            "label": "신탁등기 여부",
+            "status": "동의 없이 확인",
+            "priority": "high",
+            "consent": "none",
+            "reason": "등기부 갑구에 신탁이 적혀 있으면 소유권이 임대인에게 없어 계약 자체가 무효가 될 수 있습니다.",
         },
         {
             "label": "건축물대장 위반건축물 여부",
@@ -514,6 +524,7 @@ def build_property_detail(apartment: dict) -> dict:
         "price": market,
         "transactions": trend,
         "risk": risk,
+        "safeguard": build_safeguard(apartment, market),
         "lifestyle": lifestyle,
         "socRadius": {"meters": 1600, "lat": apartment.get("lat"), "lng": apartment.get("lng")},
         "aiSummary": ai_summary(apartment, area, market, risk),

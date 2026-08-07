@@ -20,6 +20,7 @@ PY_FILES = [
     "env_loader.py",
     "route_adapters.py",
     "real_estate_price_adapters.py",
+    "jeonse_safeguard.py",
     "property_model.py",
     "apartment_adapters.py",
     "property_adapters.py",
