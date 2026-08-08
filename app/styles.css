@@ -2422,53 +2422,116 @@ details > summary span {
   gap: 10px;
 }
 
-/* 접이식 섹션: 헤더만 훑고 필요한 것만 펼치도록 한다. */
-.property-card.is-collapsible {
-  display: block;
-  padding: 0;
-  overflow: hidden;
+/* 좌우 분할: 왼쪽 목록에서 고르면 오른쪽에 내용이 나온다. */
+.property-workspace {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
 }
 
-.property-card.is-collapsible > summary {
-  padding: 14px;
+.property-master {
+  display: grid;
+  gap: 6px;
+  position: sticky;
+  top: 0;
+}
+
+.property-master-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+  text-align: left;
   cursor: pointer;
-  list-style: none;
-  user-select: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.property-card.is-collapsible > summary::-webkit-details-marker {
-  display: none;
-}
-
-.property-card.is-collapsible > summary::after {
+.property-master-item::after {
   content: "";
   flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  margin-left: 2px;
+  width: 6px;
+  height: 6px;
+  border-top: 2px solid var(--muted-2);
   border-right: 2px solid var(--muted-2);
-  border-bottom: 2px solid var(--muted-2);
-  transform: rotate(45deg) translate(-2px, -2px);
-  transition: transform 0.15s ease;
+  transform: rotate(45deg);
 }
 
-.property-card.is-collapsible[open] > summary::after {
-  transform: rotate(-135deg) translate(-2px, -2px);
+.property-master-item:hover {
+  border-color: var(--naver);
+  background: var(--naver-soft);
 }
 
-.property-card.is-collapsible > summary:hover {
-  background: #f1f5f9;
+.property-master-item.is-active {
+  border-color: var(--naver);
+  background: var(--naver-soft);
+  color: var(--naver-strong);
 }
 
-.property-card.is-collapsible > summary h4 {
+.property-master-item.is-active::after {
+  border-color: var(--naver-strong);
+}
+
+.pm-title {
   flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.property-detail-pane {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.property-pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.property-pane-head h4 {
+  margin: 0;
+  font-size: 15px;
 }
 
 .property-card-body {
   display: grid;
   gap: 12px;
-  padding: 0 14px 14px;
+}
+
+@media (max-width: 860px) {
+  .property-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .property-master {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* 2열로는 제목이 잘려서 한 줄에 하나씩 놓는다. */
+@media (max-width: 620px) {
+  .property-master {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .section-badge {

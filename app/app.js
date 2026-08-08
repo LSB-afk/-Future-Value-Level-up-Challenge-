@@ -2126,19 +2126,38 @@ function resetMapToSeoul() {
   state.map.fitted = true;
 }
 
-// 접힘 상태는 재렌더링과 단지 전환에도 유지되도록 전역으로 들고 간다.
-const propertySectionsOpen = new Set(["basic", "price"]);
+// 선택한 섹션은 재렌더링과 단지 전환에도 유지되도록 전역으로 들고 간다.
+let propertySectionActive = "basic";
 
-function propertySection({ key, title, badge = "", badgeTone = "", body, wide = true }) {
-  const open = propertySectionsOpen.has(key);
+function renderPropertySections(sections) {
+  const active = sections.find((item) => item.key === propertySectionActive) || sections[0];
+  const badge = (item) =>
+    item.badge
+      ? `<span class="section-badge${item.badgeTone ? ` tone-${escapeHtml(item.badgeTone)}` : ""}">${escapeHtml(item.badge)}</span>`
+      : "";
   return `
-    <details class="property-card ${wide ? "wide" : ""} is-collapsible" data-property-section="${escapeHtml(key)}"${open ? " open" : ""}>
-      <summary class="property-card-title">
-        <h4>${escapeHtml(title)}</h4>
-        ${badge ? `<span class="section-badge${badgeTone ? ` tone-${escapeHtml(badgeTone)}` : ""}">${escapeHtml(badge)}</span>` : ""}
-      </summary>
-      <div class="property-card-body">${body}</div>
-    </details>
+    <div class="property-workspace">
+      <nav class="property-master" role="tablist" aria-label="아파트 정보 항목">
+        ${sections.map((item) => `
+          <button
+            type="button"
+            role="tab"
+            class="property-master-item${item.key === active.key ? " is-active" : ""}"
+            aria-selected="${item.key === active.key}"
+            data-property-section="${escapeHtml(item.key)}">
+            <span class="pm-title">${escapeHtml(item.title)}</span>
+            ${badge(item)}
+          </button>
+        `).join("")}
+      </nav>
+      <section class="property-detail-pane" role="tabpanel" aria-label="${escapeHtml(active.title)}">
+        <div class="property-pane-head">
+          <h4>${escapeHtml(active.title)}</h4>
+          ${badge(active)}
+        </div>
+        <div class="property-card-body">${active.body}</div>
+      </section>
+    </div>
   `;
 }
 
@@ -2796,11 +2815,14 @@ function bindPropertyDashboardEvents() {
     button.addEventListener("click", () => handleClauseCopy(button));
   });
   document.querySelector("#openAgentFromDashboard")?.addEventListener("click", openAgentPanel);
-  document.querySelectorAll("[data-property-section]").forEach((section) => {
-    section.addEventListener("toggle", () => {
-      const key = section.dataset.propertySection;
-      if (section.open) propertySectionsOpen.add(key);
-      else propertySectionsOpen.delete(key);
+  document.querySelectorAll("[data-property-section]").forEach((button) => {
+    button.addEventListener("click", () => {
+      propertySectionActive = button.dataset.propertySection;
+      renderPropertyDashboard();
+      // 좁은 화면에서는 목록 아래로 내용이 붙으므로 내용 위치로 옮겨준다.
+      if (window.matchMedia("(max-width: 860px)").matches) {
+        document.querySelector(".property-detail-pane")?.scrollIntoView({ block: "start" });
+      }
     });
   });
 }
@@ -2845,7 +2867,8 @@ function renderPropertyDashboard() {
   const areaText = (detail.areaOptions || []).map((item) => `${item.exclusiveM2}㎡`).join(" / ");
   nodes.propertyDashboard.innerHTML = `
     <div class="property-grid">
-      ${propertySection({
+      ${renderPropertySections([
+      {
         key: "basic",
         title: "기본 정보",
         badge: detail.prototype ? "프로토타입 데이터" : "OpenAptInfo",
@@ -2863,9 +2886,8 @@ function renderPropertyDashboard() {
             ${propertyMetric("용도지역", detail.landUse || "연계 예정")}
           </div>
         `
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "price",
         title: "가격 정보",
         badge: `전세가율 ${formatPercent(price.jeonseRatio)}`,
@@ -2878,16 +2900,14 @@ function renderPropertyDashboard() {
           </div>
           <p class="property-note">${escapeHtml(price.sourceLabel || "공공 데이터 기반")}</p>
         `
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "trend",
         title: "거래 추이",
         badge: "최근 12개월",
         body: renderTrendChart(detail.transactions)
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "risk",
         title: "전세 위험 신호 점검",
         badge: risk.level || "점검",
@@ -2898,17 +2918,15 @@ function renderPropertyDashboard() {
           <ul class="risk-list">${renderRiskSignals(risk)}</ul>
           <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
         `
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "checklist",
         title: "계약 전 확인 체크리스트",
         badge: `필수 ${(risk.contractChecklist || []).filter((item) => item.priority === "high").length}건`,
         badgeTone: "warn",
         body: renderContractChecklist(risk)
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "blindspots",
         title: "정보 사각지대",
         badge: `${(safeguard.blindSpots || []).length}건`,
@@ -2919,9 +2937,8 @@ function renderPropertyDashboard() {
           <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
           ${renderConsentChecks(safeguard)}
         `
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "tenancy",
         title: "대항력 확보 타임라인",
         badge: `특약 ${(safeguard.timeline?.clauses || []).length}종`,
@@ -2930,16 +2947,14 @@ function renderPropertyDashboard() {
           <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
           ${renderSpecialClauses(safeguard)}
         `
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "center",
         title: "가까운 안전계약 컨설팅",
         badge: safeguard.center ? `약 ${safeguard.center.distanceKm}km` : "계약 전 전문가 검토",
         body: renderSupportCenter(safeguard)
-      })}
-
-      ${propertySection({
+      },
+      {
         key: "summary",
         title: "AI 요약",
         badge: "가격·통근·입지 근거",
@@ -2957,7 +2972,8 @@ function renderPropertyDashboard() {
           </div>
           <p class="recommendation-text">${escapeHtml(summary.recommendation || "계약 전 등기부와 보증보험 가능 여부를 별도로 확인해야 합니다.")}</p>
         `
-      })}
+      }
+    ])}
 
       <section class="property-card wide agent-cta">
         <div class="property-card-title">
