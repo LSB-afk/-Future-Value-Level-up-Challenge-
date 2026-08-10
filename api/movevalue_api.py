@@ -1043,9 +1043,36 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/agent-chat":
+            self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"unknown path: {parsed.path}"})
+            return
+
+        # LLM 연동은 선택 의존성이라 요청 시점에만 import한다(정적 빌드는 이 경로를 타지 않는다).
+        from agent_llm import agent_chat
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > 1_000_000:
+                raise ValueError("요청 본문 크기가 올바르지 않습니다.")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            messages = payload.get("messages")
+            if not isinstance(messages, list) or not messages:
+                raise ValueError("messages 배열이 필요합니다.")
+            result = agent_chat(messages, str(payload.get("context") or ""))
+        except ValueError as exc:
+            self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+        except Exception as exc:  # noqa: BLE001 - 프로토타입은 JSON 에러로 응답한다.
+            self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+
+        self.send_json(HTTPStatus.OK if result.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE, result)
 
     def do_HEAD(self) -> None:
         parsed = urlparse(self.path)
@@ -1075,6 +1102,17 @@ class Handler(BaseHTTPRequestHandler):
                         "integrations": integration_status(),
                     },
                 )
+                return
+            if path == "/api/agent-status":
+                try:
+                    from agent_llm import availability
+
+                    self.send_json(HTTPStatus.OK, {"ok": True, **availability()})
+                except Exception as exc:  # noqa: BLE001 - 상태 조회 실패는 폴백으로 처리한다.
+                    self.send_json(
+                        HTTPStatus.OK,
+                        {"ok": True, "available": False, "reason": f"LLM 모듈 로드 실패: {exc}"},
+                    )
                 return
             if path == "/api/areas":
                 self.send_json(HTTPStatus.OK, decorate_dataset(load_dataset()))

@@ -60,6 +60,33 @@ python3 api/movevalue_api.py --port 5173
 
 그 다음 브라우저에서 `http://127.0.0.1:5173/`를 엽니다.
 
+## AI Agent (Claude API 연동)
+
+AI Agent는 두 가지 엔진으로 동작하며, 실행 환경에 따라 자동으로 선택됩니다.
+
+| 엔진 | 동작 조건 | 특징 |
+|---|---|---|
+| **Claude API** (`claude-opus-5`) | `anthropic` 설치 + `ANTHROPIC_API_KEY` 설정 | 자유로운 질문에 답변. MoveValue 데이터를 도구로 조회해 근거를 확인한 뒤 답합니다. |
+| **규칙 기반** (기본) | 위 조건이 없을 때 | 정해진 6개 질문 갈래에만 답변. 키가 없어도 데모가 동작합니다. |
+
+연동하려면:
+
+```bash
+pip install anthropic
+echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
+python3 api/movevalue_api.py --port 5173
+```
+
+`GET /api/agent-status`로 현재 엔진을 확인할 수 있고, 대화 패널 상단에도 표시됩니다.
+키가 없거나 API 호출이 실패하면 규칙 기반으로 자동 전환되어 대화가 끊기지 않습니다.
+
+Claude에게 열어준 도구는 6개입니다 — 단지 조회, 가격·위험 신호, 전세사기 안전장치,
+계약 체크리스트, 더 안전한 대안, 통근 경로. 모두 이 저장소의 데이터를 읽으며,
+등기부 권리관계처럼 데이터에 없는 항목은 모른다고 답하도록 시스템 프롬프트에 명시했습니다.
+
+> 정적 배포(GitHub Pages)는 서버가 없어 API 키를 보관할 수 없으므로 항상 규칙 기반으로 동작합니다.
+> 라이브 데모에서 Claude 연동을 보려면 위 명령으로 로컬 실행하세요.
+
 ## 지도
 
 지도는 API 키가 필요 없는 Leaflet + OpenStreetMap 타일을 사용합니다. 서울 아파트 단지 레이어는 `GET /api/apartments`가 반환하는 좌표와 가격 미리보기를 지도 위에 표시하며, `SEOUL_OPEN_API_KEY`가 있으면 서울 열린데이터광장 `OpenAptInfo` 전체 단지를 런타임으로 불러옵니다. 키가 없으면 저장소의 제한 스냅샷으로 폴백합니다. 지도 사이드바에서 단지 라벨 기준을 매매가·전세가율·위험도·통근시간으로 바꿀 수 있고, 선택 단지는 생활 SOC 반경 1.6km 원으로 표시합니다. 단지 클릭 상세 대시보드는 `GET /api/property-detail`과 `GET /api/property-agent`를 사용합니다. VWorld·카카오·네이버 지도로 교체하는 방법은 `docs/api-development.md`의 "지도 제공자 교체" 절을 참고하세요. 타일 로딩에 실패하면 좌표 기반 분포도 폴백이 유지됩니다.

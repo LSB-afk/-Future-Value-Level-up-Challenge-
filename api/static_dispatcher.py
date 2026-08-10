@@ -24,6 +24,13 @@ def _route(path: str, raw: dict[str, list[str]]):
             "apartments": api.apartment_health(),
             "integrations": api.integration_status(),
         }
+    if path == "/api/agent-status":
+        # 정적 빌드는 서버가 없어 API 키를 보관할 수 없다. 항상 규칙 기반으로 답한다.
+        return {
+            "ok": True,
+            "available": False,
+            "reason": "정적 데모에는 서버가 없어 Claude API 키를 보관할 수 없습니다. 규칙 기반 엔진으로 답변합니다.",
+        }
     if path == "/api/areas":
         return api.decorate_dataset(api.load_dataset())
     if path == "/api/geocode":

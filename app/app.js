@@ -119,7 +119,10 @@ const state = {
     targetId: null,
     targetName: "",
     isLoading: false,
-    error: ""
+    error: "",
+    llmMode: null,
+    llmReason: "",
+    llmModel: ""
   },
   bookmarks: {
     ids: [],
@@ -2449,6 +2452,23 @@ function renderAgentBasisGroups(answer) {
   `;
 }
 
+const AGENT_TOOL_LABELS = {
+  lookup_apartment: "단지 조회",
+  apartment_snapshot: "가격·위험 신호",
+  jeonse_safeguard: "전세사기 안전장치",
+  contract_checklist: "계약 체크리스트",
+  safer_alternatives: "더 안전한 대안",
+  commute_route: "통근 경로"
+};
+
+// LLM이 어떤 데이터를 실제로 읽고 답했는지 보여준다.
+function renderAgentToolTrace(message) {
+  const trace = Array.isArray(message.toolTrace) ? message.toolTrace : [];
+  if (!trace.length) return "";
+  const names = [...new Set(trace.map((item) => AGENT_TOOL_LABELS[item.name] || item.name))];
+  return `<div class="agent-tooltrace">조회한 데이터: ${names.map((name) => escapeHtml(name)).join(" · ")}</div>`;
+}
+
 function renderAgentMessage(message) {
   if (message.role === "user") {
     return `<div class="agent-msg is-user"><p>${escapeHtml(message.text)}</p></div>`;
@@ -2459,6 +2479,7 @@ function renderAgentMessage(message) {
     <div class="agent-msg is-agent">
       ${message.target ? `<span class="agent-msg-target">${escapeHtml(message.target)}</span>` : ""}
       <p>${escapeHtml(answer.answer || message.text || "")}</p>
+      ${renderAgentToolTrace(message)}
       ${renderAgentBasisGroups(answer)}
       ${comparisons.length ? `
         <div class="agent-suggestions">
@@ -2487,9 +2508,12 @@ function renderAgentPanel() {
   const target = agentTarget();
   const context = document.querySelector("#agentContextLabel");
   if (context) {
-    context.textContent = target
+    const engine = state.agent.llmMode === true
+      ? ` · ${state.agent.llmModel || "Claude"} 연동`
+      : state.agent.llmMode === false ? " · 규칙 기반" : "";
+    context.textContent = (target
       ? `${target.name} 기준으로 답변합니다`
-      : "매칭을 실행하거나 단지를 선택하면 그 단지 기준으로 답변합니다";
+      : "매칭을 실행하거나 단지를 선택하면 그 단지 기준으로 답변합니다") + engine;
   }
 
   const thread = document.querySelector("#agentThread");
@@ -2553,17 +2577,83 @@ async function sendAgentMessage(question) {
   renderAgentPanel();
 
   try {
-    const params = new URLSearchParams({ id: target.id, question: text });
-    const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
-    const answer = payload.agent || null;
-    state.agent.messages.push({ role: "agent", answer, target: target.name });
-    state.agent.followUps = answer?.followUps || [];
+    if (await agentLlmAvailable()) {
+      await sendAgentMessageViaLlm(target);
+    } else {
+      await sendAgentMessageViaRules(target, text);
+    }
   } catch (error) {
     state.agent.error = `AI Agent 응답 실패: ${error.message}`;
   } finally {
     state.agent.isLoading = false;
     renderAgentPanel();
   }
+}
+
+// Claude API 연동 여부는 세션당 한 번만 확인하고 캐시한다.
+async function agentLlmAvailable() {
+  if (state.agent.llmMode !== null) return state.agent.llmMode;
+  try {
+    const status = await fetchJson("/api/agent-status");
+    state.agent.llmMode = Boolean(status.available);
+    state.agent.llmReason = status.reason || "";
+    state.agent.llmModel = status.model || "";
+  } catch {
+    state.agent.llmMode = false;
+    state.agent.llmReason = "LLM 상태를 확인하지 못해 규칙 기반으로 답변합니다.";
+  }
+  return state.agent.llmMode;
+}
+
+// Claude에는 전체 대화 이력을 보낸다. 규칙 기반 답변도 assistant 턴으로 이어붙인다.
+function agentHistoryForLlm() {
+  return state.agent.messages
+    .map((message) => ({
+      role: message.role === "user" ? "user" : "assistant",
+      content: message.role === "user" ? message.text : message.answer?.answer || message.text || "",
+    }))
+    .filter((message) => message.content);
+}
+
+async function sendAgentMessageViaLlm(target) {
+  const response = await fetch("/api/agent-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: agentHistoryForLlm(),
+      context: `사용자가 현재 보고 있는 단지: ${target.name} (id: ${target.id})`,
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok || !payload.ok) {
+    // 키 만료나 일시 장애로 LLM이 죽어도 대화가 끊기지 않도록 규칙 기반으로 내려간다.
+    state.agent.llmMode = false;
+    state.agent.llmReason = payload.error || `LLM 응답 실패 (${response.status})`;
+    await sendAgentMessageViaRules(target, state.agent.messages.at(-1)?.text || "");
+    return;
+  }
+
+  state.agent.messages.push({
+    role: "agent",
+    answer: { answer: payload.answer, disclaimer: agentDisclaimer() },
+    target: target.name,
+    toolTrace: payload.toolTrace || [],
+    engine: "llm"
+  });
+  state.agent.followUps = AGENT_DEFAULT_FOLLOW_UPS;
+}
+
+async function sendAgentMessageViaRules(target, text) {
+  const params = new URLSearchParams({ id: target.id, question: text });
+  const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
+  const answer = payload.agent || null;
+  state.agent.messages.push({ role: "agent", answer, target: target.name, engine: "rules" });
+  state.agent.followUps = answer?.followUps || [];
+}
+
+function agentDisclaimer() {
+  return "전세 위험 신호는 법적 판정이 아니며, 등기부등본·건축물대장·임대인 세금 체납 여부 확인을 대체하지 않습니다.";
 }
 
 function bindAgentThreadEvents() {
