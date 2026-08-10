@@ -18,7 +18,8 @@
   --shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   --shadow-strong: 0 18px 48px rgba(15, 23, 42, 0.16);
   --sidebar-width: 540px;
-  --subpanel-width: 568px;
+  /* 넓은 모니터에서도 568px에 묶이지 않도록 화면 비율을 따라가게 한다. */
+  --subpanel-width: clamp(568px, 40vw, 1040px);
 }
 
 * {
@@ -96,7 +97,11 @@ h4 {
 }
 
 .workspace.has-subpanel {
-  grid-template-columns: var(--sidebar-width) var(--subpanel-width) minmax(0, 1fr);
+  /* 지도 몫 260px를 CSS에서 보장해 창을 줄여도 패널이 지도를 밀어내지 않는다. */
+  grid-template-columns:
+    var(--sidebar-width)
+    clamp(420px, var(--subpanel-width), calc(100vw - var(--sidebar-width) - 260px))
+    minmax(0, 1fr);
 }
 
 .mv-sidebar {
@@ -896,6 +901,54 @@ input[type="range"]::-moz-range-thumb {
 
 .mv-subpanel[hidden] {
   display: none;
+}
+
+/* 상세 패널 너비 조절 손잡이 */
+.subpanel-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  bottom: 0;
+  z-index: 1200;
+  width: 8px;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+
+.subpanel-resizer::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 42px;
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+  background: var(--line);
+  transition: background 0.15s ease;
+}
+
+.subpanel-resizer:hover::before,
+.subpanel-resizer:focus-visible::before,
+.subpanel-resizer.is-dragging::before {
+  background: var(--naver);
+}
+
+.subpanel-resizer:focus-visible {
+  outline: none;
+}
+
+/* 드래그 중에는 지도·텍스트가 선택되지 않게 한다. */
+body.is-resizing-subpanel {
+  cursor: col-resize;
+  user-select: none;
+}
+
+@media (max-width: 860px) {
+  .subpanel-resizer {
+    display: none;
+  }
 }
 
 .subpanel-header {
