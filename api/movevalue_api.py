@@ -55,8 +55,14 @@ AREA_ADDRESSES = {
     "gimpoairport": "서울 강서구 공항동",
 }
 
-DEFAULT_WEIGHTS = {"commute": 25, "cost": 25, "service": 25, "safety": 25}
-VALID_PERSONAS = {"single", "commuter", "newlywed", "senior"}
+VALID_PERSONAS = {"single", "family", "newlywed", "senior"}
+PERSONA_DEFAULT_WEIGHTS = {
+    "single": {"commute": 30, "cost": 35, "service": 15, "safety": 20},
+    "newlywed": {"commute": 25, "cost": 30, "service": 25, "safety": 20},
+    "family": {"commute": 15, "cost": 20, "service": 35, "safety": 30},
+    "senior": {"commute": 10, "cost": 20, "service": 35, "safety": 35},
+}
+DEFAULT_WEIGHTS = PERSONA_DEFAULT_WEIGHTS["single"]
 SOC_CATEGORY_DEFINITIONS = {
     "medical": {
         "label": "의료",
@@ -91,7 +97,7 @@ SOC_CATEGORY_DEFINITIONS = {
 }
 SOC_PERSONA_WEIGHTS = {
     "single": {"medical": 15, "transport": 30, "convenience": 35, "education": 5, "leisure": 10, "welfare": 5},
-    "commuter": {"medical": 10, "transport": 40, "convenience": 25, "education": 5, "leisure": 10, "welfare": 5},
+    "family": {"medical": 15, "transport": 15, "convenience": 20, "education": 35, "leisure": 10, "welfare": 5},
     "newlywed": {"medical": 15, "transport": 20, "convenience": 20, "education": 25, "leisure": 15, "welfare": 5},
     "senior": {"medical": 35, "transport": 10, "convenience": 10, "education": 0, "leisure": 15, "welfare": 30},
 }
@@ -276,11 +282,12 @@ def normalize_query(raw: dict[str, list[str]]) -> Query:
     if persona not in VALID_PERSONAS:
         persona = "single"
 
+    default_weights = PERSONA_DEFAULT_WEIGHTS.get(persona, DEFAULT_WEIGHTS)
     weights = {
-        "commute": number("commuteWeight", DEFAULT_WEIGHTS["commute"], 0, 100),
-        "cost": number("costWeight", DEFAULT_WEIGHTS["cost"], 0, 100),
-        "service": number("serviceWeight", DEFAULT_WEIGHTS["service"], 0, 100),
-        "safety": number("safetyWeight", DEFAULT_WEIGHTS["safety"], 0, 100),
+        "commute": number("commuteWeight", default_weights["commute"], 0, 100),
+        "cost": number("costWeight", default_weights["cost"], 0, 100),
+        "service": number("serviceWeight", default_weights["service"], 0, 100),
+        "safety": number("safetyWeight", default_weights["safety"], 0, 100),
     }
 
     try:

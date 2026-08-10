@@ -14,6 +14,7 @@ import json
 import math
 from pathlib import Path
 
+from jeonse_safeguard import build_safeguard
 from real_estate_price_adapters import enrich_market_from_live
 
 
@@ -146,7 +147,7 @@ def building_age(apartment: dict) -> int:
 def area_options(apartment: dict, market: dict | None = None) -> list[dict]:
     if market:
         raw_areas = sorted(
-            round(number(record.get("exclusiveM2")), 1)
+            round(number(record.get("exclusiveM2")), 2)
             for record in [
                 *market.get("molitTradeRecords", []),
                 *market.get("molitRentRecords", []),
@@ -155,7 +156,7 @@ def area_options(apartment: dict, market: dict | None = None) -> list[dict]:
         )
         live_areas: list[float] = []
         for value in raw_areas:
-            if not live_areas or abs(value - live_areas[-1]) > 1:
+            if not live_areas or abs(value - live_areas[-1]) > 0.2:
                 live_areas.append(value)
         if live_areas:
             return [{"exclusiveM2": value, "pyeong": round(value / 3.3058, 1), "sourceMode": "molit_live"} for value in live_areas]
@@ -221,40 +222,59 @@ def commute_minutes_for(area: dict, destination: str = "gangnam") -> int:
     return integer(fallback, 45)
 
 
+def _record_month(record: dict) -> str:
+    year = str(record.get("dealYear") or "").strip()
+    month = str(record.get("dealMonth") or "").strip()
+    if not year or not month:
+        return ""
+    try:
+        return f"{int(year):04d}.{int(month):02d}"
+    except ValueError:
+        return ""
+
+
+def _average(values: list[float]) -> int:
+    return round(sum(values) / len(values)) if values else 0
+
+
 def transaction_trend(apartment: dict, market: dict) -> list[dict]:
-    seed = apartment.get("id") or apartment.get("name") or "property"
-    annual_change = number(market.get("priceChangeRate")) / 100
-    volatility = number(market.get("volatilityRate")) / 100
-    sale_now = number(market.get("recentSale10k"))
-    jeonse_now = number(market.get("recentJeonse10k"))
-    rent_now = number(market.get("monthlyRent10k"))
-    months = [
-        "2025.07",
-        "2025.08",
-        "2025.09",
-        "2025.10",
-        "2025.11",
-        "2025.12",
-        "2026.01",
-        "2026.02",
-        "2026.03",
-        "2026.04",
-        "2026.05",
-        "2026.06",
-    ]
+    grouped: dict[str, dict[str, list[float]]] = {}
+
+    for record in market.get("molitTradeRecordsForTrend") or market.get("molitTradeRecords") or []:
+        month = _record_month(record)
+        amount = number(record.get("amount10k"))
+        if month and amount:
+            grouped.setdefault(month, {"sale": [], "jeonse": [], "monthlyRent": []})["sale"].append(amount)
+
+    for record in market.get("molitRentRecordsForTrend") or market.get("molitRentRecords") or []:
+        month = _record_month(record)
+        deposit = number(record.get("deposit10k"))
+        monthly_rent = number(record.get("monthlyRent10k"))
+        if not month or not deposit:
+            continue
+        bucket = grouped.setdefault(month, {"sale": [], "jeonse": [], "monthlyRent": []})
+        if monthly_rent:
+            bucket["monthlyRent"].append(monthly_rent)
+        else:
+            bucket["jeonse"].append(deposit)
+
     rows = []
-    for idx, month in enumerate(months):
-        progress = (idx - (len(months) - 1)) / max(1, len(months) - 1)
-        wave = math.sin((idx + stable_ratio(seed, 0, 4)) * 1.27) * volatility
-        factor = 1 + annual_change * progress + wave
+    for month in sorted(grouped.keys())[-12:]:
+        bucket = grouped[month]
+        sale_values = bucket.get("sale", [])
+        jeonse_values = bucket.get("jeonse", [])
+        monthly_values = bucket.get("monthlyRent", [])
         rows.append(
             {
                 "month": month,
-                "sale10k": round(sale_now * factor),
-                "jeonse10k": round(jeonse_now * (1 + annual_change * progress * 0.55 + wave * 0.42)),
-                "monthlyRent10k": round(rent_now * (1 + wave * 0.28), 1),
-                "volume": max(1, round(stable_ratio(f"{seed}:{month}:volume", 1, 7))),
-                "sourceMode": "trend_estimate",
+                "sale10k": _average(sale_values),
+                "jeonse10k": _average(jeonse_values),
+                "monthlyRent10k": round(sum(monthly_values) / len(monthly_values), 1) if monthly_values else 0,
+                "volume": len(sale_values) + len(jeonse_values) + len(monthly_values),
+                "saleVolume": len(sale_values),
+                "jeonseVolume": len(jeonse_values),
+                "monthlyRentVolume": len(monthly_values),
+                "sourceMode": "molit_live",
             }
         )
     return rows
@@ -281,8 +301,8 @@ def build_risk(apartment: dict, market: dict) -> dict:
         {
             "label": "매매가 대비 전세가율",
             "value": f"{jeonse_ratio:.1f}%",
-            "status": signal_status(jeonse_ratio >= 85, jeonse_ratio >= 75),
-            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다.",
+            "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
+            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. HUG 깡통주택 기준은 보증금+대출 80%입니다.",
         },
         {
             "label": "공시가격 대비 보증금 비율",
@@ -365,10 +385,18 @@ def contract_checklist(apartment: dict, market: dict, signals: list[dict]) -> li
             "reason": "보증금·공시가격·선순위 권리 조건에 따라 가입 가능성이 달라집니다.",
         },
         {
-            "label": "임대인 세금 체납·신탁 여부",
-            "status": "확인 필요",
-            "priority": "medium",
-            "reason": "국세·지방세 체납, 신탁등기 여부는 보증금 회수 위험과 직접 연결됩니다.",
+            "label": "임대인 세금 체납 여부",
+            "status": "임대인 동의 필요",
+            "priority": "high",
+            "consent": "landlord",
+            "reason": "당해세는 확정일자보다 앞서 배당됩니다. 열람에 임대인 동의가 필요하므로, 거부당하면 그 자체를 위험 신호로 보고 특약으로 대체하세요.",
+        },
+        {
+            "label": "신탁등기 여부",
+            "status": "동의 없이 확인",
+            "priority": "high",
+            "consent": "none",
+            "reason": "등기부 갑구에 신탁이 적혀 있으면 소유권이 임대인에게 없어 계약 자체가 무효가 될 수 있습니다.",
         },
         {
             "label": "건축물대장 위반건축물 여부",
@@ -427,25 +455,21 @@ def ai_summary(apartment: dict, area: dict, market: dict, risk: dict) -> dict:
         f"월세 기준은 {format_money_10k(market['monthlyRent10k'])}로 인근 중앙값과 비교 가능한 수준입니다.",
         f"병원 {lifestyle['counts']['hospital']}개, 학교 {lifestyle['counts']['school']}개, 공원 {lifestyle['counts']['park']}개가 생활 SOC 점수에 반영됐습니다.",
     ]
-    cautions = [
-        f"{item['label']} {item['value']}: {item['evidence']}"
-        for item in risk["signals"]
-        if item["status"] in {"high", "warning", "unknown"}
-    ][:3]
+    cautions = []
     weaknesses = []
     if number(market.get("saleGapPercent")) > 8:
         weaknesses.append(f"주변 평균 매매 추정가보다 {market['saleGapPercent']}% 높아 가격 협상 여지가 제한될 수 있습니다.")
     if building_age(apartment) >= 25:
         weaknesses.append("준공 후 25년 이상 경과해 수선비, 배관, 주차 편의 확인이 필요합니다.")
     if not weaknesses:
-        weaknesses.append("단지 단위 실거래·공시가격 API 키 연계 전까지 가격 정보는 추정값으로 검토해야 합니다.")
+        weaknesses.append("단지 단위 실거래 API 매칭 전까지 가격 정보는 확인 가능한 항목만 표시합니다.")
 
-    if risk["levelKey"] == "high":
-        recommendation = "전세 계약은 보수적으로 접근하고 등기부·보증보험·선순위 권리 확인 후 판단하는 것이 좋습니다."
-    elif risk["levelKey"] == "warning":
-        recommendation = "입지 장점은 있으나 전세가율·공시가격 대비 비율을 계약 전 재검증해야 합니다."
+    if number(market.get("saleGapPercent")) > 8:
+        recommendation = "입지와 생활 편의성은 장점이 있으나 가격 수준은 주변 후보와 함께 비교해보는 것이 좋습니다."
+    elif building_age(apartment) >= 25:
+        recommendation = "입지 조건은 무난하지만 준공연식이 오래된 만큼 관리 상태와 주차 편의를 함께 확인하는 것이 좋습니다."
     else:
-        recommendation = "현재 공개 데이터 기준으로는 입지·가격 균형이 무난하지만 권리관계 확인은 별도 필요합니다."
+        recommendation = "현재 공개 데이터 기준으로는 입지·가격·생활 편의성의 균형이 무난한 후보입니다."
 
     return {
         "headline": f"{topic(apartment.get('name'))} {lifestyle['livingAreaName']} 인근의 주거비·이동·생활 SOC를 함께 검토할 수 있는 아파트 후보입니다.",
@@ -483,6 +507,7 @@ def build_property_detail(apartment: dict) -> dict:
     market = enrich_market_from_live(apartment, estimate_market(apartment, area))
     trend = transaction_trend(apartment, market)
     risk = build_risk(apartment, market)
+    safeguard = build_safeguard(apartment, market)
     lifestyle = lifestyle_summary(area)
     age = building_age(apartment)
     options = area_options(apartment, market)
@@ -514,19 +539,20 @@ def build_property_detail(apartment: dict) -> dict:
         "price": market,
         "transactions": trend,
         "risk": risk,
+        "safeguard": safeguard,
         "lifestyle": lifestyle,
         "socRadius": {"meters": 1600, "lat": apartment.get("lat"), "lng": apartment.get("lng")},
         "aiSummary": ai_summary(apartment, area, market, risk),
         "dataStatus": {
             "buildingInfo": "실데이터: 서울시 OpenAptInfo",
             "rentalMarket": "실데이터 집계: 서울시 2025 인근 전월세 거래 중앙값",
-            "salePrice": "실거래 API 키·단지명 매칭 성공 시 live 보정, 실패 시 인근 권역 기반 추정",
+            "salePrice": "실거래 API 키·단지명/주소 매칭 성공 시 live 보정, 실패 시 정보 없음",
             "officialPrice": "추정: 공동주택 공시가격 API는 PNU/공시가격 식별자 매핑 후 live 보정",
             "landUse": "연계 예정: VWorld/토지이음 용도지역 데이터",
         },
         "sources": PUBLIC_SOURCES,
         "limitations": [
-            "매매·전월세 live API 키가 없거나 단지명 매칭 기록이 없으면 공개 인근 권역 데이터 기반 추정값으로 표시합니다.",
+            "매매·전월세 live API 키가 없거나 단지명/주소 매칭 기록이 없으면 정보 없음으로 표시합니다.",
             "전세 위험 신호는 법적 판정이 아니라 계약 전 확인 항목을 좁히기 위한 체크리스트입니다.",
             "등기부 권리관계, 세금 체납, 보증보험 가입 가능 여부는 사용자가 별도 서류로 확인해야 합니다.",
         ],
@@ -576,13 +602,38 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
         key=lambda item: (item["preview"]["riskScore"], abs(item["preview"]["sale10k"] - price["recentSale10k"])),
     )[:3]
 
+    safeguard = detail.get("safeguard") or {}
+    gaptong = safeguard.get("gaptong") or {}
+    timeline = safeguard.get("timeline") or {}
+    center = safeguard.get("center") or {}
+
     if any(token in text for token in ["비슷", "더 안전", "대안", "찾아"]):
         if safer:
             names = ", ".join(f"{item['name']}({item['preview']['riskLevel']})" for item in safer)
             answer = f"현재 스냅샷 기준 더 낮은 위험 점수 후보는 {names}입니다. 비교표에 추가해 전세가율과 입지 점수를 함께 보세요."
         else:
             answer = "현재 로딩된 단지 중에는 더 낮은 위험 점수 후보가 충분하지 않습니다. 서울 OpenAptInfo 키를 연결하면 전체 단지에서 대안을 찾을 수 있습니다."
-    elif any(token in text for token in ["전세", "괜찮", "안전", "사기", "깡통"]):
+    elif any(token in text for token in ["깡통", "근저당", "담보", "빚"]):
+        answer = (
+            f"{topic(detail['name'])} HUG 깡통주택 기준({gaptong.get('thresholdPct', 80)}%) 대비 "
+            f"'{gaptong.get('verdictLabel', '판정 불가')}'입니다. "
+            f"{gaptong.get('detail', '')} "
+            "등기부 을구의 채권최고액을 이 금액과 비교해 보세요."
+        )
+    elif any(token in text for token in ["서류", "특약", "확인해야", "체크", "등기", "준비"]):
+        clauses = ", ".join(item.get("title", "") for item in timeline.get("clauses", []))
+        answer = (
+            "계약 전에는 등기부등본 갑구(소유자·신탁·압류)와 을구(근저당)를 먼저 보고, 잔금 직전에 한 번 더 열람하세요. "
+            f"이 단지 화면에서는 {clauses} 문구를 확인할 수 있습니다. "
+            "임대인 세금 체납은 동의가 필요하니, 거부당하면 특약으로 대체하는 편이 안전합니다."
+        )
+    elif any(token in text for token in ["상담", "센터", "컨설팅", "도움"]):
+        answer = (
+            f"가장 가까운 곳은 {center.get('name', '전세피해 및 예방지원센터')}(약 {center.get('distanceKm', '-')}km)입니다. "
+            f"운영 {center.get('days', '')} {center.get('hours', '')}, 전화 {center.get('phone', '')}. "
+            "공인중개사가 등기부등본과 건축물대장을 함께 검토해 주며 예비 임차인도 계약 전에 이용할 수 있습니다."
+        )
+    elif any(token in text for token in ["전세", "괜찮", "안전", "사기"]):
         answer = (
             f"{detail['name']} 전세는 '{risk['level']}' 단계로 보입니다. "
             f"전세가율 {price['jeonseRatio']}%, 공시가격 대비 보증금 비율 {price['depositOfficialRatio']}%가 핵심 근거입니다. "
@@ -605,6 +656,14 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
         "answer": answer,
         "basis": base_basis,
         "basisGroups": basis_groups,
+        "followUps": [
+            "전세 들어가도 괜찮아?",
+            "깡통주택이야?",
+            "계약 전에 뭘 확인해야 해?",
+            "왜 추천한 거야?",
+            "비슷한 가격대에 더 안전한 곳 있어?",
+            "가까운 상담 센터 알려줘",
+        ],
         "suggestedComparisons": [
             {
                 "id": item["id"],
