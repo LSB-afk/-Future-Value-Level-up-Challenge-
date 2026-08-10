@@ -2577,6 +2577,108 @@ function bindAgentThreadEvents() {
   });
 }
 
+const SUBPANEL_WIDTH_KEY = "movevalue-subpanel-width";
+const SUBPANEL_MIN_WIDTH = 420;
+
+// 사이드바와 지도가 각각 최소 폭을 유지하도록 상한을 화면에서 계산한다.
+function subpanelMaxWidth() {
+  const sidebar = document.querySelector(".mv-sidebar")?.getBoundingClientRect().width || 0;
+  return Math.max(SUBPANEL_MIN_WIDTH, window.innerWidth - sidebar - 260);
+}
+
+function applySubpanelWidth(width) {
+  const clamped = Math.round(Math.min(Math.max(width, SUBPANEL_MIN_WIDTH), subpanelMaxWidth()));
+  document.documentElement.style.setProperty("--subpanel-width", `${clamped}px`);
+  return clamped;
+}
+
+function resetSubpanelWidth() {
+  document.documentElement.style.removeProperty("--subpanel-width");
+  try {
+    window.localStorage.removeItem(SUBPANEL_WIDTH_KEY);
+  } catch {
+    /* 저장소를 못 쓰는 환경에서도 조절 자체는 동작해야 한다. */
+  }
+  refreshMapSize();
+}
+
+function refreshMapSize() {
+  window.setTimeout(() => state.map?.instance?.invalidateSize({ pan: false }), 0);
+}
+
+function restoreSubpanelWidth() {
+  let saved = null;
+  try {
+    saved = window.localStorage.getItem(SUBPANEL_WIDTH_KEY);
+  } catch {
+    saved = null;
+  }
+  const width = Number(saved);
+  if (Number.isFinite(width) && width > 0) applySubpanelWidth(width);
+}
+
+function bindSubpanelResizer() {
+  const handle = document.querySelector("#subpanelResizer");
+  const panel = document.querySelector("#detailSubpanel");
+  if (!handle || !panel) return;
+
+  let startX = 0;
+  let startWidth = 0;
+
+  const onMove = (event) => {
+    applySubpanelWidth(startWidth + (event.clientX - startX));
+    refreshMapSize();
+  };
+
+  const onUp = (event) => {
+    handle.releasePointerCapture?.(event.pointerId);
+    handle.classList.remove("is-dragging");
+    document.body.classList.remove("is-resizing-subpanel");
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", onUp);
+    try {
+      window.localStorage.setItem(SUBPANEL_WIDTH_KEY, String(panel.getBoundingClientRect().width));
+    } catch {
+      /* 저장 실패는 무시하고 이번 세션 너비만 유지한다. */
+    }
+    refreshMapSize();
+  };
+
+  handle.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
+    startX = event.clientX;
+    startWidth = panel.getBoundingClientRect().width;
+    handle.setPointerCapture?.(event.pointerId);
+    handle.classList.add("is-dragging");
+    document.body.classList.add("is-resizing-subpanel");
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  });
+
+  handle.addEventListener("dblclick", resetSubpanelWidth);
+
+  handle.addEventListener("keydown", (event) => {
+    const step = event.shiftKey ? 80 : 24;
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      const current = panel.getBoundingClientRect().width;
+      const next = applySubpanelWidth(current + (event.key === "ArrowRight" ? step : -step));
+      try {
+        window.localStorage.setItem(SUBPANEL_WIDTH_KEY, String(next));
+      } catch {
+        /* 저장 실패 무시 */
+      }
+      refreshMapSize();
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      resetSubpanelWidth();
+    }
+  });
+
+  // 창 크기 상한은 CSS clamp이 처리하므로 여기서는 지도 크기만 다시 잡아준다.
+  window.addEventListener("resize", refreshMapSize);
+}
+
 function bindAgentPanelEvents() {
   document.querySelector("#agentLauncher")?.addEventListener("click", () => {
     if (state.agent.open) closeAgentPanel();
@@ -4085,7 +4187,9 @@ function bindEvents() {
 
 async function init() {
   loadBookmarksFromStorage();
+  restoreSubpanelWidth();
   bindEvents();
+  bindSubpanelResizer();
   bindAgentPanelEvents();
   initNavigation();
   render();
