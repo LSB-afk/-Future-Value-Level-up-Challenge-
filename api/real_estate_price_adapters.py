@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from difflib import SequenceMatcher
 from typing import Any
 
 from env_loader import load_dotenv
@@ -87,7 +88,7 @@ def lawd_code_for(apartment: dict[str, Any]) -> str:
     return ""
 
 
-def recent_deal_months(count: int = 9) -> list[str]:
+def recent_deal_months(count: int = 12) -> list[str]:
     now = datetime.now()
     year = now.year
     month = now.month
@@ -102,7 +103,53 @@ def recent_deal_months(count: int = 9) -> list[str]:
 
 
 def normalize_name(value: str) -> str:
+    text = str(value or "").lower()
+    replacements = {
+        "이편한세상": "e편한세상",
+        "e-편한세상": "e편한세상",
+        "e 편한세상": "e편한세상",
+        "이-편한세상": "e편한세상",
+        "래미안아파트": "래미안",
+        "자이아파트": "자이",
+        "아파트": "",
+        "단지": "",
+        "주상복합": "",
+        "공동주택": "",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    return re.sub(r"[^0-9a-z가-힣]", "", text)
+
+
+def name_tokens(value: str) -> set[str]:
+    normalized = normalize_name(value)
+    return {
+        token
+        for token in re.findall(r"[가-힣]+|[a-z]+|\d+", normalized)
+        if len(token) >= 2 or token.isdigit()
+    }
+
+
+def normalize_address(value: str) -> str:
     return re.sub(r"[^0-9a-z가-힣]", "", str(value or "").lower())
+
+
+def extract_address_numbers(value: str) -> tuple[str, str]:
+    text = str(value or "")
+    matches = re.findall(r"(\d+)(?:-(\d+))?", text)
+    if not matches:
+        return "", ""
+    main, sub = matches[-1]
+    return main, sub or "0"
+
+
+def same_number_pair(left: tuple[str, str], right: tuple[str, str]) -> bool:
+    if not left[0] or not right[0]:
+        return False
+    try:
+        return int(left[0]) == int(right[0]) and int(left[1] or 0) == int(right[1] or 0)
+    except ValueError:
+        return False
 
 
 def money_10k(value: Any) -> int:
@@ -158,7 +205,60 @@ def apt_name_matches(apartment: dict[str, Any], record_name: str) -> bool:
     candidate = normalize_name(record_name)
     if not target or not candidate:
         return False
-    return target in candidate or candidate in target
+    if target in candidate or candidate in target:
+        return True
+
+    target_tokens = name_tokens(apartment.get("name", ""))
+    candidate_tokens = name_tokens(record_name)
+    if target_tokens and target_tokens.issubset(candidate_tokens):
+        return True
+    if candidate_tokens and candidate_tokens.issubset(target_tokens):
+        return True
+    if len(target_tokens & candidate_tokens) >= 2:
+        return True
+
+    return SequenceMatcher(None, target, candidate).ratio() >= 0.82
+
+
+def record_address_matches(apartment: dict[str, Any], record: dict[str, Any]) -> bool:
+    apartment_address = str(apartment.get("address") or "")
+    apartment_dong = str(apartment.get("dong") or "")
+    record_dong = str(record.get("dong") or "")
+    if record_dong and apartment_dong and record_dong != apartment_dong and record_dong not in apartment_address:
+        return False
+
+    road_name = str(record.get("roadName") or "")
+    road_number = (str(record.get("roadMainNo") or ""), str(record.get("roadSubNo") or "0"))
+    jibun = str(record.get("jibun") or "")
+
+    normalized_address = normalize_address(apartment_address)
+    if road_name and normalize_address(road_name) in normalized_address:
+        apartment_road_number = extract_address_numbers(apartment_address)
+        if same_number_pair(apartment_road_number, road_number):
+            return True
+        if not road_number[0]:
+            return True
+
+    if jibun:
+        apartment_number = extract_address_numbers(apartment_address)
+        if same_number_pair(apartment_number, extract_address_numbers(jibun)):
+            return True
+
+    return False
+
+
+def apartment_record_matches(apartment: dict[str, Any], record: dict[str, Any]) -> bool:
+    if apt_name_matches(apartment, record.get("name", "")):
+        record["matchMethod"] = "name"
+        return True
+    if record_address_matches(apartment, record):
+        record["matchMethod"] = "address"
+        return True
+    return False
+
+
+def road_sub_no(item: ET.Element) -> str:
+    return text_of(item, "roadNmBubun", "roadNmSubNo", "도로명부번") or "0"
 
 
 def parse_trade_item(item: ET.Element) -> dict[str, Any]:
@@ -167,6 +267,11 @@ def parse_trade_item(item: ET.Element) -> dict[str, Any]:
         "name": text_of(item, "aptNm", "아파트"),
         "amount10k": money_10k(text_of(item, "dealAmount", "거래금액")),
         "exclusiveM2": float(text_of(item, "excluUseAr", "전용면적") or 0),
+        "dong": text_of(item, "umdNm", "법정동"),
+        "jibun": text_of(item, "jibun", "지번"),
+        "roadName": text_of(item, "roadNm", "도로명"),
+        "roadMainNo": text_of(item, "roadNmBonbun", "roadNmMainNo", "도로명건물본번호코드"),
+        "roadSubNo": road_sub_no(item),
         "floor": text_of(item, "floor", "층"),
         "dealYear": text_of(item, "dealYear", "년"),
         "dealMonth": text_of(item, "dealMonth", "월"),
@@ -182,6 +287,11 @@ def parse_rent_item(item: ET.Element) -> dict[str, Any]:
         "deposit10k": money_10k(text_of(item, "deposit", "보증금액")),
         "monthlyRent10k": money_10k(text_of(item, "monthlyRent", "월세금액")),
         "exclusiveM2": float(text_of(item, "excluUseAr", "전용면적") or 0),
+        "dong": text_of(item, "umdNm", "법정동"),
+        "jibun": text_of(item, "jibun", "지번"),
+        "roadName": text_of(item, "roadNm", "도로명"),
+        "roadMainNo": text_of(item, "roadNmBonbun", "roadNmMainNo", "도로명건물본번호코드"),
+        "roadSubNo": road_sub_no(item),
         "floor": text_of(item, "floor", "층"),
         "dealYear": text_of(item, "dealYear", "년"),
         "dealMonth": text_of(item, "dealMonth", "월"),
@@ -196,7 +306,7 @@ def fetch_molit_records(
     lawd_code: str,
     parser,
     apartment: dict[str, Any],
-    months: int = 9,
+    months: int = 12,
 ) -> tuple[list[dict[str, Any]], str]:
     records: list[dict[str, Any]] = []
     last_error = ""
@@ -206,7 +316,7 @@ def fetch_molit_records(
             "LAWD_CD": lawd_code,
             "DEAL_YMD": deal_ym,
             "pageNo": "1",
-            "numOfRows": "100",
+            "numOfRows": "1000",
         }
         try:
             root = request_xml(endpoint, params)
@@ -220,10 +330,8 @@ def fetch_molit_records(
         for item in root.findall(".//item"):
             parsed = parser(item)
             if parsed.get("amount10k") or parsed.get("deposit10k"):
-                if apt_name_matches(apartment, parsed.get("name", "")):
+                if apartment_record_matches(apartment, parsed):
                     records.append(parsed)
-        if records:
-            break
     return records, last_error
 
 
@@ -386,12 +494,13 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
                 "mode": "live_api" if records else "no_matching_record",
                 "recordCount": len(records),
                 "error": error,
-                "note": "단지명 매칭 실거래가를 상세 가격에 반영했습니다." if records else "최근 9개월 내 단지명 매칭 매매 실거래가가 없습니다.",
+                "note": "단지명/주소 매칭 실거래가를 상세 가격에 반영했습니다." if records else "최근 12개월 내 단지명/주소 매칭 매매 실거래가가 없습니다.",
             }
         )
         if records:
             recent = sorted(records, key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")), reverse=True)[0]
             market["recentSale10k"] = recent["amount10k"]
+            market["molitTradeRecordsForTrend"] = records
             market["molitTradeRecords"] = records[:6]
             market["sourceMode"] = "molit_live_trade_partial"
             market["sourceLabel"] = "국토교통부 매매 실거래가 live 보정 + 공개 단지정보"
@@ -405,7 +514,7 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
                 "mode": "live_api" if records else "no_matching_record",
                 "recordCount": len(records),
                 "error": error,
-                "note": "단지명 매칭 전월세 실거래가를 상세 가격에 반영했습니다." if records else "최근 9개월 내 단지명 매칭 전월세 실거래가가 없습니다.",
+                "note": "단지명/주소 매칭 전월세 실거래가를 상세 가격에 반영했습니다." if records else "최근 12개월 내 단지명/주소 매칭 전월세 실거래가가 없습니다.",
             }
         )
         if jeonse_records:
@@ -416,6 +525,7 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
             market["monthlyDeposit10k"] = recent["deposit10k"]
             market["monthlyRent10k"] = recent["monthlyRent10k"]
         if records:
+            market["molitRentRecordsForTrend"] = records
             market["molitRentRecords"] = records[:6]
             market["sourceMode"] = "molit_live_trade_rent_partial"
             market["sourceLabel"] = "국토교통부 실거래가 live 보정 + 공개 단지정보"
