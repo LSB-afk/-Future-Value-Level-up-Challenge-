@@ -10,6 +10,7 @@ Deploy (gh-pages branch):
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 from pathlib import Path
 
@@ -30,18 +31,33 @@ PY_FILES = [
 DATA_FILES = ["areas.actual.json", "apartments.seoul.snapshot.json"]
 
 
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()[:10]
+
+
 def main() -> None:
     shutil.rmtree(SITE, ignore_errors=True)
     (SITE / "py").mkdir(parents=True)
     (SITE / "data").mkdir()
 
+    assets = {name: digest(ROOT / "app" / name) for name in ("app.js", "styles.css", "static-api.js")}
+
     index = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
     marker = '<script src="./app.js"></script>'
     assert marker in index, "app.js script tag not found in app/index.html"
-    index = index.replace(marker, f'<script src="./static-api.js"></script>\n    {marker}')
+    index = index.replace(
+        marker,
+        f'<script src="./static-api.js?v={assets["static-api.js"]}"></script>\n'
+        f'    <script src="./app.js?v={assets["app.js"]}"></script>',
+    )
+    # 해시를 붙이지 않으면 새 index.html이 캐시된 옛 app.js와 짝을 이뤄
+    # 새 탭 마크업만 있고 렌더러가 없는 상태로 깨진다.
+    css = '<link rel="stylesheet" href="./styles.css">'
+    assert css in index, "styles.css link tag not found in app/index.html"
+    index = index.replace(css, f'<link rel="stylesheet" href="./styles.css?v={assets["styles.css"]}">')
     (SITE / "index.html").write_text(index, encoding="utf-8")
 
-    for name in ("app.js", "styles.css", "static-api.js"):
+    for name in assets:
         shutil.copy2(ROOT / "app" / name, SITE / name)
     for name in PY_FILES:
         shutil.copy2(ROOT / "api" / name, SITE / "py" / name)
