@@ -2,8 +2,12 @@ const CARD_PREVIEW_COUNT = 5;
 const MATCH_RESULT_LIMIT = 10;
 const SEOUL_CENTER = [37.5665, 126.9780];
 const SEOUL_OVERVIEW_ZOOM = 12;
+const DISTRICT_CLUSTER_MAX_ZOOM = 13;
 const BOOKMARK_STORAGE_KEY = "movevalue-apartment-bookmarks";
-const DEFAULT_ROUTE_TRANSPORT_MODE = "transit";
+const SIDEBAR_WIDTH_STORAGE_KEY = "movevalue-sidebar-width-v3";
+const SIDEBAR_MIN_WIDTH = 360;
+const SIDEBAR_MAX_WIDTH = 620;
+const DEFAULT_ROUTE_TRANSPORT_MODE = "car";
 const ROUTE_TRANSPORT_MODES = [
   { key: "car", label: "자동차", icon: "car-front" },
   { key: "transit", label: "대중교통", icon: "bus-front" },
@@ -32,7 +36,7 @@ const SOC_CATEGORY_DEFINITIONS = {
     targetCount: 4
   },
   leisure: {
-    label: "여가·복지",
+    label: "여가",
     aliases: ["leisure", "park", "trail", "sports", "gym"],
     targetCount: 3
   },
@@ -44,15 +48,21 @@ const SOC_CATEGORY_DEFINITIONS = {
 };
 const SOC_PERSONA_WEIGHTS = {
   single: { medical: 15, transport: 30, convenience: 35, education: 5, leisure: 10, welfare: 5 },
-  commuter: { medical: 10, transport: 40, convenience: 25, education: 5, leisure: 10, welfare: 5 },
+  family: { medical: 15, transport: 15, convenience: 20, education: 35, leisure: 10, welfare: 5 },
   newlywed: { medical: 15, transport: 20, convenience: 20, education: 25, leisure: 15, welfare: 5 },
   senior: { medical: 35, transport: 10, convenience: 10, education: 0, leisure: 15, welfare: 30 }
 };
 const PERSONA_LABELS = {
-  single: "1인 청년",
-  commuter: "직장인",
+  single: "1인 가구",
+  family: "자녀 가구",
   newlywed: "신혼",
   senior: "노인"
+};
+const PERSONA_DEFAULT_WEIGHTS = {
+  single: { commute: 30, cost: 35, service: 15, safety: 20 },
+  newlywed: { commute: 25, cost: 30, service: 25, safety: 20 },
+  family: { commute: 15, cost: 20, service: 35, safety: 30 },
+  senior: { commute: 10, cost: 20, service: 35, safety: 35 }
 };
 
 const state = {
@@ -63,7 +73,7 @@ const state = {
   destination: "gangnam",
   destinationQuery: "",
   destinationLocation: null,
-  budget: 70,
+  budget: 0,
   persona: "single",
   apiMeta: null,
   apiOnline: false,
@@ -105,6 +115,10 @@ const state = {
     requestId: 0,
     timer: null
   },
+  infrastructureFocus: {
+    category: "",
+    label: ""
+  },
   property: {
     selectedId: null,
     isLoading: false,
@@ -124,6 +138,15 @@ const state = {
     llmReason: "",
     llmModel: ""
   },
+  agent: {
+    open: false,
+    messages: [],
+    followUps: [],
+    targetId: null,
+    targetName: "",
+    isLoading: false,
+    error: ""
+  },
   bookmarks: {
     ids: [],
     details: {},
@@ -136,10 +159,7 @@ const state = {
   detailPanelOpen: false,
   detailSubpanelTab: "matching",
   weights: {
-    commute: 25,
-    cost: 25,
-    service: 25,
-    safety: 25
+    ...PERSONA_DEFAULT_WEIGHTS.single
   }
 };
 
@@ -271,6 +291,7 @@ const nodes = {
   cards: document.querySelector("#cards"),
   toggleCards: document.querySelector("#toggleCards"),
   resultSummary: document.querySelector("#resultSummary"),
+  sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
   mapCanvas: document.querySelector("#mapCanvas"),
   detailContent: document.querySelector("#detailContent"),
   routeContent: document.querySelector("#routeContent"),
@@ -279,6 +300,7 @@ const nodes = {
   mapLabelModeInput: document.querySelector("#mapLabelModeInput"),
   apartmentLayerStatus: document.querySelector("#apartmentLayerStatus"),
   propertyDashboard: document.querySelector("#propertyDashboard"),
+  jeonseRiskContent: document.querySelector("#jeonseRiskContent"),
   bookmarkPanel: document.querySelector("#bookmarkPanel"),
   detailSubpanel: document.querySelector("#detailSubpanel"),
   closeSubpanelButton: document.querySelector("#closeSubpanelButton"),
@@ -296,6 +318,44 @@ const nodes = {
 
 function clamp(value, min = 0, max = 100) {
   return Math.max(min, Math.min(max, value));
+}
+
+function sidebarWidthBounds() {
+  if (window.innerWidth <= 860) {
+    return { min: SIDEBAR_MIN_WIDTH, max: SIDEBAR_MAX_WIDTH };
+  }
+  const reservedMapWidth = state.detailPanelOpen ? 420 : 560;
+  const reservedSubpanelWidth = state.detailPanelOpen ? 568 : 0;
+  const maxByViewport = Math.max(SIDEBAR_MIN_WIDTH, window.innerWidth - reservedMapWidth - reservedSubpanelWidth);
+  return {
+    min: Math.min(SIDEBAR_MIN_WIDTH, maxByViewport),
+    max: Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, maxByViewport))
+  };
+}
+
+function setSidebarWidth(width, { persist = false } = {}) {
+  const { min, max } = sidebarWidthBounds();
+  const nextWidth = Math.round(clamp(Number(width) || SIDEBAR_MIN_WIDTH, min, max));
+  document.documentElement.style.setProperty("--sidebar-width", `${nextWidth}px`);
+  if (persist) {
+    try {
+      window.localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(nextWidth));
+    } catch {
+      // Resizing should still work even when localStorage is unavailable.
+    }
+  }
+  window.requestAnimationFrame(() => {
+    state.map?.instance?.invalidateSize({ pan: false });
+  });
+}
+
+function restoreSidebarWidth() {
+  try {
+    const savedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || 0);
+    if (savedWidth) setSidebarWidth(savedWidth);
+  } catch {
+    // Ignore storage failures.
+  }
 }
 
 function formatNumber(value) {
@@ -332,6 +392,17 @@ function formatDistance(value) {
 function formatFare(value) {
   const fare = Number(value || 0);
   return fare ? `${formatNumber(fare)}원` : "-";
+}
+
+function formatAverageSpeed(summary = {}) {
+  const distanceKm = Number(summary.distanceMeters || 0) / 1000;
+  const totalMinutes = Number(summary.totalMinutes || 0);
+  if (!distanceKm || !totalMinutes) {
+    return "정보 없음";
+  }
+
+  const averageKph = distanceKm / (totalMinutes / 60);
+  return `${averageKph.toFixed(1)}km/h`;
 }
 
 function formatPercent(value, digits = 1) {
@@ -425,7 +496,7 @@ function seoulDongPartsFromText(...values) {
 function validateDestinationInput(value = state.destinationQuery, location = state.destinationLocation) {
   const text = String(value || "").trim();
   if (!text) {
-    return { ok: false, message: "회사/목적지를 입력해주세요." };
+    return { ok: false, message: "목적지를 입력해주세요." };
   }
   const parts = seoulDongPartsFromText(text, location?.address, location?.roadAddress, location?.label);
   if (!parts.ok) {
@@ -539,6 +610,29 @@ function representativeAddressFor(item) {
     || item?.address
     || areaAddressDefaults[item?.id]
     || `${item?.district || ""} ${item?.station || item?.name || ""}`.trim();
+}
+
+function selectedMatchResult() {
+  return state.results.find((item) => item.id === state.selectedId) || null;
+}
+
+function selectedDetailItem() {
+  const result = selectedMatchResult();
+  if (result) return result;
+  if (state.property.detail?.id === state.selectedId) return state.property.detail;
+  return state.apartmentCandidates.find((item) => item.id === state.selectedId)
+    || state.apartments.features.find((item) => item.id === state.selectedId)
+    || null;
+}
+
+function selectedInfrastructureItem() {
+  const selected = selectedDetailItem();
+  if (!selected) return null;
+  if (selected.socSummary || selected.safetyEnvSummary) return selected;
+  if (selected.lat != null && selected.lng != null && state.neighborhoods.length) {
+    return scoreApartmentCandidate(selected);
+  }
+  return selected;
 }
 
 async function fetchJson(path) {
@@ -1409,6 +1503,12 @@ function mergeRouteSegments(route, segments) {
   }];
 }
 
+function clusterMarkerSize(count, { min = 36, max = 96 } = {}) {
+  const numericCount = Math.max(1, Number(count) || 1);
+  const ratio = Math.log10(numericCount) / Math.log10(160);
+  return Math.round(clamp(min + ratio * (max - min), min, max));
+}
+
 function initializeLeafletMap() {
   if (state.map || !window.L) return;
 
@@ -1434,7 +1534,7 @@ function initializeLeafletMap() {
         spiderfyDistanceMultiplier: 1.25,
         iconCreateFunction(cluster) {
           const count = cluster.getChildCount();
-          const size = count >= 10 ? 58 : count >= 5 ? 54 : 50;
+          const size = clusterMarkerSize(count, { min: 36, max: 88 });
           return L.divIcon({
             className: "mv-cluster-icon-wrapper",
             html: `<span class="mv-cluster-icon" style="--cluster-size:${size}px"><strong>${formatNumber(count)}</strong></span>`,
@@ -1455,7 +1555,7 @@ function initializeLeafletMap() {
         spiderfyDistanceMultiplier: 1.3,
         iconCreateFunction(cluster) {
           const count = cluster.getChildCount();
-          const size = count >= 10 ? 60 : count >= 5 ? 56 : 52;
+          const size = clusterMarkerSize(count, { min: 36, max: 96 });
           return L.divIcon({
             className: "apt-cluster-wrapper",
             html: `<span class="apt-cluster" style="--cluster-size:${size}px"><strong>${formatNumber(count)}</strong></span>`,
@@ -1471,8 +1571,10 @@ function initializeLeafletMap() {
     instance,
     markerLayer,
     apartmentLayer,
+    districtLayer: L.layerGroup().addTo(instance),
     routeLayer: L.layerGroup().addTo(instance),
     destinationLayer: L.layerGroup().addTo(instance),
+    infrastructureLayer: L.layerGroup().addTo(instance),
     markersById: {},
     propertyMarkersById: {},
     fitted: false,
@@ -1606,6 +1708,142 @@ function destinationPinIcon() {
   });
 }
 
+const INFRASTRUCTURE_CATEGORY_META = {
+  medical: { label: "의료", className: "medical", source: "soc" },
+  transport: { label: "교통", className: "transport", source: "soc" },
+  convenience: { label: "생활편의", className: "convenience", source: "soc" },
+  education: { label: "교육", className: "school", source: "soc" },
+  leisure: { label: "여가", className: "park", source: "soc" },
+  welfare: { label: "복지시설", className: "welfare", source: "soc" },
+  hospital: { label: "병원", className: "medical", source: "soc" },
+  school: { label: "학교", className: "school", source: "soc" },
+  park: { label: "공원", className: "park", source: "soc" },
+  police: { label: "치안시설", className: "police", source: "safety" },
+  cctv: { label: "CCTV", className: "cctv", source: "safety" },
+  air: { label: "대기환경", className: "air", source: "safety" },
+  green: { label: "녹지 접근", className: "park", source: "safety" }
+};
+
+function offsetLatLng(lat, lng, distanceMeters = 400, bearingDeg = 0) {
+  const radius = 6371008.8;
+  const angularDistance = Number(distanceMeters || 0) / radius;
+  const bearing = bearingDeg * Math.PI / 180;
+  const lat1 = Number(lat) * Math.PI / 180;
+  const lng1 = Number(lng) * Math.PI / 180;
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angularDistance)
+    + Math.cos(lat1) * Math.sin(angularDistance) * Math.cos(bearing)
+  );
+  const lng2 = lng1 + Math.atan2(
+    Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(lat1),
+    Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
+  );
+  return [lat2 * 180 / Math.PI, lng2 * 180 / Math.PI];
+}
+
+function infrastructureSamplesFor(selected, category) {
+  const meta = INFRASTRUCTURE_CATEGORY_META[category] || {};
+  const soc = selected.socSummary || {};
+  const safety = selected.safetyEnvSummary || {};
+  if (category === "green") {
+    return [safety.nearestFacilities?.park, ...(safety.sampleFacilities || []).filter((item) => item.category === "park")]
+      .filter(Boolean);
+  }
+  if (category === "air") {
+    return [{
+      category: "air",
+      name: safety.airStation || "대기측정소",
+      distanceMeters: 900
+    }];
+  }
+  const summary = meta.source === "safety" ? safety : soc;
+  const categoryKeys = SOC_CATEGORY_DEFINITIONS[category]?.aliases || [category];
+  return (summary.sampleFacilities || [])
+    .filter((item) => categoryKeys.includes(item.category))
+    .slice(0, 8);
+}
+
+function facilityLatLng(selected, facility, category, index) {
+  if (Number.isFinite(Number(facility?.lat)) && Number.isFinite(Number(facility?.lng))) {
+    return [Number(facility.lat), Number(facility.lng)];
+  }
+  const distance = Number(facility?.distanceMeters || 450);
+  const categoryOrder = Object.keys(INFRASTRUCTURE_CATEGORY_META).indexOf(category);
+  const bearing = ((categoryOrder + 1) * 47 + index * 31) % 360;
+  return offsetLatLng(Number(selected.lat), Number(selected.lng), distance, bearing);
+}
+
+function infrastructureIcon(category) {
+  const meta = INFRASTRUCTURE_CATEGORY_META[category] || INFRASTRUCTURE_CATEGORY_META.park;
+  return L.divIcon({
+    className: "infrastructure-map-marker-wrapper",
+    html: `<span class="infrastructure-map-marker type-${escapeHtml(meta.className)}">${infrastructureIconSvg(category)}</span>`,
+    iconSize: [34, 34],
+    iconAnchor: [17, 32],
+    popupAnchor: [0, -30]
+  });
+}
+
+function infrastructureIconSvg(category) {
+  const icons = {
+    hospital: `<svg class="hospital-cross-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>`,
+    medical: `<svg class="hospital-cross-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>`,
+    school: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 5l9 5.5-9 5.5-9-5.5Z"/><path d="M6.5 12.8v4.4c1.7 1.2 3.5 1.8 5.5 1.8s3.8-.6 5.5-1.8v-4.4"/><path d="M20 11v5"/></svg>`,
+    education: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 5l9 5.5-9 5.5-9-5.5Z"/><path d="M6.5 12.8v4.4c1.7 1.2 3.5 1.8 5.5 1.8s3.8-.6 5.5-1.8v-4.4"/><path d="M20 11v5"/></svg>`,
+    transport: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M7 8h10"/><path d="M8 17.5 6.5 20"/><path d="M16 17.5 17.5 20"/><circle cx="8" cy="14" r="1"/><circle cx="16" cy="14" r="1"/></svg>`,
+    convenience: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l-1 11H6L5 9Z"/><path d="M8 9a4 4 0 0 1 8 0"/><path d="M9 13h6"/></svg>`,
+    park: `<svg class="park-tree-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="tree-trunk" d="M10 15h4v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-5Z"/><path class="tree-leaf" d="M12 3 5.8 9.2a1 1 0 0 0 .7 1.8H8l-3.2 3.2a1 1 0 0 0 .7 1.8h13a1 1 0 0 0 .7-1.8L16 11h1.5a1 1 0 0 0 .7-1.8L12 3Z"/></svg>`,
+    leisure: `<svg class="park-tree-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="tree-trunk" d="M10 15h4v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-5Z"/><path class="tree-leaf" d="M12 3 5.8 9.2a1 1 0 0 0 .7 1.8H8l-3.2 3.2a1 1 0 0 0 .7 1.8h13a1 1 0 0 0 .7-1.8L16 11h1.5a1 1 0 0 0 .7-1.8L12 3Z"/></svg>`,
+    welfare: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/><path d="M9 11h6"/></svg>`,
+    police: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5.5 5.5v5.2c0 4.1 2.6 7.8 6.5 10.3 3.9-2.5 6.5-6.2 6.5-10.3V5.5L12 3Z"/><path d="M9 11.2h6"/><path d="M12 8.2v6"/></svg>`,
+    cctv: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 9 10.5-3 1.5 5.2-10.5 3L4 9Z"/><path d="m14.8 8.5 4.2-1.2 1 3.5-4.2 1.2"/><path d="M9.5 14.5 8 20"/><path d="M6 20h6"/></svg>`,
+    air: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h9.5a2.5 2.5 0 1 0-2.1-3.9"/><path d="M3.5 13h15a2.5 2.5 0 1 1-2.1 3.9"/><path d="M5 18h6"/></svg>`,
+    green: `<svg class="park-tree-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="tree-trunk" d="M10 15h4v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-5Z"/><path class="tree-leaf" d="M12 3 5.8 9.2a1 1 0 0 0 .7 1.8H8l-3.2 3.2a1 1 0 0 0 .7 1.8h13a1 1 0 0 0 .7-1.8L16 11h1.5a1 1 0 0 0 .7-1.8L12 3Z"/></svg>`
+  };
+  return icons[category] || icons.park;
+}
+
+function renderInfrastructureMarkers(bounds = []) {
+  if (!state.map?.infrastructureLayer) return;
+  state.map.infrastructureLayer.clearLayers();
+
+  const selected = selectedInfrastructureItem();
+  const category = state.infrastructureFocus.category;
+  if (state.detailSubpanelTab !== "infrastructure" || !selected || !category || !INFRASTRUCTURE_CATEGORY_META[category]) return;
+
+  const samples = infrastructureSamplesFor(selected, category);
+  if (!samples.length) return;
+
+  const markerBounds = [];
+  samples.forEach((facility, index) => {
+    const latLng = facilityLatLng(selected, facility, category, index);
+    markerBounds.push(latLng);
+    bounds.push(latLng);
+    const distance = facility.distanceMeters != null ? formatDistance(facility.distanceMeters) : "거리 정보 없음";
+    L.marker(latLng, {
+      title: facility.name || INFRASTRUCTURE_CATEGORY_META[category].label,
+      icon: infrastructureIcon(category),
+      zIndexOffset: 720
+    }).bindPopup(`
+      <div class="infra-popup">
+        <strong>${escapeHtml(facility.name || INFRASTRUCTURE_CATEGORY_META[category].label)}</strong>
+        <span>${escapeHtml(INFRASTRUCTURE_CATEGORY_META[category].label)} · ${escapeHtml(distance)}</span>
+        ${facility.count ? `<small>CCTV ${formatNumber(facility.count)}대 집계점</small>` : ""}
+        ${facility.lat && facility.lng ? "" : "<small>거리 기반 추정 위치</small>"}
+      </div>
+    `, { className: "match-price-popup" }).addTo(state.map.infrastructureLayer);
+  });
+
+  if (markerBounds.length && state.detailSubpanelTab === "infrastructure") {
+    state.map.instance.fitBounds([[selected.lat, selected.lng], ...markerBounds], {
+      padding: [58, 58],
+      maxZoom: 16,
+      animate: true
+    });
+    state.map.fitted = true;
+  }
+}
+
 function renderDestinationMarker(bounds) {
   if (!state.map?.destinationLayer) return;
   state.map.destinationLayer.clearLayers();
@@ -1616,10 +1854,9 @@ function renderDestinationMarker(bounds) {
 
   const latLng = [Number(destinationLocation.lat), Number(destinationLocation.lng)];
   L.marker(latLng, {
-    title: destinationDisplayLabel(),
     icon: destinationPinIcon(),
     zIndexOffset: 900
-  }).bindTooltip(destinationDisplayLabel(), { direction: "top" }).addTo(state.map.destinationLayer);
+  }).addTo(state.map.destinationLayer);
 
   bounds.push(latLng);
 }
@@ -1654,24 +1891,14 @@ function renderLeafletMap() {
       })
     });
 
-    marker
-      .bindPopup(`
-        <div class="match-popup">
-          <strong class="match-popup-name">${escapeHtml(item.name)}</strong>
-          <div class="match-popup-prices">
-            <div><span>매매</span><strong>${formatMoney10k(item.sale10k)}</strong></div>
-            <div><span>전세</span><strong>${formatMoney10k(item.jeonse10k)}</strong></div>
-            <div><span>월세</span><strong>${formatNumber(item.rentMonthly10k)}만원</strong></div>
-          </div>
-        </div>
-      `, { className: "match-price-popup" })
-      .on("click", () => selectApartmentMatch(item.id, { source: "map", openDetailPanel: true }));
+    marker.on("click", () => selectApartmentMatch(item.id, { source: "map", openDetailPanel: true }));
     marker.addTo(markerLayer);
     state.map.markersById[item.id] = marker;
     bounds.push([item.lat, item.lng]);
   });
 
   renderDestinationMarker(bounds);
+  renderInfrastructureMarkers(bounds);
   drawRouteLine(bounds);
   if (bounds.length && !state.map.fitted) {
     const destinationLocation = selectedDestinationLocation();
@@ -1731,7 +1958,6 @@ function focusSelectedMarker(options = {}) {
   const markerLayer = state.map.markerLayer;
   const openMarker = () => {
     if (!isCurrentMapCameraTransition(requestId) || state.detailSubpanelTab === "route") return;
-    if (state.map.instance.hasLayer(marker)) marker.openPopup();
   };
 
   if (options.zoom) {
@@ -1778,7 +2004,7 @@ function isRouteSubpanelActive() {
 
 function mapResultsForCurrentView() {
   if (!isRouteSubpanelActive()) return state.results;
-  const selected = state.results.find((item) => item.id === state.selectedId);
+  const selected = selectedMatchResult();
   return selected ? [selected] : [];
 }
 
@@ -1849,17 +2075,22 @@ function renderApartmentLayerStatus() {
 }
 
 function apartmentPopup(feature) {
-  const preview = feature.pricePreview || {};
   return `
     <div class="match-popup">
       <strong class="match-popup-name">${escapeHtml(feature.name || "아파트")}</strong>
-      <div class="match-popup-prices">
-        <div><span>매매</span><strong>${preview.sale10k ? formatMoney10k(preview.sale10k) : "준비 중"}</strong></div>
-        <div><span>전세</span><strong>${preview.jeonse10k ? formatMoney10k(preview.jeonse10k) : "준비 중"}</strong></div>
-        <div><span>월세</span><strong>${preview.monthlyRent10k ? `${formatNumber(preview.monthlyRent10k)}만원` : "준비 중"}</strong></div>
-      </div>
     </div>
   `;
+}
+
+function openApartmentFeatureDetail(feature) {
+  if (!feature?.id) return;
+  resetRouteState();
+  state.selectedId = feature.id;
+  state.detailPanelOpen = true;
+  state.detailSubpanelTab = "matching";
+  state.showAllCards = false;
+  render();
+  selectProperty(feature.id);
 }
 
 function clusterPopup(feature) {
@@ -1876,10 +2107,89 @@ function clusterPopup(feature) {
   `;
 }
 
+function cleanDistrictName(value) {
+  return String(value || "")
+    .replace(/^서울(?:특별시|시)?\s*/, "")
+    .trim();
+}
+
+function shouldRenderDistrictApartmentClusters() {
+  return Boolean(
+    state.map?.instance
+    && !state.hasMatched
+    && state.apartments.enabled
+    && state.apartmentCandidates.length
+    && state.map.instance.getZoom() <= DISTRICT_CLUSTER_MAX_ZOOM
+  );
+}
+
+function districtApartmentGroups() {
+  const groups = new Map();
+  state.apartmentCandidates.forEach((item) => {
+    const district = cleanDistrictName(item.district);
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    if (!district || !Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    const group = groups.get(district) || {
+      district,
+      lat: 0,
+      lng: 0,
+      count: 0
+    };
+    group.lat += lat;
+    group.lng += lng;
+    group.count += 1;
+    groups.set(district, group);
+  });
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      lat: group.lat / group.count,
+      lng: group.lng / group.count
+    }))
+    .sort((left, right) => right.count - left.count);
+}
+
+function renderDistrictApartmentClusters() {
+  const layer = state.map?.districtLayer;
+  if (!layer) return false;
+  layer.clearLayers();
+  state.map.apartmentLayer?.clearLayers();
+  state.map.propertyMarkersById = {};
+
+  if (!shouldRenderDistrictApartmentClusters()) return false;
+
+  districtApartmentGroups().forEach((group) => {
+    const marker = L.marker([group.lat, group.lng], {
+      icon: L.divIcon({
+        className: "district-cluster-wrapper",
+        html: `
+          <span class="district-cluster">
+            <strong>${formatNumber(group.count)}</strong>
+            <span>${escapeHtml(group.district)}</span>
+          </span>
+        `,
+        iconSize: [148, 44],
+        iconAnchor: [74, 22],
+        popupAnchor: [0, -22]
+      })
+    });
+    marker.on("click", () => {
+      state.map.instance.setView([group.lat, group.lng], DISTRICT_CLUSTER_MAX_ZOOM + 1);
+    });
+    marker.addTo(layer);
+  });
+
+  return true;
+}
+
 function renderApartmentLayer() {
   if (!state.map?.apartmentLayer) return;
   const layer = state.map.apartmentLayer;
   layer.clearLayers();
+  state.map.districtLayer?.clearLayers();
   state.map.propertyMarkersById = {};
 
   if (state.hasMatched) {
@@ -1893,17 +2203,25 @@ function renderApartmentLayer() {
     return;
   }
 
+  if (renderDistrictApartmentClusters()) {
+    renderApartmentLayerStatus();
+    updateMapScaleUI();
+    renderMapSidebar();
+    return;
+  }
+
   const recommendationIds = new Set(state.results.map((item) => item.id));
   state.apartments.features.forEach((feature) => {
     if (feature.type !== "cluster" && recommendationIds.has(feature.id)) return;
     if (feature.type === "cluster") {
+      const size = clusterMarkerSize(feature.count, { min: 36, max: 96 });
       const marker = L.marker([feature.lat, feature.lng], {
         title: `아파트 단지 ${feature.count}개`,
         icon: L.divIcon({
           className: "apt-cluster-wrapper",
-          html: `<span class="apt-cluster"><strong>${formatNumber(feature.count)}</strong></span>`,
-          iconSize: [54, 54],
-          iconAnchor: [27, 27],
+          html: `<span class="apt-cluster" style="--cluster-size:${size}px"><strong>${formatNumber(feature.count)}</strong></span>`,
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
           popupAnchor: [0, -22]
         })
       });
@@ -1935,8 +2253,7 @@ function renderApartmentLayer() {
       })
     });
     marker
-      .bindPopup(apartmentPopup(feature), { className: "match-price-popup" })
-      .on("click", () => selectProperty(feature.id))
+      .on("click", () => openApartmentFeatureDetail(feature))
       .addTo(layer);
     state.map.propertyMarkersById[feature.id] = marker;
   });
@@ -1949,12 +2266,19 @@ function openSelectedPropertyPopup() {
   const marker = state.map?.propertyMarkersById?.[state.property.selectedId];
   if (!marker) return;
   window.requestAnimationFrame(() => {
-    marker.openPopup();
+    state.map?.instance?.closePopup();
   });
 }
 
 async function loadApartmentsForMap(force = false) {
   if (!state.map?.instance || !state.apartments.enabled) return;
+
+  if (shouldRenderDistrictApartmentClusters()) {
+    state.apartments.isLoading = false;
+    state.apartments.error = "";
+    renderApartmentLayer();
+    return;
+  }
 
   const key = apartmentLayerKey();
   if (!force && key && key === state.apartments.lastKey) {
@@ -2066,7 +2390,7 @@ function renderMapRouteChip() {
 }
 
 function renderDetailSubpanelState() {
-  const selected = state.results.find((item) => item.id === state.selectedId);
+  const selected = selectedDetailItem();
   const open = Boolean(state.detailPanelOpen && selected);
   document.querySelector(".workspace")?.classList.toggle("has-subpanel", open);
 
@@ -2074,7 +2398,7 @@ function renderDetailSubpanelState() {
   nodes.detailSubpanel.hidden = !open;
   nodes.detailSubpanel.setAttribute("aria-hidden", open ? "false" : "true");
 
-  const activeTab = ["matching", "apartment", "route", "infrastructure"].includes(state.detailSubpanelTab)
+  const activeTab = ["matching", "apartment", "route", "infrastructure", "jeonseRisk"].includes(state.detailSubpanelTab)
     ? state.detailSubpanelTab
     : "matching";
   nodes.detailSubpanel.querySelectorAll("[data-subpanel-tab]").forEach((button) => {
@@ -2111,10 +2435,10 @@ function activateDetailSubpanelTab(tab) {
     return;
   }
 
-  const selected = state.results.find((item) => item.id === state.selectedId);
+  const selected = selectedDetailItem();
   const routeReady = state.route.selectedId === selected?.id
     && (state.route.isLoading || state.route.result);
-  if (selected && !routeReady) {
+  if (selected && selectedMatchResult() && !routeReady) {
     calculateCommuteRoute(selected);
   } else if (state.route.result) {
     focusRouteOnMap();
@@ -2174,6 +2498,54 @@ function propertyMetric(label, value, note = "") {
   `;
 }
 
+function isLiveStatus(status) {
+  return status?.mode === "live_api" && Number(status?.recordCount || 0) > 0;
+}
+
+function propertyDataNote(isLive, liveLabel, emptyLabel = "매칭된 실거래 정보 없음") {
+  return isLive ? liveLabel : emptyLabel;
+}
+
+function formatAreaM2(value) {
+  const area = Number(value);
+  if (!Number.isFinite(area) || area <= 0) return "";
+  return `${area.toLocaleString("ko-KR", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  })}㎡`;
+}
+
+function liveAreaOptionsText(detail) {
+  const liveAreas = (detail.areaOptions || [])
+    .filter((item) => item.sourceMode === "molit_live" && Number(item.exclusiveM2) > 0)
+    .map((item) => formatAreaM2(item.exclusiveM2))
+    .filter(Boolean);
+  return liveAreas.length ? liveAreas.join(" / ") : "정보 없음";
+}
+
+function liveTransactionRecords(price, predicate) {
+  return (price.molitRentRecords || []).filter((item) => predicate(item));
+}
+
+function latestTradeRecord(price) {
+  const records = Array.isArray(price.molitTradeRecords) ? price.molitTradeRecords : [];
+  return records
+    .filter((item) => Number(item.amount10k || 0) > 0 && Number(item.exclusiveM2 || 0) > 0)
+    .sort((a, b) => {
+      const left = `${a.dealYear || ""}${String(a.dealMonth || "").padStart(2, "0")}${String(a.dealDay || "").padStart(2, "0")}`;
+      const right = `${b.dealYear || ""}${String(b.dealMonth || "").padStart(2, "0")}${String(b.dealDay || "").padStart(2, "0")}`;
+      return right.localeCompare(left);
+    })[0] || null;
+}
+
+function pricePerPyeongText(record) {
+  const amount10k = Number(record?.amount10k || 0);
+  const exclusiveM2 = Number(record?.exclusiveM2 || 0);
+  const pyeong = exclusiveM2 / 3.3058;
+  if (!amount10k || !Number.isFinite(pyeong) || pyeong <= 0) return "정보 없음";
+  return `평당 ${formatMoney10k(amount10k / pyeong)}`;
+}
+
 function statusText(status) {
   if (status === "high") return "집중 확인";
   if (status === "warning") return "주의";
@@ -2182,10 +2554,18 @@ function statusText(status) {
 }
 
 function renderTrendChart(rows) {
-  if (!Array.isArray(rows) || rows.length < 2) {
-    return `<div class="chart-empty">거래 추이 데이터 준비 중</div>`;
+  const liveRows = Array.isArray(rows) ? rows.filter((row) => row.sourceMode !== "trend_estimate") : [];
+  const saleData = liveRows
+    .map((row) => ({ month: row.month || "", value: Number(row.sale10k || 0), volume: Number(row.saleVolume || 0) }))
+    .filter((row) => row.month && row.value > 0);
+  const jeonseData = liveRows
+    .map((row) => ({ month: row.month || "", value: Number(row.jeonse10k || 0), volume: Number(row.jeonseVolume || 0) }))
+    .filter((row) => row.month && row.value > 0);
+  const pointCount = saleData.length + jeonseData.length;
+  if (liveRows.length < 2 || pointCount < 2) {
+    return `<div class="chart-empty">실거래 기반 월별 추이 정보 없음</div>`;
   }
-  const values = rows.flatMap((row) => [Number(row.sale10k || 0), Number(row.jeonse10k || 0)]).filter(Boolean);
+  const values = [...saleData, ...jeonseData].map((row) => row.value);
   const min = Math.min(...values) * 0.96;
   const max = Math.max(...values) * 1.04;
   const width = 420;
@@ -2197,26 +2577,79 @@ function renderTrendChart(rows) {
   const usableWidth = width - left - right;
   const usableHeight = height - top - bottom;
   const y = (value) => top + usableHeight - ((Number(value) - min) / (max - min || 1)) * usableHeight;
-  const x = (index) => left + (index / (rows.length - 1)) * usableWidth;
-  const salePoints = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.sale10k).toFixed(1)}`).join(" ");
-  const jeonsePoints = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.jeonse10k).toFixed(1)}`).join(" ");
-  const first = rows[0]?.month || "";
-  const last = rows[rows.length - 1]?.month || "";
+  const x = (index) => left + (index / (liveRows.length - 1)) * usableWidth;
+  const indexedRows = liveRows.map((row, index) => ({ ...row, index }));
+  const pointFor = (row) => `${x(row.index).toFixed(1)},${y(row.value).toFixed(1)}`;
+  const seriesRows = (field, volumeField) => indexedRows
+    .map((row) => ({
+      month: row.month || "",
+      value: Number(row[field] || 0),
+      volume: Number(row[volumeField] || 0),
+      index: row.index
+    }))
+    .filter((row) => row.month && row.value > 0);
+  const saleRows = seriesRows("sale10k", "saleVolume");
+  const jeonseRows = seriesRows("jeonse10k", "jeonseVolume");
+  const salePoints = saleRows.map(pointFor).join(" ");
+  const jeonsePoints = jeonseRows.map(pointFor).join(" ");
+  const pointSvg = (rows, className, label) => rows.map((row) => `
+    <circle class="${className}-point" cx="${x(row.index).toFixed(1)}" cy="${y(row.value).toFixed(1)}" r="3.2">
+      <title>${escapeHtml(`${row.month} ${label} ${formatMoney10k(row.value)}${row.volume ? ` · ${row.volume}건` : ""}`)}</title>
+    </circle>
+  `).join("");
+  const first = liveRows[0]?.month || "";
+  const last = liveRows[liveRows.length - 1]?.month || "";
   return `
     <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 거래 추이 그래프">
       <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" />
       <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" />
-      <polyline class="sale-line" points="${salePoints}" />
-      <polyline class="jeonse-line" points="${jeonsePoints}" />
+      ${saleRows.length > 1 ? `<polyline class="sale-line" points="${salePoints}" />` : ""}
+      ${jeonseRows.length > 1 ? `<polyline class="jeonse-line" points="${jeonsePoints}" />` : ""}
+      ${pointSvg(saleRows, "sale", "매매")}
+      ${pointSvg(jeonseRows, "jeonse", "전세")}
       <text x="${left}" y="${height - 10}">${escapeHtml(first)}</text>
       <text x="${width - right}" y="${height - 10}" text-anchor="end">${escapeHtml(last)}</text>
       <text x="${left}" y="12">${escapeHtml(formatMoney10k(max))}</text>
       <text x="${width - right}" y="12" text-anchor="end">매매 / 전세</text>
     </svg>
     <div class="chart-legend">
-      <span><i class="chart-dot sale"></i>매매 추정</span>
-      <span><i class="chart-dot jeonse"></i>전세 추정</span>
+      <span><i class="chart-dot sale"></i>매매 실거래</span>
+      <span><i class="chart-dot jeonse"></i>전세 실거래</span>
     </div>
+  `;
+}
+
+function renderAiSummaryCard(summary = {}) {
+  return `
+    <section class="property-card ai-summary-card">
+      <div class="property-card-title">
+        <h4>AI 요약</h4>
+      </div>
+      <p class="ai-headline">${escapeHtml(summary.headline || "선택한 단지의 가격·통근·생활권 데이터를 종합합니다.")}</p>
+      <div class="ai-summary-grid">
+        <div>
+          <strong>장점</strong>
+          <ul>${(summary.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+        <div>
+          <strong>주의</strong>
+          <ul>${([...(summary.weaknesses || []), ...(summary.cautions || [])]).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+        </div>
+      </div>
+      <p class="recommendation-text">${escapeHtml(summary.recommendation || "입지, 가격, 생활 편의성을 함께 비교해 판단하는 것이 좋습니다.")}</p>
+    </section>
+  `;
+}
+
+function renderAiSummaryPendingCard() {
+  return `
+    <section class="property-card ai-summary-card ai-summary-card-pending">
+      <div class="property-card-title">
+        <h4>AI 요약</h4>
+        <span>AI 분석중</span>
+      </div>
+      <p class="ai-headline">선택한 아파트의 주거 조건을 종합적으로 분석하고 있습니다.</p>
+    </section>
   `;
 }
 
@@ -2426,6 +2859,7 @@ const AGENT_DEFAULT_FOLLOW_UPS = [
 function agentTarget() {
   const detail = state.property.detail;
   if (detail?.id) return { id: detail.id, name: detail.name };
+  const selected = selectedDetailItem();
   const top = state.results[0] || state.apartmentCandidates[0] || null;
   return top?.id ? { id: top.id, name: top.name } : null;
 }
@@ -2444,7 +2878,7 @@ function renderAgentBasisGroups(answer) {
         ${filled.map(([title, items]) => `
           <section>
             <strong>${escapeHtml(title)}</strong>
-            <ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+            <ul>${(items || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
           </section>
         `).join("")}
       </div>
@@ -2958,6 +3392,7 @@ function refreshBookmarkViews() {
   renderCards();
   renderDetail();
   renderPropertyDashboard();
+  renderJeonseRiskPanel();
   renderBookmarkPanel();
 }
 
@@ -2999,7 +3434,9 @@ function closePropertyDashboard() {
   state.property.requestId += 1;
   renderApartmentLayer();
   renderPropertyDashboard();
+  renderJeonseRiskPanel();
   renderDetailSubpanelState();
+  renderAgentPanel();
 }
 
 function bindPropertyDashboardEvents() {
@@ -3019,6 +3456,115 @@ function bindPropertyDashboardEvents() {
   });
 }
 
+function bindAgentCtaEvents() {
+  document.querySelector("#openAgentFromDashboard")?.addEventListener("click", openAgentPanel);
+}
+
+function renderAgentCtaCard() {
+  return `
+    <section class="property-card wide agent-cta">
+      <div class="property-card-title">
+        <h4>AI Agent 질의응답</h4>
+        <span>근거 기반 설명</span>
+      </div>
+      <p class="property-note">전세 안전성, 깡통 여부, 확인 서류 등을 대화로 물어볼 수 있습니다.</p>
+      <button id="openAgentFromDashboard" class="primary-button compact-button" type="button">AI Agent에게 물어보기</button>
+    </section>
+  `;
+}
+
+// codex 브랜치의 '전세 위험 점검' 전용 탭 렌더러. 마스터-디테일 대시보드와 같은
+// safeguard 렌더 함수들을 재사용해 한 탭에서 위험 항목만 모아 본다.
+function renderJeonseRiskPanel() {
+  if (!nodes.jeonseRiskContent) return;
+
+  if (state.property.isLoading) {
+    nodes.jeonseRiskContent.classList.add("has-property-detail");
+    nodes.jeonseRiskContent.innerHTML = `
+      <div class="property-empty">
+        <strong>전세 위험 정보를 불러오는 중입니다.</strong>
+        <span>전세가율, 보증금 비율, 계약 전 확인 항목을 계산합니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  if (state.property.error) {
+    nodes.jeonseRiskContent.classList.add("has-property-detail");
+    nodes.jeonseRiskContent.innerHTML = `<div class="property-empty is-error">${escapeHtml(state.property.error)}</div>`;
+    return;
+  }
+
+  const detail = state.property.detail;
+  if (!detail) {
+    nodes.jeonseRiskContent.classList.remove("has-property-detail");
+    nodes.jeonseRiskContent.innerHTML = `
+      <div class="property-empty">
+        <strong>추천 아파트를 선택하세요.</strong>
+        <span>선택한 단지의 전세 위험 신호와 계약 전 확인 항목을 볼 수 있습니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  nodes.jeonseRiskContent.classList.add("has-property-detail");
+  const risk = detail.risk || {};
+  const safeguard = detail.safeguard || {};
+  nodes.jeonseRiskContent.innerHTML = `
+    <div class="property-grid">
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>전세 위험 신호 점검</h4>
+          <span>법적 판정 아님</span>
+        </div>
+        ${renderGaptongVerdict(safeguard)}
+        <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
+        <ul class="risk-list">${renderRiskSignals(risk)}</ul>
+        <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>계약 전 확인 체크리스트</h4>
+          <span>주의 요소 안내</span>
+        </div>
+        ${renderContractChecklist(risk)}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>정보 사각지대</h4>
+          <span>가격 데이터에 없는 항목</span>
+        </div>
+        ${renderBlindSpots(safeguard)}
+        <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
+        ${renderSelfServeChecks(safeguard)}
+        <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
+        ${renderConsentChecks(safeguard)}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>대항력 확보 타임라인</h4>
+          <span>전입신고 익일 0시 공백</span>
+        </div>
+        ${renderTenancyTimeline(safeguard)}
+        <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
+        ${renderSpecialClauses(safeguard)}
+      </section>
+
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>가까운 안전계약 컨설팅</h4>
+          <span>계약 전 전문가 검토</span>
+        </div>
+        ${renderSupportCenter(safeguard)}
+      </section>
+    </div>
+  `;
+  bindPropertyDashboardEvents();
+}
+
 function renderPropertyDashboard() {
   if (!nodes.propertyDashboard) return;
 
@@ -3027,7 +3573,7 @@ function renderPropertyDashboard() {
     nodes.propertyDashboard.innerHTML = `
       <div class="property-empty">
         <strong>단지 상세 정보를 불러오는 중입니다.</strong>
-        <span>실거래·공시가격 연계 구조와 전세 위험 신호를 계산합니다.</span>
+        <span>실거래·전용면적 연계 구조와 전세 위험 신호를 계산합니다.</span>
       </div>
     `;
     return;
@@ -3169,13 +3715,20 @@ function renderPropertyDashboard() {
 
       <section class="property-card wide agent-cta">
         <div class="property-card-title">
-          <h4>AI Agent 질의응답</h4>
-          <span>근거 기반 설명</span>
+          <h4>대항력 확보 타임라인</h4>
+          <span>전입신고 익일 0시 공백</span>
         </div>
         <p class="property-note">전세 안전성, 깡통 여부, 확인 서류를 대화로 물어볼 수 있습니다.</p>
         <button id="openAgentFromDashboard" class="primary-button compact-button" type="button">AI Agent에게 물어보기</button>
       </section>
 
+      <section class="property-card wide">
+        <div class="property-card-title">
+          <h4>가까운 안전계약 컨설팅</h4>
+          <span>계약 전 전문가 검토</span>
+        </div>
+        ${renderSupportCenter(safeguard)}
+      </section>
     </div>
   `;
   bindPropertyDashboardEvents();
@@ -3194,6 +3747,7 @@ async function selectProperty(id) {
   renderApartmentLayer();
   openSelectedPropertyPopup();
   renderPropertyDashboard();
+  renderJeonseRiskPanel();
   renderDetailSubpanelState();
   try {
     const payload = await fetchJson(`/api/property-detail?id=${encodeURIComponent(id)}`);
@@ -3208,8 +3762,11 @@ async function selectProperty(id) {
       state.property.isLoading = false;
       renderApartmentLayer();
       openSelectedPropertyPopup();
+      renderDetail();
       renderPropertyDashboard();
+      renderJeonseRiskPanel();
       renderDetailSubpanelState();
+      renderAgentPanel();
     }
   }
 }
@@ -3364,8 +3921,8 @@ function renderRouteSummary(route) {
     return `
       ${metric("총 소요", `${formatNumber(summary.totalMinutes)}분`)}
       ${metric("이동 거리", formatDistance(summary.distanceMeters))}
-      ${metric("예상 비용", formatFare(summary.estimatedCost ?? summary.fare))}
-      ${metric("교통 상황", summary.trafficLabel || "보통")}
+      ${metric("택시 요금", formatFare(summary.taxiFare))}
+      ${metric("평균 속도", formatAverageSpeed(summary))}
     `;
   }
   if (transportMode === "bicycle") {
@@ -3467,7 +4024,7 @@ function renderRouteResult(selected) {
 
 function renderRoutePlanner(selected) {
   const originValue = representativeAddressFor(selected);
-  const destinationValue = selected.destinationAddress || destinationAddressFor();
+  const destinationValue = selectedMatchResult() ? (selected.destinationAddress || destinationAddressFor()) : "";
   return `
     <div class="route-planner">
       <div class="route-origin-summary">
@@ -3477,7 +4034,7 @@ function renderRoutePlanner(selected) {
       </div>
       <div class="route-form">
         <label class="field compact route-destination-field">
-          <span>회사/목적지</span>
+          <span>목적지</span>
           <span class="search-input-wrap">
             <input
               id="routeDestinationInput"
@@ -3527,7 +4084,8 @@ function renderEvidence(selected) {
 }
 
 function renderDetail() {
-  const selected = state.results.find((item) => item.id === state.selectedId);
+  const selected = selectedDetailItem();
+  const matched = selectedMatchResult();
 
   if (!selected) {
     nodes.selectedBadge.textContent = "선택 없음";
@@ -3535,20 +4093,44 @@ function renderDetail() {
     return;
   }
 
+  const selectedDetail = state.property.selectedId === selected.id ? state.property.detail : null;
+  const aiSummary = selectedDetail?.aiSummary || null;
   nodes.selectedBadge.textContent = selected.name;
+  if (!matched) {
+    nodes.detailContent.innerHTML = `
+      <section class="property-card match-result-card">
+        <div>
+          <h3>${escapeHtml(selected.name || "아파트")}</h3>
+          <p class="detail-address">${escapeHtml(representativeAddressFor(selected))}</p>
+        </div>
+        <div class="callout">
+          <p>조건을 입력하고 매칭하기를 누르면 통근, 주거비, 생활 SOC, 안전 점수가 표시됩니다.</p>
+        </div>
+      </section>
+      ${selectedDetail?.aiSummary ? renderAiSummaryCard(selectedDetail.aiSummary) : renderAiSummaryPendingCard()}
+      ${renderAgentCtaCard()}
+    `;
+    bindAgentCtaEvents();
+    return;
+  }
   nodes.detailContent.innerHTML = `
-    <div>
-      <h3>${escapeHtml(selected.name)}</h3>
-      <p class="detail-address">${escapeHtml(selected.address || `${selected.district || ""} ${selected.dong || ""}`.trim())}</p>
-    </div>
-    <div class="score-list" aria-label="항목별 점수">
-      ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
-      ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
-      ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
-      ${scoreRow("안전", selected.adjusted.safety, scoreTips.safety)}
-    </div>
-    ${renderMatchHighlights(selected)}
+    <section class="property-card match-result-card">
+      <div>
+        <h3>${escapeHtml(selected.name)}</h3>
+        <p class="detail-address">${escapeHtml(selected.address || `${selected.district || ""} ${selected.dong || ""}`.trim())}</p>
+      </div>
+      <div class="score-list" aria-label="항목별 점수">
+        ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
+        ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
+        ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
+        ${scoreRow("안전", selected.adjusted.safety, scoreTips.safety)}
+      </div>
+      ${renderMatchHighlights(selected)}
+    </section>
+    ${aiSummary ? renderAiSummaryCard(aiSummary) : renderAiSummaryPendingCard()}
+    ${renderAgentCtaCard()}
   `;
+  bindAgentCtaEvents();
 }
 
 function matchHighlight(title, value, note = "") {
@@ -3594,13 +4176,13 @@ function renderMatchHighlights(selected) {
 }
 
 function renderRoutePanel() {
-  const selected = state.results.find((item) => item.id === state.selectedId);
+  const selected = selectedDetailItem();
 
   if (!nodes.routeContent) return;
   if (!selected) {
     nodes.routeContent.innerHTML = state.isLoading
       ? `<div class="callout"><p>추천 후보를 불러온 뒤 통근 루트를 계산할 수 있습니다.</p></div>`
-      : `<div class="callout"><p>추천 아파트를 선택하면 단지에서 회사/목적지까지의 통근 루트를 계산할 수 있습니다.</p></div>`;
+      : `<div class="callout"><p>추천 아파트를 선택하면 단지에서 목적지까지의 통근 루트를 계산할 수 있습니다.</p></div>`;
     return;
   }
 
@@ -3609,53 +4191,91 @@ function renderRoutePanel() {
   window.lucide?.createIcons();
 }
 
-function infrastructureItem(label, value, nearest = null) {
-  const name = nearest?.name || "근접 시설 정보 준비 중";
+function infrastructureItem(label, value, nearest = null, category = "") {
+  const name = nearest?.name || "정보 없음";
   const distance = nearest?.distanceMeters != null ? formatDistance(nearest.distanceMeters) : "";
   return `
-    <div class="infrastructure-item">
+    <button class="infrastructure-item${state.infrastructureFocus.category === category ? " is-active" : ""}" type="button" data-infrastructure-category="${escapeHtml(category)}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
       <small>${escapeHtml(name)}${distance ? ` · ${escapeHtml(distance)}` : ""}</small>
-    </div>
+    </button>
   `;
+}
+
+function bindInfrastructurePanelEvents() {
+  document.querySelectorAll("[data-infrastructure-category]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const category = button.dataset.infrastructureCategory || "";
+      state.infrastructureFocus.category = state.infrastructureFocus.category === category ? "" : category;
+      state.infrastructureFocus.label = INFRASTRUCTURE_CATEGORY_META[category]?.label || "";
+      renderInfrastructurePanel();
+      renderMap();
+    });
+  });
+}
+
+function socCategoryDisplayData(selected, category) {
+  const soc = selected.socSummary || {};
+  const evidence = selected.evidence || {};
+  const counts = soc.counts || {};
+  const categoryCounts = soc.categoryCounts || soc.countsByCategory || evidence.socCategoryCounts || {};
+  const definition = SOC_CATEGORY_DEFINITIONS[category] || {};
+  const aliases = definition.aliases || [category];
+  const { count, hasValue } = socCountFromAliases([categoryCounts, counts, evidence.socCounts], aliases);
+  const nearest = aliases
+    .map((key) => soc.nearestFacilities?.[key])
+    .find(Boolean) || null;
+  return { count, hasValue, nearest };
 }
 
 function renderInfrastructurePanel() {
   if (!nodes.infrastructureContent) return;
-  const selected = state.results.find((item) => item.id === state.selectedId);
+  const selected = selectedInfrastructureItem();
   if (!selected) {
-    nodes.infrastructureContent.innerHTML = `<div class="callout"><p>추천 아파트를 선택하면 주변 인프라를 확인할 수 있습니다.</p></div>`;
+    nodes.infrastructureContent.innerHTML = `<div class="callout"><p>아파트를 선택하면 주변 인프라를 확인할 수 있습니다.</p></div>`;
     return;
   }
 
   const soc = selected.socSummary || {};
   const safety = selected.safetyEnvSummary || {};
-  const socCounts = soc.counts || {};
   const safetyCounts = safety.counts || {};
-  const socNearest = soc.nearestFacilities || {};
   const safetyNearest = safety.nearestFacilities || {};
+  const socDisplay = (category) => {
+    const data = socCategoryDisplayData(selected, category);
+    return infrastructureItem(
+      SOC_CATEGORY_DEFINITIONS[category]?.label || category,
+      data.hasValue ? `${formatNumber(data.count)}개` : "정보 없음",
+      data.nearest,
+      category
+    );
+  };
 
   nodes.infrastructureContent.innerHTML = `
     <section class="infrastructure-category">
       <div class="infrastructure-category-title">생활 SOC</div>
+      <p class="infrastructure-note">${escapeHtml(selected.livingArea?.name || "인근 생활권")} 기준 인프라입니다.</p>
       <div class="infrastructure-list">
-        ${infrastructureItem("병원", `${formatNumber(socCounts.hospital)}개`, socNearest.hospital)}
-        ${infrastructureItem("학교", `${formatNumber(socCounts.school)}개`, socNearest.school)}
-        ${infrastructureItem("공원", `${formatNumber(socCounts.park)}개`, socNearest.park)}
+        ${socDisplay("medical")}
+        ${socDisplay("transport")}
+        ${socDisplay("convenience")}
+        ${socDisplay("education")}
+        ${socDisplay("leisure")}
+        ${socDisplay("welfare")}
       </div>
     </section>
 
     <section class="infrastructure-category">
       <div class="infrastructure-category-title">안전</div>
       <div class="infrastructure-list">
-        ${infrastructureItem("치안시설", `${formatNumber(safetyCounts.police)}개`, safetyNearest.police)}
-        ${infrastructureItem("CCTV", `${formatNumber(safetyCounts.cctv)}대`, safetyNearest.cctv)}
-        ${infrastructureItem("대기환경", `${formatNumber(safety.airQualityScore)}점`, safety.airStation ? { name: safety.airStation } : null)}
-        ${infrastructureItem("녹지 접근", `${formatNumber(safety.greenScore)}점`, safetyNearest.park)}
+        ${infrastructureItem("치안시설", `${formatNumber(safetyCounts.police)}개`, safetyNearest.police, "police")}
+        ${infrastructureItem("CCTV", `${formatNumber(safetyCounts.cctv)}대`, safetyNearest.cctv, "cctv")}
+        ${infrastructureItem("대기환경", `${formatNumber(safety.airQualityScore)}점`, safety.airStation ? { name: safety.airStation } : null, "air")}
+        ${infrastructureItem("녹지 접근", `${formatNumber(safety.greenScore)}점`, safetyNearest.park, "green")}
       </div>
     </section>
   `;
+  bindInfrastructurePanelEvents();
 }
 
 function resetRouteState() {
@@ -3898,8 +4518,42 @@ function syncAllRangeProgress() {
   ].forEach(syncRangeProgress);
 }
 
+function normalizeBudgetValue(value) {
+  const min = Number(nodes.budgetInput?.min || 0);
+  const max = Number(nodes.budgetInput?.max || 150);
+  const step = Number(nodes.budgetInput?.step || 1);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return state.budget;
+  return clamp(Math.round(numeric / step) * step, min, max);
+}
+
+function setBudget(value, { syncTextInput = true, refresh = true } = {}) {
+  state.budget = normalizeBudgetValue(value);
+  if (nodes.budgetInput) nodes.budgetInput.value = state.budget;
+  if (syncTextInput && nodes.budgetOutput) nodes.budgetOutput.value = String(state.budget);
+  syncRangeProgress(nodes.budgetInput);
+  if (refresh) scheduleRefresh();
+}
+
+function syncWeightInputs() {
+  if (nodes.commuteWeight) nodes.commuteWeight.value = state.weights.commute;
+  if (nodes.costWeight) nodes.costWeight.value = state.weights.cost;
+  if (nodes.serviceWeight) nodes.serviceWeight.value = state.weights.service;
+  if (nodes.safetyWeight) nodes.safetyWeight.value = state.weights.safety;
+  syncAllRangeProgress();
+}
+
+function applyPersonaDefaultWeights(persona) {
+  state.weights = {
+    ...(PERSONA_DEFAULT_WEIGHTS[persona] || PERSONA_DEFAULT_WEIGHTS.single)
+  };
+  syncWeightInputs();
+}
+
 function renderControls() {
-  nodes.budgetOutput.textContent = `${state.budget}만원`;
+  if (nodes.budgetOutput && document.activeElement !== nodes.budgetOutput) {
+    nodes.budgetOutput.value = String(state.budget);
+  }
   nodes.commuteWeightOutput.textContent = `${state.weights.commute}%`;
   nodes.costWeightOutput.textContent = `${state.weights.cost}%`;
   nodes.serviceWeightOutput.textContent = `${state.weights.service}%`;
@@ -3937,6 +4591,7 @@ function render() {
   renderDetail();
   renderRoutePanel();
   renderInfrastructurePanel();
+  renderJeonseRiskPanel();
   renderDetailSubpanelState();
   renderEvidenceTable();
   renderAgentPanel();
@@ -4020,12 +4675,12 @@ function initNavigation() {
 }
 
 function resetUserSettings() {
-  state.budget = 70;
+  state.budget = 0;
   state.destination = "gangnam";
   state.destinationQuery = "";
   state.destinationLocation = null;
   state.persona = "single";
-  state.weights = { commute: 25, cost: 25, service: 25, safety: 25 };
+  state.weights = { ...PERSONA_DEFAULT_WEIGHTS.single };
   state.results = [];
   state.selectedId = null;
   state.showAllCards = false;
@@ -4048,12 +4703,10 @@ function resetUserSettings() {
   state.locationSearch.isLoading = false;
 
   nodes.budgetInput.value = state.budget;
+  nodes.budgetOutput.value = state.budget;
   nodes.destinationInput.value = state.destinationQuery;
   document.querySelector("input[name='persona'][value='single']").checked = true;
-  nodes.commuteWeight.value = state.weights.commute;
-  nodes.costWeight.value = state.weights.cost;
-  nodes.serviceWeight.value = state.weights.service;
-  nodes.safetyWeight.value = state.weights.safety;
+  syncWeightInputs();
   if (nodes.apartmentLayerToggle) nodes.apartmentLayerToggle.checked = true;
   if (nodes.mapLabelModeInput) nodes.mapLabelModeInput.value = "sale";
   resetRouteState();
@@ -4089,10 +4742,82 @@ async function refreshAllData() {
   }
 }
 
+function bindSidebarResize() {
+  const handle = nodes.sidebarResizeHandle;
+  if (!handle) return;
+
+  let activePointerId = null;
+
+  const resizeTo = (clientX, persist = false) => {
+    setSidebarWidth(clientX, { persist });
+  };
+
+  handle.addEventListener("pointerdown", (event) => {
+    if (window.innerWidth <= 860) return;
+    activePointerId = event.pointerId;
+    handle.setPointerCapture?.(event.pointerId);
+    document.querySelector(".workspace")?.classList.add("is-resizing-sidebar");
+    resizeTo(event.clientX);
+    event.preventDefault();
+  });
+
+  handle.addEventListener("pointermove", (event) => {
+    if (activePointerId !== event.pointerId) return;
+    resizeTo(event.clientX);
+  });
+
+  const finishResize = (event) => {
+    if (activePointerId !== event.pointerId) return;
+    activePointerId = null;
+    handle.releasePointerCapture?.(event.pointerId);
+    document.querySelector(".workspace")?.classList.remove("is-resizing-sidebar");
+    resizeTo(event.clientX, true);
+  };
+
+  handle.addEventListener("pointerup", finishResize);
+  handle.addEventListener("pointercancel", finishResize);
+
+  handle.addEventListener("keydown", (event) => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    const current = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-width")) || 540;
+    const { min, max } = sidebarWidthBounds();
+    const step = event.shiftKey ? 40 : 16;
+    if (event.key === "ArrowLeft") setSidebarWidth(current - step, { persist: true });
+    if (event.key === "ArrowRight") setSidebarWidth(current + step, { persist: true });
+    if (event.key === "Home") setSidebarWidth(min, { persist: true });
+    if (event.key === "End") setSidebarWidth(max, { persist: true });
+    event.preventDefault();
+  });
+}
+
 function bindEvents() {
+  bindSidebarResize();
+
   nodes.budgetInput.addEventListener("input", (event) => {
-    state.budget = Number(event.target.value);
+    setBudget(event.target.value);
+  });
+
+  nodes.budgetOutput.addEventListener("input", (event) => {
+    const nextValue = Number(event.target.value);
+    if (!Number.isFinite(nextValue)) return;
+    state.budget = clamp(nextValue, Number(nodes.budgetInput.min || 0), Number(nodes.budgetInput.max || 150));
+    nodes.budgetInput.value = state.budget;
+    syncRangeProgress(nodes.budgetInput);
     scheduleRefresh();
+  });
+
+  nodes.budgetOutput.addEventListener("focus", (event) => {
+    if (Number(event.target.value) === 0) {
+      event.target.value = "";
+    }
+  });
+
+  nodes.budgetOutput.addEventListener("change", (event) => {
+    setBudget(event.target.value);
+  });
+
+  nodes.budgetOutput.addEventListener("blur", (event) => {
+    setBudget(event.target.value, { refresh: false });
   });
 
   const updateDestinationFromInput = (value, delay = 180) => {
@@ -4141,6 +4866,7 @@ function bindEvents() {
     radio.addEventListener("change", (event) => {
       if (event.target.checked) {
         state.persona = event.target.value;
+        applyPersonaDefaultWeights(state.persona);
         scheduleRefresh(0);
       }
     });
@@ -4277,6 +5003,7 @@ function bindEvents() {
 
 async function init() {
   loadBookmarksFromStorage();
+  restoreSidebarWidth();
   restoreSubpanelWidth();
   bindEvents();
   bindSubpanelResizer();
