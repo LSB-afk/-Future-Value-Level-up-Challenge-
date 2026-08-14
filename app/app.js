@@ -8,6 +8,8 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "movevalue-sidebar-width-v3";
 const SIDEBAR_MIN_WIDTH = 360;
 const SIDEBAR_MAX_WIDTH = 620;
 const DEFAULT_ROUTE_TRANSPORT_MODE = "car";
+const KAKAO_SOC_RADIUS_METERS = 1000;
+const KAKAO_SAFETY_RADIUS_METERS = 1000;
 const ROUTE_TRANSPORT_MODES = [
   { key: "car", label: "자동차", icon: "car-front" },
   { key: "transit", label: "대중교통", icon: "bus-front" },
@@ -36,8 +38,8 @@ const SOC_CATEGORY_DEFINITIONS = {
     targetCount: 4
   },
   leisure: {
-    label: "여가",
-    aliases: ["leisure", "park", "trail", "sports", "gym"],
+    label: "문화·체육",
+    aliases: ["leisure", "library", "culture", "sports", "gym"],
     targetCount: 3
   },
   welfare: {
@@ -64,6 +66,11 @@ const PERSONA_DEFAULT_WEIGHTS = {
   family: { commute: 15, cost: 20, service: 35, safety: 30 },
   senior: { commute: 10, cost: 20, service: 35, safety: 35 }
 };
+const BUDGET_MODE_CONFIG = {
+  monthly: { label: "월 주거 예산", shortLabel: "월세", min: 0, max: 150, step: 1, defaultValue: 0, unit: "만원", displayScale: 1, displayStep: 1 },
+  jeonse: { label: "전세 예산", shortLabel: "전세", min: 0, max: 200000, step: 1000, defaultValue: 0, unit: "억", displayScale: 10000, displayStep: 0.1 },
+  sale: { label: "매매 예산", shortLabel: "매매", min: 0, max: 400000, step: 1000, defaultValue: 0, unit: "억", displayScale: 10000, displayStep: 0.1 }
+};
 
 const state = {
   neighborhoods: [],
@@ -74,6 +81,7 @@ const state = {
   destinationQuery: "",
   destinationLocation: null,
   budget: 0,
+  budgetMode: "monthly",
   persona: "single",
   apiMeta: null,
   apiOnline: false,
@@ -104,6 +112,13 @@ const state = {
     focusMap: false,
     transportMode: DEFAULT_ROUTE_TRANSPORT_MODE
   },
+  aiCommute: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    result: null,
+    error: ""
+  },
   apartments: {
     enabled: true,
     labelMode: "sale",
@@ -119,6 +134,34 @@ const state = {
     category: "",
     label: ""
   },
+  liveInfrastructure: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
+  liveSafety: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
+  liveAir: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
+  liveCctv: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
   property: {
     selectedId: null,
     isLoading: false,
@@ -128,7 +171,8 @@ const state = {
     agentQuestion: "이 아파트 전세 들어가도 괜찮아?",
     agentAnswer: null,
     agentLoading: false,
-    agentError: ""
+    agentError: "",
+    trendMode: ""
   },
   agent: {
     open: false,
@@ -254,8 +298,8 @@ const areaAddressDefaults = {
 
 const scoreTips = {
   commute: "목적지까지의 대중교통 통근시간을 반영한 점수",
-  cost: "예산 대비 단지 추정 월세를 반영한 주거비 점수",
-  service: "의료·교통·생활편의·교육·여가복지·복지시설을 가구 유형별 비중으로 합산한 생활 SOC 점수",
+  cost: "선택한 예산 기준 대비 단지 가격을 반영한 주거비 점수",
+  service: "의료·교통·생활편의·교육·문화·체육·복지시설을 가구 유형별 비중으로 합산한 생활 SOC 점수",
   safety: "치안·환경 접근성과 단지 전세 위험 신호를 결합한 안전 점수"
 };
 
@@ -263,6 +307,8 @@ const nodes = {
   main: document.querySelector("main"),
   budgetInput: document.querySelector("#budgetInput"),
   budgetOutput: document.querySelector("#budgetOutput"),
+  budgetLabel: document.querySelector("#budgetLabel"),
+  budgetUnit: document.querySelector("#budgetUnit"),
   destinationInput: document.querySelector("#destinationInput"),
   destinationClearButton: document.querySelector("#destinationClearButton"),
   destinationSuggestions: document.querySelector("#destinationSuggestions"),
@@ -341,6 +387,17 @@ function setSidebarWidth(width, { persist = false } = {}) {
   });
 }
 
+function invalidateMapLayout() {
+  const map = state.map?.instance;
+  if (!map) return;
+  window.requestAnimationFrame(() => {
+    map.invalidateSize({ pan: false });
+    window.requestAnimationFrame(() => {
+      map.invalidateSize({ pan: false });
+    });
+  });
+}
+
 function restoreSidebarWidth() {
   try {
     const savedWidth = Number(window.localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || 0);
@@ -362,6 +419,51 @@ function formatMoney10k(value) {
     return rest ? `${eok}억 ${formatNumber(rest)}만원` : `${eok}억원`;
   }
   return `${formatNumber(amount)}만원`;
+}
+
+function budgetConfig(mode = state.budgetMode) {
+  return BUDGET_MODE_CONFIG[mode] || BUDGET_MODE_CONFIG.monthly;
+}
+
+function displayBudgetValue(value = state.budget, mode = state.budgetMode) {
+  const config = budgetConfig(mode);
+  const displayValue = Number(value || 0) / Number(config.displayScale || 1);
+  return Number.isInteger(displayValue) ? String(displayValue) : displayValue.toFixed(1);
+}
+
+function parseBudgetDisplayValue(value, mode = state.budgetMode) {
+  const config = budgetConfig(mode);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return state.budget;
+  return numeric * Number(config.displayScale || 1);
+}
+
+function budgetTargetValue(item, mode = state.budgetMode) {
+  if (mode === "sale") return Math.round(Number(item.sale10k || item.pricePreview?.sale10k || 0));
+  if (mode === "jeonse") return Math.round(Number(item.jeonse10k || item.pricePreview?.jeonse10k || 0));
+  return Math.round(Number(item.rentMonthly10k || item.monthlyRent10k || item.pricePreview?.monthlyRent10k || 0));
+}
+
+function formatBudgetValue(value, mode = state.budgetMode) {
+  return mode === "monthly" ? `${formatNumber(value)}만원` : formatMoney10k(value);
+}
+
+function costScoreForBudget(targetValue, budgetValue, mode = state.budgetMode) {
+  const target = Number(targetValue || 0);
+  const budget = Number(budgetValue || 0);
+  if (!target) return 50;
+  if (!budget) return 0;
+  const usageRatio = target / budget;
+  if (usageRatio <= 1) {
+    return clamp(100 - Math.abs(1 - usageRatio) * 72);
+  }
+  return clamp(100 - (usageRatio - 1) * 600);
+}
+
+function greenAccessScoreFromDistance(distanceMeters) {
+  const distance = Number(distanceMeters);
+  if (!Number.isFinite(distance)) return 0;
+  return Math.round(clamp(100 - (distance / KAKAO_SAFETY_RADIUS_METERS) * 60, 40, 100));
 }
 
 function escapeHtml(value) {
@@ -686,6 +788,19 @@ function locationSuggestionSubtitle(item = {}) {
   return item.roadAddress || item.hint || "";
 }
 
+function isResidentialDestinationSuggestion(item = {}) {
+  if (item.type === "apartment") return true;
+  const text = normalizeSearchText([
+    item.label,
+    item.address,
+    item.roadAddress,
+    item.category,
+    item.apartmentName
+  ].filter(Boolean).join(" "));
+  const residentialTokens = ["아파트", "주거시설", "공동주택", "연립", "다세대", "빌라"];
+  return residentialTokens.some((token) => text.includes(normalizeSearchText(token)));
+}
+
 function renderDestinationValidation(target = "main") {
   const { validation } = locationSearchNodes(target);
   if (!validation) return;
@@ -886,7 +1001,9 @@ function requestLocationSuggestions(query, target = "main") {
     try {
       const payload = await fetchJson(`/api/location-suggestions?query=${encodeURIComponent(value)}&limit=30`);
       if (requestId !== state.locationSearch.requestId) return;
-      state.locationSearch.items = Array.isArray(payload.suggestions) ? payload.suggestions : [];
+      state.locationSearch.items = Array.isArray(payload.suggestions)
+        ? payload.suggestions.filter((item) => !isResidentialDestinationSuggestion(item))
+        : [];
       state.locationSearch.error = "";
     } catch (error) {
       if (requestId !== state.locationSearch.requestId) return;
@@ -970,6 +1087,7 @@ function buildRecommendationQuery() {
   const destinationLocation = selectedDestinationLocation();
   const params = new URLSearchParams({
     budget: state.budget,
+    budgetMode: state.budgetMode,
     destination: state.destination,
     destinationQuery: state.destinationQuery.trim(),
     destinationAddress: destinationLocation?.address || state.destinationQuery.trim(),
@@ -1110,15 +1228,14 @@ function scoreApartmentCandidate(apartment) {
   const deposit = Math.round(Number(area.deposit10k || 1000) * stableFactor(`${apartment.id}:deposit`, 0.85, 1.3));
   const jeonse = Number(pricePreview.jeonse10k) || Math.round(Number(area.jeonse10k || 26000) * marketFactor);
   const sale = Number(pricePreview.sale10k) || Math.round(jeonse / stableFactor(`${apartment.id}:ratio`, 0.55, 0.72));
+  const budgetTarget = budgetTargetValue({ rentMonthly10k: monthlyRent, jeonse10k: jeonse, sale10k: sale }, state.budgetMode);
   const destination = currentDestinationCoordinates();
   const areaMinutes = Number(area.commuteMinutes?.[state.destination] || 60);
   const apartmentDistance = haversineKm(apartment.lat, apartment.lng, destination.lat, destination.lng);
   const areaDistance = haversineKm(area.lat, area.lng, destination.lat, destination.lng);
   const minutes = Math.round(clamp(areaMinutes + (apartmentDistance - areaDistance) * 2.2, 10, 120));
   const commuteScore = clamp(105 - minutes * 1.18);
-  const overBudget = Math.max(0, monthlyRent - state.budget);
-  const underBudget = Math.max(0, state.budget - monthlyRent);
-  const costScore = clamp(82 + underBudget * 0.55 - overBudget * 1.9);
+  const costScore = costScoreForBudget(budgetTarget, state.budget, state.budgetMode);
   const neighborhoodSafety = Number(area.safetyScore || 70) * 0.58 + Number(area.carbonScore || 70) * 0.42;
   const propertySafety = 100 - Number(pricePreview.riskScore || 0);
   const socScoring = computePersonaSocScore(area, state.persona);
@@ -1165,9 +1282,7 @@ function scoreApartmentCandidate(apartment) {
 function scoreNeighborhood(item) {
   const minutes = Number(item.commuteMinutes?.[state.destination] || 60);
   const commuteScore = clamp(105 - minutes * 1.18);
-  const overBudget = Math.max(0, Number(item.rentMonthly10k) - state.budget);
-  const underBudget = Math.max(0, state.budget - Number(item.rentMonthly10k));
-  const costScore = clamp(82 + underBudget * 0.55 - overBudget * 1.9);
+  const costScore = costScoreForBudget(budgetTargetValue(item, state.budgetMode), state.budget, state.budgetMode);
   const safetyEnvScore = Math.round(Number(item.safetyScore) * 0.58 + Number(item.carbonScore) * 0.42);
   const socScoring = computePersonaSocScore(item, state.persona);
   const adjusted = {
@@ -1227,7 +1342,7 @@ function enrichRecommendationResult(item) {
 function calculateFallback() {
   return state.apartmentCandidates
     .map(scoreApartmentCandidate)
-    .sort((a, b) => b.total - a.total || a.rentMonthly10k - b.rentMonthly10k || a.name.localeCompare(b.name))
+    .sort((a, b) => b.total - a.total || budgetTargetValue(a) - budgetTargetValue(b) || a.name.localeCompare(b.name))
     .slice(0, MATCH_RESULT_LIMIT);
 }
 
@@ -1707,7 +1822,7 @@ const INFRASTRUCTURE_CATEGORY_META = {
   transport: { label: "교통", className: "transport", source: "soc" },
   convenience: { label: "생활편의", className: "convenience", source: "soc" },
   education: { label: "교육", className: "school", source: "soc" },
-  leisure: { label: "여가", className: "park", source: "soc" },
+  leisure: { label: "문화·체육", className: "leisure", source: "soc" },
   welfare: { label: "복지시설", className: "welfare", source: "soc" },
   hospital: { label: "병원", className: "medical", source: "soc" },
   school: { label: "학교", className: "school", source: "soc" },
@@ -1735,8 +1850,317 @@ function offsetLatLng(lat, lng, distanceMeters = 400, bearingDeg = 0) {
   return [lat2 * 180 / Math.PI, lng2 * 180 / Math.PI];
 }
 
+function liveInfrastructureStateFor(selected) {
+  if (!selected?.id || state.liveInfrastructure.selectedId !== selected.id) return null;
+  return state.liveInfrastructure;
+}
+
+function liveInfrastructureDataFor(selected) {
+  const liveState = liveInfrastructureStateFor(selected);
+  const data = liveState?.data;
+  if (!data || !["live_api", "partial_error"].includes(data.mode)) return null;
+  return data;
+}
+
+function liveSocCategoryDisplayData(selected, category) {
+  const live = liveInfrastructureDataFor(selected);
+  const data = live?.categories?.[category];
+  if (!data) return null;
+  return {
+    count: Number(data.count || 0),
+    hasValue: true,
+    nearest: data.nearest || null,
+    samples: Array.isArray(data.samples) ? data.samples : []
+  };
+}
+
+function ensureLiveInfrastructure(selected) {
+  if (!selected?.id) return;
+  const lat = Number(selected.lat);
+  const lng = Number(selected.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+  const liveState = liveInfrastructureStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveInfrastructure.requestId + 1;
+  state.liveInfrastructure = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({
+    id: selected.id,
+    lat: String(lat),
+    lng: String(lng),
+    radius: String(KAKAO_SOC_RADIUS_METERS)
+  });
+
+  fetchJson(`/api/kakao-soc?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveInfrastructure.requestId !== requestId) return;
+      state.liveInfrastructure = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "생활 SOC 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveInfrastructure.requestId !== requestId) return;
+      state.liveInfrastructure = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "생활 SOC 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
+function liveSafetyStateFor(selected) {
+  if (!selected?.id || state.liveSafety.selectedId !== selected.id) return null;
+  return state.liveSafety;
+}
+
+function liveSafetyDataFor(selected) {
+  const liveState = liveSafetyStateFor(selected);
+  const data = liveState?.data;
+  if (!data || !["live_api", "partial_error"].includes(data.mode)) return null;
+  return data;
+}
+
+function liveSafetyCategoryDisplayData(selected, category) {
+  const live = liveSafetyDataFor(selected);
+  const data = live?.categories?.[category];
+  if (!data) return null;
+  return {
+    count: Number(data.count || 0),
+    hasValue: true,
+    nearest: data.nearest || null,
+    samples: Array.isArray(data.samples) ? data.samples : []
+  };
+}
+
+function ensureLiveSafety(selected) {
+  if (!selected?.id) return;
+  const lat = Number(selected.lat);
+  const lng = Number(selected.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+  const liveState = liveSafetyStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveSafety.requestId + 1;
+  state.liveSafety = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({
+    id: selected.id,
+    lat: String(lat),
+    lng: String(lng),
+    radius: String(KAKAO_SAFETY_RADIUS_METERS)
+  });
+
+  fetchJson(`/api/kakao-safety?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveSafety.requestId !== requestId) return;
+      state.liveSafety = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "안전 시설 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveSafety.requestId !== requestId) return;
+      state.liveSafety = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "안전 시설 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
+function districtNameForAir(selected) {
+  const district = cleanDistrictName(selected?.district || "");
+  if (district) return district;
+  const address = String(selected?.address || "");
+  const match = address.match(/서울(?:특별시|시)?\s*([가-힣]+구)/);
+  return match?.[1] || "";
+}
+
+function liveAirStateFor(selected) {
+  if (!selected?.id || state.liveAir.selectedId !== selected.id) return null;
+  return state.liveAir;
+}
+
+function liveAirDataFor(selected) {
+  const liveState = liveAirStateFor(selected);
+  const data = liveState?.data;
+  if (!data || data.mode !== "live_api" || !data.air) return null;
+  return data.air;
+}
+
+function airDescription(air) {
+  if (!air) return "정보 없음";
+  const parts = [];
+  if (air.station) parts.push(`${air.station} 측정소`);
+  if (air.grade) parts.push(air.grade);
+  if (air.pm25 != null) parts.push(`PM2.5 ${formatNumber(air.pm25)}㎍/㎥`);
+  if (air.pm10 != null) parts.push(`PM10 ${formatNumber(air.pm10)}㎍/㎥`);
+  return parts.join(" · ") || "서울시 대기환경 API";
+}
+
+function ensureLiveAir(selected) {
+  if (!selected?.id) return;
+  const district = districtNameForAir(selected);
+  if (!district) return;
+
+  const liveState = liveAirStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveAir.requestId + 1;
+  state.liveAir = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({ district });
+  fetchJson(`/api/seoul-air?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveAir.requestId !== requestId) return;
+      state.liveAir = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "대기환경 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveAir.requestId !== requestId) return;
+      state.liveAir = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "대기환경 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
+function liveCctvStateFor(selected) {
+  if (!selected?.id || state.liveCctv.selectedId !== selected.id) return null;
+  return state.liveCctv;
+}
+
+function liveCctvDataFor(selected) {
+  const liveState = liveCctvStateFor(selected);
+  const data = liveState?.data;
+  if (!data || data.mode !== "live_api" || !data.category) return null;
+  return data.category;
+}
+
+function cctvDescription(category) {
+  if (!category) return "정보 없음";
+  const nearest = category.nearest;
+  const parts = [];
+  if (nearest?.name) parts.push(nearest.name);
+  if (nearest?.distanceMeters != null) parts.push(formatDistance(nearest.distanceMeters));
+  if (category.count != null) parts.push(`CCTV ${formatNumber(category.count)}대`);
+  return parts.join(" · ") || "공공데이터포털 CCTV API";
+}
+
+function ensureLiveCctv(selected) {
+  if (!selected?.id) return;
+  const lat = Number(selected.lat);
+  const lng = Number(selected.lng);
+  const district = districtNameForAir(selected);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !district) return;
+
+  const liveState = liveCctvStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveCctv.requestId + 1;
+  state.liveCctv = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({
+    district,
+    lat: String(lat),
+    lng: String(lng),
+    radius: String(KAKAO_SAFETY_RADIUS_METERS)
+  });
+  fetchJson(`/api/public-cctv?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveCctv.requestId !== requestId) return;
+      state.liveCctv = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "CCTV 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveCctv.requestId !== requestId) return;
+      state.liveCctv = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "CCTV 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
 function infrastructureSamplesFor(selected, category) {
   const meta = INFRASTRUCTURE_CATEGORY_META[category] || {};
+  if (meta.source === "soc") {
+    const liveSamples = liveInfrastructureDataFor(selected)?.categories?.[category]?.samples;
+    if (Array.isArray(liveSamples) && liveSamples.length) return liveSamples;
+  }
+  if (category === "cctv") {
+    const liveSamples = liveCctvDataFor(selected)?.samples;
+    if (Array.isArray(liveSamples) && liveSamples.length) return liveSamples;
+  }
+  if (meta.source === "safety" && ["police", "green"].includes(category)) {
+    const liveSamples = liveSafetyDataFor(selected)?.categories?.[category]?.samples;
+    if (Array.isArray(liveSamples) && liveSamples.length) return liveSamples;
+  }
   const soc = selected.socSummary || {};
   const safety = selected.safetyEnvSummary || {};
   if (category === "green") {
@@ -1744,6 +2168,15 @@ function infrastructureSamplesFor(selected, category) {
       .filter(Boolean);
   }
   if (category === "air") {
+    const liveAir = liveAirDataFor(selected);
+    if (liveAir) {
+      return [{
+        category: "air",
+        name: liveAir.nearest?.name || `${liveAir.station || "서울시"} 대기측정소`,
+        description: airDescription(liveAir),
+        distanceMeters: 900
+      }];
+    }
     return [{
       category: "air",
       name: safety.airStation || "대기측정소",
@@ -1787,7 +2220,7 @@ function infrastructureIconSvg(category) {
     transport: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M7 8h10"/><path d="M8 17.5 6.5 20"/><path d="M16 17.5 17.5 20"/><circle cx="8" cy="14" r="1"/><circle cx="16" cy="14" r="1"/></svg>`,
     convenience: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l-1 11H6L5 9Z"/><path d="M8 9a4 4 0 0 1 8 0"/><path d="M9 13h6"/></svg>`,
     park: `<svg class="park-tree-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="tree-trunk" d="M10 15h4v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-5Z"/><path class="tree-leaf" d="M12 3 5.8 9.2a1 1 0 0 0 .7 1.8H8l-3.2 3.2a1 1 0 0 0 .7 1.8h13a1 1 0 0 0 .7-1.8L16 11h1.5a1 1 0 0 0 .7-1.8L12 3Z"/></svg>`,
-    leisure: `<svg class="park-tree-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="tree-trunk" d="M10 15h4v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-5Z"/><path class="tree-leaf" d="M12 3 5.8 9.2a1 1 0 0 0 .7 1.8H8l-3.2 3.2a1 1 0 0 0 .7 1.8h13a1 1 0 0 0 .7-1.8L16 11h1.5a1 1 0 0 0 .7-1.8L12 3Z"/></svg>`,
+    leisure: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16"/><path d="M6 20V9l6-4 6 4v11"/><path d="M9 20v-5h6v5"/><path d="M9 11h1"/><path d="M14 11h1"/></svg>`,
     welfare: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/><path d="M9 11h6"/></svg>`,
     police: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5.5 5.5v5.2c0 4.1 2.6 7.8 6.5 10.3 3.9-2.5 6.5-6.2 6.5-10.3V5.5L12 3Z"/><path d="M9 11.2h6"/><path d="M12 8.2v6"/></svg>`,
     cctv: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 9 10.5-3 1.5 5.2-10.5 3L4 9Z"/><path d="m14.8 8.5 4.2-1.2 1 3.5-4.2 1.2"/><path d="M9.5 14.5 8 20"/><path d="M6 20h6"/></svg>`,
@@ -2423,6 +2856,9 @@ function renderDetailSubpanelState() {
 function activateDetailSubpanelTab(tab) {
   state.detailSubpanelTab = tab;
   renderDetailSubpanelState();
+  if (tab === "infrastructure") {
+    renderInfrastructurePanel();
+  }
   renderMap();
   if (tab !== "route") {
     focusSelectedMarker({ zoom: true });
@@ -2505,6 +2941,16 @@ function pricePerPyeongText(record) {
   return `평당 ${formatMoney10k(amount10k / pyeong)}`;
 }
 
+function formatChartMoney10k(value) {
+  const amount = Number(value || 0);
+  if (!amount) return "0";
+  if (amount >= 10000) {
+    const eok = amount / 10000;
+    return `${Number.isInteger(eok) ? eok.toFixed(0) : eok.toFixed(1)}억`;
+  }
+  return `${formatNumber(Math.round(amount))}만`;
+}
+
 function statusText(status) {
   if (status === "high") return "집중 확인";
   if (status === "warning") return "주의";
@@ -2512,90 +2958,282 @@ function statusText(status) {
   return "양호";
 }
 
-function renderTrendChart(rows) {
+function activeTrendMode() {
+  return state.property.trendMode || (state.budgetMode === "sale" ? "sale" : "rent");
+}
+
+function renderTrendChart(rows, detail = null) {
   const liveRows = Array.isArray(rows) ? rows.filter((row) => row.sourceMode !== "trend_estimate") : [];
-  const saleData = liveRows
-    .map((row) => ({ month: row.month || "", value: Number(row.sale10k || 0), volume: Number(row.saleVolume || 0) }))
+  const indexedRows = liveRows.map((row, index) => ({ ...row, index }));
+  const saleData = indexedRows
+    .map((row) => ({ month: row.month || "", value: Number(row.sale10k || 0), volume: Number(row.saleVolume || 0), index: row.index }))
     .filter((row) => row.month && row.value > 0);
-  const jeonseData = liveRows
-    .map((row) => ({ month: row.month || "", value: Number(row.jeonse10k || 0), volume: Number(row.jeonseVolume || 0) }))
+  const jeonseData = indexedRows
+    .map((row) => ({ month: row.month || "", value: Number(row.jeonse10k || 0), volume: Number(row.jeonseVolume || 0), index: row.index }))
     .filter((row) => row.month && row.value > 0);
-  const pointCount = saleData.length + jeonseData.length;
+  const monthlyData = indexedRows
+    .map((row) => ({ month: row.month || "", value: Number(row.monthlyRent10k || 0), volume: Number(row.monthlyRentVolume || 0), index: row.index }))
+    .filter((row) => row.month && row.value > 0);
+  const trendMode = activeTrendMode();
+  const rentTrendKind = jeonseData.length >= 2 ? "jeonse" : "monthly";
+  const primaryData = trendMode === "sale" ? saleData : (rentTrendKind === "jeonse" ? jeonseData : monthlyData);
+  const pointCount = primaryData.length;
   if (liveRows.length < 2 || pointCount < 2) {
     return `<div class="chart-empty">실거래 기반 월별 추이 정보 없음</div>`;
   }
-  const values = [...saleData, ...jeonseData].map((row) => row.value);
-  const min = Math.min(...values) * 0.96;
-  const max = Math.max(...values) * 1.04;
-  const width = 420;
-  const height = 170;
-  const left = 34;
-  const right = 14;
+  const values = primaryData.map((row) => row.value);
+  const min = Math.max(0, Math.min(...values) * 0.72);
+  const max = Math.max(...values) * 1.12;
+  const width = 440;
+  const height = 255;
+  const left = 46;
+  const right = 18;
   const top = 18;
-  const bottom = 32;
+  const bottom = 70;
+  const volumeTop = height - 44;
+  const volumeBottom = height - 18;
   const usableWidth = width - left - right;
   const usableHeight = height - top - bottom;
   const y = (value) => top + usableHeight - ((Number(value) - min) / (max - min || 1)) * usableHeight;
   const x = (index) => left + (index / (liveRows.length - 1)) * usableWidth;
-  const indexedRows = liveRows.map((row, index) => ({ ...row, index }));
-  const pointFor = (row) => `${x(row.index).toFixed(1)},${y(row.value).toFixed(1)}`;
-  const seriesRows = (field, volumeField) => indexedRows
-    .map((row) => ({
-      month: row.month || "",
-      value: Number(row[field] || 0),
-      volume: Number(row[volumeField] || 0),
-      index: row.index
-    }))
-    .filter((row) => row.month && row.value > 0);
-  const saleRows = seriesRows("sale10k", "saleVolume");
-  const jeonseRows = seriesRows("jeonse10k", "jeonseVolume");
-  const salePoints = saleRows.map(pointFor).join(" ");
-  const jeonsePoints = jeonseRows.map(pointFor).join(" ");
-  const pointSvg = (rows, className, label) => rows.map((row) => `
-    <circle class="${className}-point" cx="${x(row.index).toFixed(1)}" cy="${y(row.value).toFixed(1)}" r="3.2">
-      <title>${escapeHtml(`${row.month} ${label} ${formatMoney10k(row.value)}${row.volume ? ` · ${row.volume}건` : ""}`)}</title>
+  const recentAverage = primaryData.length ? primaryData[primaryData.length - 1].value : 0;
+  const summaryLabel = trendMode === "sale"
+    ? "최근 매매 월별 평균"
+    : rentTrendKind === "jeonse"
+      ? "최근 전세 월별 평균"
+      : "최근 월세 월별 평균";
+  const averageLine = primaryData.length ? primaryData.reduce((sum, row) => sum + row.value, 0) / primaryData.length : 0;
+  const highestPoint = primaryData.length ? primaryData.reduce((best, row) => (row.value > best.value ? row : best), primaryData[0]) : null;
+  const lowestPoint = primaryData.length ? primaryData.reduce((best, row) => (row.value < best.value ? row : best), primaryData[0]) : null;
+  const maxVolume = Math.max(...indexedRows.map((row) => Number(row.volume || 0)), 1);
+  const ticks = Array.from({ length: 5 }, (_, index) => min + ((max - min) / 4) * index).reverse();
+  const monthLabel = (month) => {
+    const value = String(month || "");
+    if (!value.includes(".")) return value;
+    const [year, monthPart] = value.split(".");
+    return `'${year.slice(-2)}.${monthPart}`;
+  };
+  const linePoints = primaryData.map((row) => `${x(row.index).toFixed(1)},${y(row.value).toFixed(1)}`).join(" ");
+  const primaryDots = primaryData.map((row) => `
+    <circle class="trend-primary-point" cx="${x(row.index).toFixed(1)}" cy="${y(row.value).toFixed(1)}" r="3.8">
+      <title>${escapeHtml(`${row.month} ${trendMode === "sale" ? "매매" : "전월세"} ${formatMoney10k(row.value)}${row.volume ? ` · ${row.volume}건` : ""}`)}</title>
     </circle>
   `).join("");
+  const volumeBars = indexedRows.map((row) => {
+    const volume = Number(row.volume || 0);
+    const barHeight = Math.max(2, (volume / maxVolume) * (volumeBottom - volumeTop));
+    const barWidth = Math.max(3, Math.min(8, usableWidth / Math.max(18, liveRows.length * 2)));
+    return `
+      <rect class="volume-bar" x="${(x(row.index) - barWidth / 2).toFixed(1)}" y="${(volumeBottom - barHeight).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="1.5">
+        <title>${escapeHtml(`${row.month} 거래량 ${formatNumber(volume)}건`)}</title>
+      </rect>
+    `;
+  }).join("");
+  const latestX = primaryData.length ? x(primaryData[primaryData.length - 1].index) : 0;
+  const latestGuide = primaryData.length ? `
+    <rect class="trend-latest-zone" x="${latestX.toFixed(1)}" y="${top}" width="${Math.max(0, width - right - latestX).toFixed(1)}" height="${(volumeTop - top).toFixed(1)}" />
+    <line class="trend-latest-line" x1="${latestX.toFixed(1)}" y1="${top}" x2="${latestX.toFixed(1)}" y2="${volumeBottom}" />
+  ` : "";
+  const gridLines = ticks.map((tick) => `
+    <g>
+      <line class="trend-grid-line" x1="${left}" y1="${y(tick).toFixed(1)}" x2="${width - right}" y2="${y(tick).toFixed(1)}" />
+      <text class="trend-axis-label" x="${left - 8}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${escapeHtml(formatChartMoney10k(tick))}</text>
+    </g>
+  `).join("");
   const first = liveRows[0]?.month || "";
+  const middle = liveRows[Math.floor((liveRows.length - 1) / 2)]?.month || "";
   const last = liveRows[liveRows.length - 1]?.month || "";
+  const trendLabel = trendMode === "sale" ? "매매" : "전월세";
   return `
-    <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 거래 추이 그래프">
-      <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" />
-      <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" />
-      ${saleRows.length > 1 ? `<polyline class="sale-line" points="${salePoints}" />` : ""}
-      ${jeonseRows.length > 1 ? `<polyline class="jeonse-line" points="${jeonsePoints}" />` : ""}
-      ${pointSvg(saleRows, "sale", "매매")}
-      ${pointSvg(jeonseRows, "jeonse", "전세")}
-      <text x="${left}" y="${height - 10}">${escapeHtml(first)}</text>
-      <text x="${width - right}" y="${height - 10}" text-anchor="end">${escapeHtml(last)}</text>
-      <text x="${left}" y="12">${escapeHtml(formatMoney10k(max))}</text>
-      <text x="${width - right}" y="12" text-anchor="end">매매 / 전세</text>
-    </svg>
-    <div class="chart-legend">
-      <span><i class="chart-dot sale"></i>매매 실거래</span>
-      <span><i class="chart-dot jeonse"></i>전세 실거래</span>
+    <div class="trend-panel">
+      <div class="trend-toolbar">
+        <div class="trend-market-tabs" aria-label="거래 유형">
+          <button class="${trendMode === "sale" ? "active" : ""}" type="button" data-trend-market="sale">매매</button>
+          <button class="${trendMode !== "sale" ? "active" : ""}" type="button" data-trend-market="rent">전월세</button>
+        </div>
+      </div>
+      <p class="trend-summary-label">${escapeHtml(summaryLabel)}</p>
+      <strong class="trend-summary-value">${escapeHtml(formatMoney10k(recentAverage))}</strong>
+      <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 거래 추이 그래프">
+        ${latestGuide}
+        ${gridLines}
+        ${averageLine ? `<line class="trend-average-line" x1="${left}" y1="${y(averageLine).toFixed(1)}" x2="${width - right}" y2="${y(averageLine).toFixed(1)}" />` : ""}
+        <polyline class="trend-primary-line" points="${linePoints}" />
+        ${primaryDots}
+        ${highestPoint ? `
+          <circle class="highest-sale-point" cx="${x(highestPoint.index).toFixed(1)}" cy="${y(highestPoint.value).toFixed(1)}" r="5" />
+          <text class="highest-sale-label" x="${x(highestPoint.index).toFixed(1)}" y="${(y(highestPoint.value) - 16).toFixed(1)}" text-anchor="middle">${escapeHtml(formatChartMoney10k(highestPoint.value))}</text>
+          <text class="highest-sale-label sub" x="${x(highestPoint.index).toFixed(1)}" y="${(y(highestPoint.value) - 4).toFixed(1)}" text-anchor="middle">최고</text>
+        ` : ""}
+        ${lowestPoint && highestPoint && lowestPoint !== highestPoint ? `
+          <circle class="lowest-jeonse-point" cx="${x(lowestPoint.index).toFixed(1)}" cy="${y(lowestPoint.value).toFixed(1)}" r="5" />
+          <text class="lowest-jeonse-label" x="${x(lowestPoint.index).toFixed(1)}" y="${(y(lowestPoint.value) + 16).toFixed(1)}" text-anchor="middle">${escapeHtml(formatChartMoney10k(lowestPoint.value))}</text>
+          <text class="lowest-jeonse-label sub" x="${x(lowestPoint.index).toFixed(1)}" y="${(y(lowestPoint.value) + 28).toFixed(1)}" text-anchor="middle">최저</text>
+        ` : ""}
+        <text class="volume-title" x="${left - 2}" y="${volumeTop - 7}" text-anchor="end">거래량</text>
+        ${volumeBars}
+        <text class="trend-axis-label" x="${left}" y="${height - 2}">${escapeHtml(monthLabel(first))}</text>
+        ${middle && middle !== first && middle !== last ? `<text class="trend-axis-label" x="${x(Math.floor((liveRows.length - 1) / 2)).toFixed(1)}" y="${height - 2}" text-anchor="middle">${escapeHtml(monthLabel(middle))}</text>` : ""}
+        <text class="trend-axis-label" x="${width - right}" y="${height - 2}" text-anchor="end">${escapeHtml(monthLabel(last))}</text>
+      </svg>
+      <div class="chart-legend">
+        <span><i class="chart-dot sale"></i>${escapeHtml(trendLabel)} 실거래</span>
+        <span><i class="chart-dot average"></i>평균선</span>
+        <span><i class="chart-dot jeonse"></i>최저가</span>
+      </div>
     </div>
   `;
 }
 
-function renderAiSummaryCard(summary = {}) {
+function aiSummaryPriceComparison(detail = null) {
+  const price = detail?.price || {};
+  const mode = state.budgetMode;
+  const modeLabel = budgetConfig(mode).shortLabel;
+  const liveStatus = price.liveStatus || {};
+  let actualValue = 0;
+  let hasPrice = false;
+
+  if (mode === "monthly") {
+    hasPrice = liveTransactionRecords(price, (item) => Number(item.monthlyRent10k || 0) > 0).length > 0;
+    actualValue = Number(price.monthlyRent10k || 0);
+  } else if (mode === "jeonse") {
+    hasPrice = liveTransactionRecords(price, (item) => !Number(item.monthlyRent10k || 0)).length > 0;
+    actualValue = Number(price.recentJeonse10k || 0);
+  } else if (mode === "sale") {
+    const latestTrade = latestTradeRecord(price);
+    hasPrice = isLiveStatus(liveStatus.molitTrade) || Boolean(latestTrade);
+    actualValue = Number(price.recentSale10k || latestTrade?.amount10k || 0);
+  }
+
+  return {
+    mode,
+    modeLabel,
+    hasPrice: Boolean(hasPrice && actualValue),
+    actualValue,
+    budgetValue: Number(state.budget || 0)
+  };
+}
+
+function aiSummaryPriceStrength(detail = null) {
+  const comparison = aiSummaryPriceComparison(detail);
+  const { mode, modeLabel, hasPrice, actualValue, budgetValue } = comparison;
+
+  if (!hasPrice) return `최신 아파트 ${modeLabel} 가격 정보를 불러오지 못하였습니다.`;
+  if (!budgetValue) return `최신 아파트 ${modeLabel} 가격 정보를 확인했습니다.`;
+
+  const diff = Math.abs(Math.round(actualValue - budgetValue));
+  const subject = `${modeLabel} 가격`;
+  const diffText = formatBudgetValue(diff, mode);
+  if (diff === 0) return `${subject}은 설정한 금액과 동일합니다.`;
+  if (actualValue < budgetValue) return `${subject}은 설정한 금액보다 약 ${diffText} 적습니다.`;
+  return "";
+}
+
+function aiSummaryLiveCarRoute(selected = null) {
+  const route = state.aiCommute.result || state.route.result;
+  const routeSelectedId = state.aiCommute.result ? state.aiCommute.selectedId : state.route.selectedId;
+  const isSelectedRoute = selected?.id && routeSelectedId === selected.id;
+  const isLiveCarRoute = isSelectedRoute
+    && route?.transportMode === "car"
+    && route?.provider === "tmap"
+    && route?.mode === "live_api"
+    && Number(route?.summary?.totalMinutes || 0) > 0;
+  return isLiveCarRoute ? route : null;
+}
+
+function aiSummaryCommuteStrength(selected = null) {
+  const route = aiSummaryLiveCarRoute(selected);
+  if (!route) return "최신 통근 정보를 불러오지 못하였습니다.";
+
+  const minutes = Number(route.summary.totalMinutes || 0);
+  if (minutes <= 20) return `자동차로 약 ${formatNumber(minutes)}분 소요되어 통근이 편리합니다.`;
+  if (minutes <= 60) return `자동차로 약 ${formatNumber(minutes)}분 소요됩니다.`;
+  return "최신 통근 정보를 확인했습니다.";
+}
+
+function aiSummaryStrengths(summary = {}, context = {}) {
+  const existing = (summary.strengths || [])
+    .filter((item) => !String(item).includes("지하철 접근성"))
+    .filter((item) => !String(item).includes("월세 기준은"))
+    .filter((item) => !String(item).includes("월세 실거래 기준은"));
+  return [
+    aiSummaryPriceStrength(context.detail),
+    aiSummaryCommuteStrength(context.selected),
+    ...existing
+  ].filter(Boolean).slice(0, 3);
+}
+
+function aiSummaryCautions(summary = {}, context = {}) {
+  const cautions = [];
+  const price = aiSummaryPriceComparison(context.detail);
+  if (price.hasPrice && price.budgetValue > 0 && price.actualValue > price.budgetValue) {
+    const diffText = formatBudgetValue(Math.round(price.actualValue - price.budgetValue), price.mode);
+    cautions.push(`${price.modeLabel} 가격은 설정한 금액보다 약 ${diffText} 많아 예산 초과입니다.`);
+  }
+
+  const route = aiSummaryLiveCarRoute(context.selected);
+  const commuteMinutes = Number(route?.summary?.totalMinutes || 0);
+  if (commuteMinutes > 60) {
+    cautions.push(`자동차로 약 ${formatNumber(commuteMinutes)}분 소요되어 통근시간이 긴 편입니다.`);
+  }
+
+  const gaptong = context.detail?.safeguard?.gaptong || {};
+  if (["danger", "warning"].includes(gaptong.verdictKey)) {
+    const label = gaptong.verdictLabel || "깡통주택 위험 신호";
+    cautions.push(`전세 위험 신호 점검에서 ${label}으로 확인되어 계약 전 추가 확인이 필요합니다.`);
+  }
+
+  if (cautions.length) return cautions.slice(0, 3);
+  return ["현재 확인된 주요 주의사항은 없습니다."];
+}
+
+function aiSummaryHeadline(context = {}) {
+  const selected = context.selected || {};
+  const name = selected.name || "선택한 아파트";
+  const scores = selected.adjusted || {};
+  if (!scores.cost && !scores.commute && !scores.service) {
+    return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성을 종합적으로 검토할 수 있는 후보입니다.`;
+  }
+  const criteria = [
+    { key: "cost", label: "가격", value: Number(scores.cost || 0) },
+    { key: "commute", label: "통근", value: Number(scores.commute || 0) },
+    { key: "service", label: "생활 편의성", value: Number(scores.service || 0) }
+  ];
+  const weak = criteria.filter((item) => item.value && item.value < 70);
+  const good = criteria.filter((item) => item.value >= 75);
+
+  if (good.length === criteria.length) {
+    return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성의 균형이 좋은 후보입니다.`;
+  }
+  if (weak.length >= 2) {
+    return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성 중 일부 조건이 다소 아쉬운 후보입니다.`;
+  }
+  if (weak.length === 1) {
+    return `${name}은 ${weak[0].label}에서 아쉬움이 있으나, 가격·통근·생활 편의성을 종합적으로 검토할 수 있는 후보입니다.`;
+  }
+  return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성을 종합적으로 검토할 수 있는 후보입니다.`;
+}
+
+function renderAiSummaryCard(summary = {}, context = {}) {
+  const headline = aiSummaryHeadline(context);
+  const strengths = aiSummaryStrengths(summary, context);
+  const cautions = aiSummaryCautions(summary, context);
   return `
     <section class="property-card ai-summary-card">
       <div class="property-card-title">
         <h4>AI 요약</h4>
       </div>
-      <p class="ai-headline">${escapeHtml(summary.headline || "선택한 단지의 가격·통근·생활권 데이터를 종합합니다.")}</p>
+      <p class="ai-headline">${escapeHtml(headline)}</p>
       <div class="ai-summary-grid">
         <div>
           <strong>장점</strong>
-          <ul>${(summary.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          <ul>${strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
         </div>
         <div>
           <strong>주의</strong>
-          <ul>${([...(summary.weaknesses || []), ...(summary.cautions || [])]).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          <ul>${cautions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
         </div>
       </div>
-      <p class="recommendation-text">${escapeHtml(summary.recommendation || "입지, 가격, 생활 편의성을 함께 비교해 판단하는 것이 좋습니다.")}</p>
     </section>
   `;
 }
@@ -2874,6 +3512,15 @@ function renderAgentPanel() {
   const launcher = document.querySelector("#agentLauncher");
   if (!panel || !launcher) return;
 
+  if (state.bookmarks.panelOpen) {
+    panel.hidden = true;
+    launcher.hidden = true;
+    launcher.setAttribute("aria-expanded", "false");
+    launcher.classList.remove("is-active");
+    return;
+  }
+
+  launcher.hidden = false;
   panel.hidden = !state.agent.open;
   launcher.setAttribute("aria-expanded", String(state.agent.open));
   launcher.classList.toggle("is-active", state.agent.open);
@@ -3182,16 +3829,21 @@ async function toggleBookmark(id, detail = null) {
 
 function openBookmarkPanel() {
   state.bookmarks.panelOpen = true;
+  state.agent.open = false;
   state.detailPanelOpen = false;
   closePropertyDashboard();
   renderDetailSubpanelState();
   renderBookmarkPanel();
+  renderAgentPanel();
+  invalidateMapLayout();
   loadBookmarkDetails();
 }
 
 function closeBookmarkPanel() {
   state.bookmarks.panelOpen = false;
   renderBookmarkPanel();
+  renderAgentPanel();
+  invalidateMapLayout();
 }
 
 function closePropertyDashboard() {
@@ -3232,6 +3884,12 @@ async function askPropertyAgent(event) {
 }
 
 function bindPropertyDashboardEvents() {
+  document.querySelectorAll("[data-trend-market]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.property.trendMode = button.dataset.trendMarket === "sale" ? "sale" : "rent";
+      renderPropertyDashboard();
+    });
+  });
   document.querySelectorAll(".clause-copy").forEach((button) => {
     button.addEventListener("click", () => handleClauseCopy(button));
   });
@@ -3305,15 +3963,11 @@ function renderPropertyDashboard() {
   const parkingCount = Number(detail.parkingCount || 0);
   const households = Number(detail.households || 0);
   const parkingPerHousehold = parkingCount && households ? `세대당 ${(parkingCount / households).toFixed(2)}대` : "세대당 정보 없음";
-  const priceSourceLabel = tradeLive || jeonseLive || monthlyLive
-    ? "확인된 API 데이터만 표시"
-    : "확인된 가격 정보 없음";
   nodes.propertyDashboard.innerHTML = `
     <div class="property-grid">
       <section class="property-card">
         <div class="property-card-title">
           <h4>기본 정보</h4>
-          <span>${detail.prototype ? "프로토타입 데이터" : "OpenAptInfo"}</span>
         </div>
         <div class="property-metrics two">
           ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
@@ -3328,7 +3982,6 @@ function renderPropertyDashboard() {
       <section class="property-card">
         <div class="property-card-title">
           <h4>가격 정보</h4>
-          <span>${escapeHtml(priceSourceLabel)}</span>
         </div>
         <div class="property-metrics two">
           ${propertyMetric("최근 매매가", tradeLive ? formatMoney10k(price.recentSale10k) : "정보 없음", propertyDataNote(tradeLive, "국토부 매매 실거래가 API"))}
@@ -3341,9 +3994,8 @@ function renderPropertyDashboard() {
       <section class="property-card wide">
         <div class="property-card-title">
           <h4>거래 추이</h4>
-          <span>최근 12개월</span>
         </div>
-        ${renderTrendChart(detail.transactions)}
+        ${renderTrendChart(detail.transactions, detail)}
       </section>
 
     </div>
@@ -3451,6 +4103,7 @@ async function selectProperty(id) {
   state.property.error = "";
   state.property.agentAnswer = null;
   state.property.agentError = "";
+  state.property.trendMode = "";
   state.property.requestId += 1;
   const requestId = state.property.requestId;
   renderApartmentLayer();
@@ -3489,11 +4142,11 @@ function buildReason(item) {
 
 function buildSpecificReason(item) {
   const destinationLabel = item.destinationLabel || destinationLabels[state.destination] || "목적지";
-  const monthlyRent = Math.round(Number(item.rentMonthly10k || 0));
-  const budgetDelta = Math.round(state.budget - monthlyRent);
-  const budgetText = budgetDelta >= 0 ? "예산 내" : `예산 ${Math.abs(budgetDelta)}만원 초과`;
+  const targetValue = budgetTargetValue(item, state.budgetMode);
+  const budgetDelta = Math.round(state.budget - targetValue);
+  const budgetText = budgetDelta >= 0 ? "예산 내" : `예산 ${formatBudgetValue(Math.abs(budgetDelta), state.budgetMode)} 초과`;
   const socText = socSummaryTextFor(item, state.persona, 3);
-  return `${destinationLabel} ${formatNumber(item.minutes)}분 · 추정 월세 ${formatNumber(monthlyRent)}만원 · 추정 매매 ${formatMoney10k(item.sale10k)} · ${socText} · ${budgetText}`;
+  return `${destinationLabel} ${formatNumber(item.minutes)}분 · ${budgetConfig().shortLabel} ${formatBudgetValue(targetValue)} · ${socText} · ${budgetText}`;
 }
 
 function formatRentExample(example) {
@@ -3568,7 +4221,7 @@ function renderCards() {
     card.classList.toggle("is-selected", item.id === state.selectedId);
     fragment.querySelector(".rank").textContent = index + 1;
     fragment.querySelector(".name").textContent = item.name;
-    fragment.querySelector(".card-meta").textContent = `${item.district || "서울"} ${item.dong || ""} · 월 ${formatNumber(item.rentMonthly10k)}만원 · ${formatNumber(item.minutes)}분`;
+    fragment.querySelector(".card-meta").textContent = representativeAddressFor(item);
     button.addEventListener("click", () => selectApartmentMatch(item.id, { source: "card", openDetailPanel: true }));
     const bookmarked = isBookmarked(item.id);
     bookmarkButton.textContent = bookmarked ? "★" : "☆";
@@ -3597,6 +4250,39 @@ function scoreRow(label, value, tip) {
       <strong>${Math.round(value)}</strong>
     </div>
   `;
+}
+
+function adjustedScoresForDetail(selected = {}, detail = null) {
+  const adjusted = { ...(selected.adjusted || {}) };
+  const price = aiSummaryPriceComparison(detail);
+  if (price.hasPrice) {
+    adjusted.cost = Math.round(costScoreForBudget(price.actualValue, price.budgetValue, price.mode));
+  }
+
+  const route = aiSummaryLiveCarRoute(selected);
+  const routeMinutes = Number(route?.summary?.totalMinutes || 0);
+  if (routeMinutes > 0) {
+    adjusted.commute = Math.round(clamp(105 - routeMinutes * 1.18));
+  }
+
+  const lifestyle = detail?.lifestyle || {};
+  const serviceScore = Number(lifestyle.serviceScore || 0);
+  if (serviceScore > 0) {
+    adjusted.service = Math.round(clamp(serviceScore));
+  }
+
+  const safetyScore = Number(lifestyle.safetyScore || 0);
+  const carbonScore = Number(lifestyle.carbonScore || 0);
+  const riskScore = Number(detail?.risk?.score ?? detail?.price?.riskScore ?? selected.pricePreview?.riskScore ?? 0);
+  if (safetyScore > 0 || carbonScore > 0 || riskScore > 0) {
+    const environmentScore = safetyScore && carbonScore
+      ? safetyScore * 0.58 + carbonScore * 0.42
+      : safetyScore || carbonScore || Number(selected.safetyScore || 70);
+    const propertySafety = 100 - riskScore;
+    adjusted.safety = Math.round(clamp(environmentScore * 0.85 + propertySafety * 0.15));
+  }
+
+  return adjusted;
 }
 
 function transportModeLabel(mode = DEFAULT_ROUTE_TRANSPORT_MODE) {
@@ -3807,6 +4493,8 @@ function renderDetail() {
 
   const selectedDetail = state.property.selectedId === selected.id ? state.property.detail : null;
   const aiSummary = selectedDetail?.aiSummary || null;
+  const adjustedScores = { ...(selected.adjusted || {}) };
+  const selectedForSummary = { ...selected, adjusted: adjustedScores };
   nodes.selectedBadge.textContent = selected.name;
   if (!matched) {
     nodes.detailContent.innerHTML = `
@@ -3819,7 +4507,7 @@ function renderDetail() {
           <p>조건을 입력하고 매칭하기를 누르면 통근, 주거비, 생활 SOC, 안전 점수가 표시됩니다.</p>
         </div>
       </section>
-      ${selectedDetail?.aiSummary ? renderAiSummaryCard(selectedDetail.aiSummary) : renderAiSummaryPendingCard()}
+      ${selectedDetail?.aiSummary ? renderAiSummaryCard(selectedDetail.aiSummary, { selected: selectedForSummary, detail: selectedDetail }) : renderAiSummaryPendingCard()}
       ${renderAgentCtaCard()}
     `;
     bindAgentCtaEvents();
@@ -3832,59 +4520,17 @@ function renderDetail() {
         <p class="detail-address">${escapeHtml(selected.address || `${selected.district || ""} ${selected.dong || ""}`.trim())}</p>
       </div>
       <div class="score-list" aria-label="항목별 점수">
-        ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
-        ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
-        ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
-        ${scoreRow("안전", selected.adjusted.safety, scoreTips.safety)}
+        ${scoreRow("통근", adjustedScores.commute, scoreTips.commute)}
+        ${scoreRow("주거비", adjustedScores.cost, scoreTips.cost)}
+        ${scoreRow("생활 SOC", adjustedScores.service, scoreTips.service)}
+        ${scoreRow("안전", adjustedScores.safety, scoreTips.safety)}
       </div>
-      ${renderMatchHighlights(selected)}
     </section>
-    ${aiSummary ? renderAiSummaryCard(aiSummary) : renderAiSummaryPendingCard()}
+    ${aiSummary ? renderAiSummaryCard(aiSummary, { selected: selectedForSummary, detail: selectedDetail }) : renderAiSummaryPendingCard()}
     ${renderAgentCtaCard()}
   `;
+  ensureAiSummaryCommuteRoute(selected);
   bindAgentCtaEvents();
-}
-
-function matchHighlight(title, value, note = "") {
-  return `
-    <div class="match-highlight">
-      <span>${escapeHtml(title)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      ${note ? `<small>${escapeHtml(note)}</small>` : ""}
-    </div>
-  `;
-}
-
-function renderMatchHighlights(selected) {
-  const safetyCounts = selected.evidence?.safetyEnvCounts || selected.safetyEnvSummary?.counts || {};
-  const socSummary = socSummaryTextFor(selected, state.persona, 3);
-  const budgetGap = Math.round(Number(state.budget || 0) - Number(selected.rentMonthly10k || 0));
-  const budgetValue = budgetGap >= 0
-    ? `월 ${formatNumber(budgetGap)}만원 여유`
-    : `월 ${formatNumber(Math.abs(budgetGap))}만원 초과`;
-  const commuteNote = selected.minutes <= 20
-    ? "목적지 접근성이 좋은 편입니다."
-    : selected.minutes <= 35
-      ? "일상 통근 부담이 보통 수준입니다."
-      : "통근 시간을 한 번 더 확인해보세요.";
-  const budgetNote = budgetGap >= 0
-    ? `월 주거 예산 ${formatNumber(state.budget)}만원 기준`
-    : `월 주거 예산 ${formatNumber(state.budget)}만원 기준`;
-
-  return `
-    <div class="match-summary-block">
-      <div class="match-summary-heading">
-        <strong>추천 포인트</strong>
-        <span>현재 조건 기준</span>
-      </div>
-      <div class="match-highlight-grid">
-        ${matchHighlight("통근", `${formatNumber(selected.minutes)}분`, commuteNote)}
-        ${matchHighlight("예산", budgetValue, budgetNote)}
-        ${matchHighlight("생활 SOC", socSummary, `${PERSONA_LABELS[state.persona] || "가구 유형"} 기준 비중 반영`)}
-        ${matchHighlight("안전", `치안시설 ${formatNumber(safetyCounts.police || 0)} · CCTV ${formatNumber(safetyCounts.cctv || 0)}`, "치안·환경 지표 반영")}
-      </div>
-    </div>
-  `;
 }
 
 function renderRoutePanel() {
@@ -3906,11 +4552,12 @@ function renderRoutePanel() {
 function infrastructureItem(label, value, nearest = null, category = "") {
   const name = nearest?.name || "정보 없음";
   const distance = nearest?.distanceMeters != null ? formatDistance(nearest.distanceMeters) : "";
+  const description = nearest?.description || `${name}${distance ? ` · ${distance}` : ""}`;
   return `
     <button class="infrastructure-item${state.infrastructureFocus.category === category ? " is-active" : ""}" type="button" data-infrastructure-category="${escapeHtml(category)}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
-      <small>${escapeHtml(name)}${distance ? ` · ${escapeHtml(distance)}` : ""}</small>
+      <small>${escapeHtml(description)}</small>
     </button>
   `;
 }
@@ -3949,24 +4596,104 @@ function renderInfrastructurePanel() {
     return;
   }
 
+  if (state.detailPanelOpen && state.detailSubpanelTab === "infrastructure") {
+    ensureLiveInfrastructure(selected);
+    ensureLiveSafety(selected);
+    ensureLiveAir(selected);
+    ensureLiveCctv(selected);
+  }
+  const liveState = liveInfrastructureStateFor(selected);
+  const liveData = liveInfrastructureDataFor(selected);
+  const liveSafetyState = liveSafetyStateFor(selected);
+  const liveSafetyData = liveSafetyDataFor(selected);
+  const liveAirState = liveAirStateFor(selected);
+  const liveAir = liveAirDataFor(selected);
+  const liveCctvState = liveCctvStateFor(selected);
+  const liveCctv = liveCctvDataFor(selected);
   const soc = selected.socSummary || {};
   const safety = selected.safetyEnvSummary || {};
   const safetyCounts = safety.counts || {};
   const safetyNearest = safety.nearestFacilities || {};
+  const isSocLoading = Boolean(liveState?.isLoading && !liveData);
+  const isSafetyLoading = Boolean(liveSafetyState?.isLoading && !liveSafetyData);
+  const isAirLoading = Boolean(liveAirState?.isLoading && !liveAir);
+  const isCctvLoading = Boolean(liveCctvState?.isLoading && !liveCctv);
   const socDisplay = (category) => {
-    const data = socCategoryDisplayData(selected, category);
+    const label = SOC_CATEGORY_DEFINITIONS[category]?.label || category;
+    if (isSocLoading) {
+      return infrastructureItem(label, "불러오는 중", { name: "카카오 API 조회 중" }, category);
+    }
+    const data = liveSocCategoryDisplayData(selected, category) || socCategoryDisplayData(selected, category);
     return infrastructureItem(
-      SOC_CATEGORY_DEFINITIONS[category]?.label || category,
+      label,
       data.hasValue ? `${formatNumber(data.count)}개` : "정보 없음",
       data.nearest,
       category
     );
   };
+  const socNote = liveData
+    ? "아파트 기준 반경 1km에 존재하는 생활 SOC 입니다."
+    : liveState?.isLoading
+      ? `카카오 장소 검색으로 반경 ${formatDistance(KAKAO_SOC_RADIUS_METERS)} 공공성 높은 생활 SOC를 불러오는 중입니다.`
+      : liveState?.data?.mode === "missing_key"
+        ? "카카오 API 키가 없어 기존 공공 기준 인프라를 표시합니다."
+        : liveState?.error
+          ? "카카오 장소 검색에 실패해 기존 공공 기준 인프라를 표시합니다."
+          : `${selected.livingArea?.name || "인근 생활권"} 기준 인프라입니다.`;
+  const livePolice = liveSafetyCategoryDisplayData(selected, "police");
+  const liveGreen = liveSafetyCategoryDisplayData(selected, "green");
+  const policeItem = isSafetyLoading
+    ? infrastructureItem("치안시설", "불러오는 중", { name: "카카오 API 조회 중" }, "police")
+    : infrastructureItem(
+      "치안시설",
+      livePolice ? `${formatNumber(livePolice.count)}개` : `${formatNumber(safetyCounts.police)}개`,
+      livePolice?.nearest || safetyNearest.police,
+      "police"
+    );
+  const greenItem = isSafetyLoading
+    ? infrastructureItem("녹지 접근", "불러오는 중", { name: "카카오 API 조회 중" }, "green")
+    : infrastructureItem(
+      "녹지 접근",
+      liveGreen?.nearest ? `${formatNumber(greenAccessScoreFromDistance(liveGreen.nearest.distanceMeters))}점` : `${formatNumber(safety.greenScore)}점`,
+      liveGreen?.nearest || safetyNearest.park,
+      "green"
+    );
+  const airItem = isAirLoading
+    ? infrastructureItem("대기환경", "불러오는 중", { name: "서울시 API 조회 중" }, "air")
+    : liveAir
+      ? infrastructureItem(
+        "대기환경",
+        `${formatNumber(liveAir.score)}점`,
+        {
+          name: liveAir.nearest?.name || `${liveAir.station || districtNameForAir(selected)} 대기측정소`,
+          description: airDescription(liveAir)
+        },
+        "air"
+      )
+      : infrastructureItem(
+        "대기환경",
+        `${formatNumber(safety.airQualityScore)}점`,
+        safety.airStation ? { name: safety.airStation } : null,
+        "air"
+      );
+  const cctvItem = isCctvLoading
+    ? infrastructureItem("CCTV", "불러오는 중", { name: "공공데이터포털 조회 중" }, "cctv")
+    : liveCctv
+      ? infrastructureItem(
+        "CCTV",
+        `${formatNumber(liveCctv.siteCount)}개 지점`,
+        {
+          ...(liveCctv.nearest || {}),
+          description: cctvDescription(liveCctv)
+        },
+        "cctv"
+      )
+      : infrastructureItem("CCTV", `${formatNumber(safetyCounts.cctv)}대`, safetyNearest.cctv, "cctv");
 
   nodes.infrastructureContent.innerHTML = `
     <section class="infrastructure-category">
       <div class="infrastructure-category-title">생활 SOC</div>
-      <p class="infrastructure-note">${escapeHtml(selected.livingArea?.name || "인근 생활권")} 기준 인프라입니다.</p>
+      <p class="infrastructure-note">${escapeHtml(socNote)}</p>
       <div class="infrastructure-list">
         ${socDisplay("medical")}
         ${socDisplay("transport")}
@@ -3980,10 +4707,10 @@ function renderInfrastructurePanel() {
     <section class="infrastructure-category">
       <div class="infrastructure-category-title">안전</div>
       <div class="infrastructure-list">
-        ${infrastructureItem("치안시설", `${formatNumber(safetyCounts.police)}개`, safetyNearest.police, "police")}
-        ${infrastructureItem("CCTV", `${formatNumber(safetyCounts.cctv)}대`, safetyNearest.cctv, "cctv")}
-        ${infrastructureItem("대기환경", `${formatNumber(safety.airQualityScore)}점`, safety.airStation ? { name: safety.airStation } : null, "air")}
-        ${infrastructureItem("녹지 접근", `${formatNumber(safety.greenScore)}점`, safetyNearest.park, "green")}
+        ${policeItem}
+        ${cctvItem}
+        ${airItem}
+        ${greenItem}
       </div>
     </section>
   `;
@@ -3993,6 +4720,14 @@ function renderInfrastructurePanel() {
 function resetRouteState() {
   const transportMode = state.route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE;
   state.routeRequestId += 1;
+  state.aiCommute.requestId += 1;
+  state.aiCommute = {
+    selectedId: null,
+    requestId: state.aiCommute.requestId,
+    isLoading: false,
+    result: null,
+    error: ""
+  };
   state.route = {
     selectedId: null,
     isLoading: false,
@@ -4004,6 +4739,43 @@ function resetRouteState() {
   if (state.map?.routeLayer) {
     state.map.routeLayer.clearLayers();
   }
+}
+
+async function ensureAiSummaryCommuteRoute(selected) {
+  if (!selected?.id || state.aiCommute.selectedId === selected.id || state.aiCommute.isLoading) return;
+
+  const origin = representativeAddressFor(selected);
+  const destinationLocation = selectedDestinationLocation();
+  const destinationAddress = destinationLocation?.address || state.destinationQuery.trim() || destinationAddressFor();
+  const destination = destinationCoordinatesForRequest();
+  if (!origin || !destinationAddress || !destination) {
+    state.aiCommute = { selectedId: selected.id, requestId: state.aiCommute.requestId + 1, isLoading: false, result: null, error: "통근 좌표 없음" };
+    return;
+  }
+
+  const requestId = state.aiCommute.requestId + 1;
+  state.aiCommute = { selectedId: selected.id, requestId, isLoading: true, result: null, error: "" };
+  const params = new URLSearchParams({
+    origin,
+    provider: "tmap",
+    transportMode: "car",
+    destinationAddress,
+    destinationLat: destination.lat,
+    destinationLng: destination.lng
+  });
+  if (state.destinationQuery.trim()) {
+    params.set("destinationQuery", state.destinationQuery.trim());
+  }
+
+  try {
+    const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
+    if (requestId !== state.aiCommute.requestId) return;
+    state.aiCommute = { selectedId: selected.id, requestId, isLoading: false, result: payload, error: "" };
+  } catch (error) {
+    if (requestId !== state.aiCommute.requestId) return;
+    state.aiCommute = { selectedId: selected.id, requestId, isLoading: false, result: null, error: error.message };
+  }
+  renderDetail();
 }
 
 async function calculateCommuteRoute(selected, options = {}) {
@@ -4231,18 +5003,47 @@ function syncAllRangeProgress() {
 }
 
 function normalizeBudgetValue(value) {
-  const min = Number(nodes.budgetInput?.min || 0);
-  const max = Number(nodes.budgetInput?.max || 150);
-  const step = Number(nodes.budgetInput?.step || 1);
+  const config = budgetConfig();
+  const min = Number(nodes.budgetInput?.min || config.min);
+  const max = Number(nodes.budgetInput?.max || config.max);
+  const step = Number(nodes.budgetInput?.step || config.step);
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return state.budget;
   return clamp(Math.round(numeric / step) * step, min, max);
 }
 
+function syncBudgetModeControls() {
+  const config = budgetConfig();
+  if (nodes.budgetLabel) nodes.budgetLabel.textContent = config.label;
+  if (nodes.budgetUnit) nodes.budgetUnit.textContent = config.unit;
+  if (nodes.budgetInput) {
+    nodes.budgetInput.min = config.min;
+    nodes.budgetInput.max = config.max;
+    nodes.budgetInput.step = config.step;
+  }
+  if (nodes.budgetOutput) {
+    nodes.budgetOutput.min = config.min / Number(config.displayScale || 1);
+    nodes.budgetOutput.max = config.max / Number(config.displayScale || 1);
+    nodes.budgetOutput.step = config.displayStep || config.step;
+    nodes.budgetOutput.setAttribute("aria-label", config.label);
+  }
+  document.querySelectorAll('input[name="budgetMode"]').forEach((input) => {
+    input.checked = input.value === state.budgetMode;
+  });
+}
+
+function setBudgetMode(mode, { refresh = true } = {}) {
+  if (!BUDGET_MODE_CONFIG[mode]) return;
+  state.budgetMode = mode;
+  state.budget = budgetConfig(mode).defaultValue;
+  syncBudgetModeControls();
+  setBudget(state.budget, { refresh });
+}
+
 function setBudget(value, { syncTextInput = true, refresh = true } = {}) {
   state.budget = normalizeBudgetValue(value);
   if (nodes.budgetInput) nodes.budgetInput.value = state.budget;
-  if (syncTextInput && nodes.budgetOutput) nodes.budgetOutput.value = String(state.budget);
+  if (syncTextInput && nodes.budgetOutput) nodes.budgetOutput.value = displayBudgetValue(state.budget);
   syncRangeProgress(nodes.budgetInput);
   if (refresh) scheduleRefresh();
 }
@@ -4263,8 +5064,9 @@ function applyPersonaDefaultWeights(persona) {
 }
 
 function renderControls() {
+  syncBudgetModeControls();
   if (nodes.budgetOutput && document.activeElement !== nodes.budgetOutput) {
-    nodes.budgetOutput.value = String(state.budget);
+    nodes.budgetOutput.value = displayBudgetValue(state.budget);
   }
   nodes.commuteWeightOutput.textContent = `${state.weights.commute}%`;
   nodes.costWeightOutput.textContent = `${state.weights.cost}%`;
@@ -4321,9 +5123,10 @@ function selectApartmentMatch(id, options = {}) {
     state.property.detail = null;
     state.property.error = "";
     state.property.isLoading = false;
-    state.property.agentAnswer = null;
-    state.property.agentError = "";
-    state.property.requestId += 1;
+  state.property.agentAnswer = null;
+  state.property.agentError = "";
+  state.property.trendMode = state.budgetMode === "sale" ? "sale" : "rent";
+  state.property.requestId += 1;
   }
   state.selectedId = id;
 
@@ -4390,6 +5193,7 @@ function initNavigation() {
 
 function resetUserSettings() {
   state.budget = 0;
+  state.budgetMode = "monthly";
   state.destination = "gangnam";
   state.destinationQuery = "";
   state.destinationLocation = null;
@@ -4416,8 +5220,9 @@ function resetUserSettings() {
   state.locationSearch.error = "";
   state.locationSearch.isLoading = false;
 
+  syncBudgetModeControls();
   nodes.budgetInput.value = state.budget;
-  nodes.budgetOutput.value = state.budget;
+  nodes.budgetOutput.value = displayBudgetValue(state.budget);
   nodes.destinationInput.value = state.destinationQuery;
   document.querySelector("input[name='persona'][value='single']").checked = true;
   syncWeightInputs();
@@ -4511,10 +5316,16 @@ function bindEvents() {
     setBudget(event.target.value);
   });
 
+  document.querySelectorAll('input[name="budgetMode"]').forEach((input) => {
+    input.addEventListener("change", (event) => {
+      setBudgetMode(event.target.value);
+    });
+  });
+
   nodes.budgetOutput.addEventListener("input", (event) => {
-    const nextValue = Number(event.target.value);
+    const nextValue = parseBudgetDisplayValue(event.target.value);
     if (!Number.isFinite(nextValue)) return;
-    state.budget = clamp(nextValue, Number(nodes.budgetInput.min || 0), Number(nodes.budgetInput.max || 150));
+    state.budget = normalizeBudgetValue(nextValue);
     nodes.budgetInput.value = state.budget;
     syncRangeProgress(nodes.budgetInput);
     scheduleRefresh();
@@ -4527,11 +5338,11 @@ function bindEvents() {
   });
 
   nodes.budgetOutput.addEventListener("change", (event) => {
-    setBudget(event.target.value);
+    setBudget(parseBudgetDisplayValue(event.target.value));
   });
 
   nodes.budgetOutput.addEventListener("blur", (event) => {
-    setBudget(event.target.value, { refresh: false });
+    setBudget(parseBudgetDisplayValue(event.target.value), { refresh: false });
   });
 
   const updateDestinationFromInput = (value, delay = 180) => {

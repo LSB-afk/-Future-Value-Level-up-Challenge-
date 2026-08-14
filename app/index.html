@@ -41,11 +41,18 @@
           </header>
 
           <section class="sidebar-section controls" aria-label="아파트 조건 설정">
+            <fieldset class="segmented budget-mode-selector" aria-label="예산 기준">
+              <legend>예산 기준</legend>
+              <label><input type="radio" name="budgetMode" value="monthly" checked><span>월세</span></label>
+              <label><input type="radio" name="budgetMode" value="jeonse"><span>전세</span></label>
+              <label><input type="radio" name="budgetMode" value="sale"><span>매매</span></label>
+            </fieldset>
+
             <label class="field">
-              <span>월 주거 예산</span>
+              <span id="budgetLabel">월 주거 예산</span>
               <span class="budget-input-wrap">
-                <input id="budgetOutput" class="budget-number-input" type="number" min="0" max="150" step="1" value="0" inputmode="numeric" aria-label="월 주거 예산">
-                <span>만원</span>
+                <input id="budgetOutput" class="budget-number-input" type="number" min="0" max="150" step="1" value="0" inputmode="decimal" aria-label="월 주거 예산">
+                <span id="budgetUnit">만원</span>
               </span>
               <input id="budgetInput" type="range" min="0" max="150" value="0" step="1">
             </label>
@@ -84,7 +91,7 @@
                 <output id="commuteWeightOutput">30%</output>
                 <input id="commuteWeight" type="range" min="0" max="50" value="30" step="5">
               </label>
-              <label class="field compact" title="예산 대비 아파트 단지 추정 월세를 점수화합니다.">
+              <label class="field compact" title="선택한 예산 기준 대비 아파트 단지 가격을 점수화합니다.">
                 <span>주거비</span>
                 <output id="costWeightOutput">35%</output>
                 <input id="costWeight" type="range" min="0" max="50" value="35" step="5">
