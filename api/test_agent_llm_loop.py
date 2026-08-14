@@ -30,7 +30,7 @@ class _Response:
     def __init__(self, content, stop_reason="end_turn"):
         self.content = content
         self.stop_reason = stop_reason
-        self.model = "claude-opus-5"
+        self.model = "claude-haiku-4-5"
         self.usage = _Usage()
 
 
@@ -91,8 +91,10 @@ assert payload["name"] == "논현동부센트레빌", payload
 
 # 시스템 프롬프트에 화면 맥락이 붙는다
 assert "테스트 맥락" in calls[0]["system"]
-assert calls[0]["model"] == "claude-opus-5"
-assert calls[0]["output_config"]["effort"] == "medium"
+assert calls[0]["model"] == "claude-haiku-4-5"
+# Haiku 4.5는 output_config.effort를 400으로 거부한다. 되살리면 모든 요청이 죽는다.
+assert "output_config" not in calls[0], calls[0]["output_config"]
+assert calls[0]["max_tokens"] == agent_llm.MAX_TOKENS
 
 # 클라이언트 도구 + 서버사이드 웹 검색이 함께 실린다
 assert len(calls[0]["tools"]) == len(agent_llm.TOOL_SCHEMAS) + 1

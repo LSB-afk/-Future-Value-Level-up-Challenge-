@@ -17,18 +17,26 @@ import os
 
 from env_loader import load_dotenv
 
-# Opus 5는 thinking이 기본 on이고 max_tokens가 thinking+본문을 함께 제한한다.
-# 대화형이라 effort는 medium으로 두고 토큰은 넉넉히 잡는다.
-MODEL = "claude-opus-5"
-MAX_TOKENS = 8000
-EFFORT = "medium"
-MAX_TURNS = 24
+# Haiku 4.5를 쓴다. 공모전 프로토타입이라 비용 상한이 품질보다 먼저다.
+#
+# Haiku 4.5는 output_config.effort를 받지 않는다(400). thinking도 기본 off라
+# max_tokens는 순수 본문 몫이고, "결론부터 짧게" 답하는 이 프롬프트엔 2000이면 넉넉하다.
+#
+# MAX_TURNS는 폭주 상한이다. 정상 대화는 2~4턴이면 끝나고, 8을 넘긴다는 건
+# 모델이 같은 도구를 반복 호출하며 맴돈다는 뜻이라 거기서 끊는 편이 싸다.
+MODEL = "claude-haiku-4-5"
+MAX_TOKENS = 2000
+MAX_TURNS = 8
 
 # Anthropic이 서버에서 직접 실행하는 도구다. tool_use가 아니라 server_tool_use 블록으로
 # 내려오고 결과도 같이 오므로 _run_tool을 타지 않는다.
 #
 # 20250305를 쓴다. 20260209 이상은 allowed_callers 기본값이 code_execution이라
 # dynamic filtering이 켜진 채 돌고, 검색 블록이 코드 실행 결과 안에 중첩돼 파싱 경로가 달라진다.
+# 애초에 20260209는 Opus 4.6+ / Sonnet 4.6+ 전용이라 Haiku 4.5에는 기본 변형만 있다.
+#
+# max_uses는 토큰과 별도로 검색 1건당 과금된다. Haiku로 내리면 대화당 토큰값이
+# 검색값보다 싸져서 검색이 비용을 주도한다. 제도·법령 확인 용도엔 2회면 된다.
 #
 # allowed_domains로 공공 도메인만 남긴다. 단지 시세를 부동산 블로그에서 주워오면
 # "국토교통 공공데이터 기반"이라는 근거 추적성이 무너진다.
@@ -42,7 +50,7 @@ WEB_SEARCH_DOMAINS = [
 WEB_SEARCH_TOOL = {
     "type": "web_search_20250305",
     "name": "web_search",
-    "max_uses": 3,
+    "max_uses": 2,
     "allowed_domains": WEB_SEARCH_DOMAINS,
 }
 
@@ -86,7 +94,14 @@ def availability() -> dict:
         reason = "ANTHROPIC_API_KEY가 없습니다. .env에 키를 넣으세요."
     else:
         reason = ""
-    return {"available": has_sdk and has_key, "sdk": has_sdk, "key": has_key, "reason": reason, "model": MODEL}
+    return {
+        "available": has_sdk and has_key,
+        "backend": "claude",
+        "sdk": has_sdk,
+        "key": has_key,
+        "reason": reason,
+        "model": MODEL,
+    }
 
 
 # --- 도구 구현: MoveValue 데이터를 읽는 얇은 래퍼 -------------------------------
@@ -390,7 +405,6 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=system,
-            output_config={"effort": EFFORT},
             tools=TOOL_SCHEMAS + [WEB_SEARCH_TOOL],
             messages=history,
         )

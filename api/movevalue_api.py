@@ -1030,6 +1030,31 @@ def apartment_health() -> dict:
     }
 
 
+def select_agent_engine() -> tuple:
+    """쓸 수 있는 AI 엔진과 그 상태를 고른다: Claude 키가 있으면 Claude, 없으면 로컬 Ollama.
+
+    설정 스위치를 두지 않는 건 두 엔진의 availability()가 이미 정확하기 때문이다.
+    키를 안 넣으면 과금이 없는 Ollama로, 키를 넣으면 Claude로 저절로 간다.
+
+    LLM 연동은 선택 의존성이라 요청 시점에만 import한다(정적 빌드는 이 경로를 타지 않는다).
+    둘 다 못 쓰면 (None, 사유)를 돌려주고, 호출 측은 규칙 기반 엔진으로 되돌아간다.
+    """
+    import agent_llm
+
+    remote = agent_llm.availability()
+    if remote["available"]:
+        return agent_llm, remote
+
+    import agent_ollama
+
+    local = agent_ollama.availability()
+    if local["available"]:
+        return agent_ollama, local
+
+    local["reason"] = f"Claude: {remote['reason']} / Ollama: {local['reason']}"
+    return None, local
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MoveValueAPI/0.1"
 
@@ -1060,8 +1085,11 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"unknown path: {parsed.path}"})
             return
 
-        # LLM 연동은 선택 의존성이라 요청 시점에만 import한다(정적 빌드는 이 경로를 타지 않는다).
-        from agent_llm import agent_chat
+        engine, state = select_agent_engine()
+        if engine is None:
+            self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": state["reason"]})
+            return
+        agent_chat = engine.agent_chat
 
         try:
             length = int(self.headers.get("Content-Length") or 0)
@@ -1112,9 +1140,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/agent-status":
                 try:
-                    from agent_llm import availability
-
-                    self.send_json(HTTPStatus.OK, {"ok": True, **availability()})
+                    self.send_json(HTTPStatus.OK, {"ok": True, **select_agent_engine()[1]})
                 except Exception as exc:  # noqa: BLE001 - 상태 조회 실패는 폴백으로 처리한다.
                     self.send_json(
                         HTTPStatus.OK,
