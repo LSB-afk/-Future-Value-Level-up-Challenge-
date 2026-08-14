@@ -2892,7 +2892,8 @@ const AGENT_TOOL_LABELS = {
   jeonse_safeguard: "전세사기 안전장치",
   contract_checklist: "계약 체크리스트",
   safer_alternatives: "더 안전한 대안",
-  commute_route: "통근 경로"
+  commute_route: "통근 경로",
+  web_search: "공공기관 웹 검색"
 };
 
 // LLM이 어떤 데이터를 실제로 읽고 답했는지 보여준다.
@@ -2901,6 +2902,17 @@ function renderAgentToolTrace(message) {
   if (!trace.length) return "";
   const names = [...new Set(trace.map((item) => AGENT_TOOL_LABELS[item.name] || item.name))];
   return `<div class="agent-tooltrace">조회한 데이터: ${names.map((name) => escapeHtml(name)).join(" · ")}</div>`;
+}
+
+// 웹 검색을 썼다면 출처를 반드시 같이 보여준다. 근거 없는 수치는 이 서비스에서 가장 위험하다.
+function renderAgentSources(message) {
+  const sources = Array.isArray(message.sources) ? message.sources : [];
+  if (!sources.length) return "";
+  const links = sources
+    .filter((item) => typeof item?.url === "string" && /^https?:\/\//.test(item.url))
+    .map((item) => `<li><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title || item.url)}</a></li>`);
+  if (!links.length) return "";
+  return `<div class="agent-sources"><span>출처</span><ul>${links.join("")}</ul></div>`;
 }
 
 function renderAgentMessage(message) {
@@ -2914,6 +2926,7 @@ function renderAgentMessage(message) {
       ${message.target ? `<span class="agent-msg-target">${escapeHtml(message.target)}</span>` : ""}
       <p>${escapeHtml(answer.answer || message.text || "")}</p>
       ${renderAgentToolTrace(message)}
+      ${renderAgentSources(message)}
       ${renderAgentBasisGroups(answer)}
       ${comparisons.length ? `
         <div class="agent-suggestions">
@@ -3073,6 +3086,7 @@ async function sendAgentMessageViaLlm(target) {
     answer: { answer: payload.answer, disclaimer: agentDisclaimer() },
     target: target.name,
     toolTrace: payload.toolTrace || [],
+    sources: payload.sources || [],
     engine: "llm"
   });
   state.agent.followUps = AGENT_DEFAULT_FOLLOW_UPS;

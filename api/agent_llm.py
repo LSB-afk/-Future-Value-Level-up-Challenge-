@@ -24,6 +24,28 @@ MAX_TOKENS = 8000
 EFFORT = "medium"
 MAX_TURNS = 24
 
+# Anthropic이 서버에서 직접 실행하는 도구다. tool_use가 아니라 server_tool_use 블록으로
+# 내려오고 결과도 같이 오므로 _run_tool을 타지 않는다.
+#
+# 20250305를 쓴다. 20260209 이상은 allowed_callers 기본값이 code_execution이라
+# dynamic filtering이 켜진 채 돌고, 검색 블록이 코드 실행 결과 안에 중첩돼 파싱 경로가 달라진다.
+#
+# allowed_domains로 공공 도메인만 남긴다. 단지 시세를 부동산 블로그에서 주워오면
+# "국토교통 공공데이터 기반"이라는 근거 추적성이 무너진다.
+WEB_SEARCH_DOMAINS = [
+    "molit.go.kr",  # 국토교통부
+    "khug.or.kr",  # HUG 주택도시보증공사
+    "law.go.kr",  # 국가법령정보센터
+    "iros.go.kr",  # 인터넷등기소
+    "seoul.go.kr",  # 서울시 (전월세 지원센터)
+]
+WEB_SEARCH_TOOL = {
+    "type": "web_search_20250305",
+    "name": "web_search",
+    "max_uses": 3,
+    "allowed_domains": WEB_SEARCH_DOMAINS,
+}
+
 SYSTEM_PROMPT = """당신은 국토교통 데이터 기반 주거 매칭 서비스 MoveValue의 상담 에이전트입니다.
 전세 계약을 앞둔 임차인에게 전세사기 위험과 주거 선택을 상담합니다.
 
@@ -31,6 +53,9 @@ SYSTEM_PROMPT = """당신은 국토교통 데이터 기반 주거 매칭 서비�
 - 단지에 대한 수치를 말할 때는 반드시 도구를 호출해 확인한 값만 쓰세요. 기억이나 추측으로 가격·점수·거리를 말하지 마세요.
 - 도구가 돌려준 값에는 실데이터와 추정치가 섞여 있습니다. sourceMode나 dataStatus가 추정이라고 표시하면 "추정"이라고 밝히세요.
 - 등기부 권리관계, 임대인 체납, 보증보험 가입 가능 여부는 어떤 도구로도 알 수 없습니다. 모르는 것은 모른다고 말하고 확인 방법을 안내하세요.
+- web_search는 제도·법령·기관 안내가 바뀌었는지 확인할 때만 쓰세요. 단지의 가격·전세가율·위험 점수·거리는 반드시 MoveValue 도구가 돌려준 값만 쓰고, 검색 결과로 대체하지 마세요.
+- 검색으로도 등기부 권리관계나 임대인 체납은 알 수 없습니다. 검색 결과가 그럴듯해 보여도 특정 단지의 권리관계를 단정하지 마세요.
+- 검색어에 사용자의 보증금 액수나 동·호수를 넣지 마세요. 제도명과 기관명만 검색하세요.
 
 ## 판단 기준
 - 깡통주택 판정은 HUG 기준을 씁니다: (보증금 + 대출)이 집값의 80%를 넘으면 깡통주택.
@@ -318,6 +343,31 @@ def _run_tool(name: str, payload: dict) -> str:
         return json.dumps({"error": f"{name} 실행 실패: {exc}"}, ensure_ascii=False)
 
 
+def _web_search_count(usage) -> int:
+    """usage.server_tool_use.web_search_requests. 검색이 안 돌면 통째로 None이다."""
+    server = getattr(usage, "server_tool_use", None)
+    if server is None:
+        return 0
+    return int(getattr(server, "web_search_requests", 0) or 0)
+
+
+def _collect_web_blocks(content, tool_trace: list[dict], sources: list[dict]) -> None:
+    """서버사이드 검색 블록에서 검색어와 출처를 뽑는다.
+
+    server_tool_use는 우리가 실행하지 않으므로 _run_tool을 태우면 안 된다. 대신 사용자가
+    "무엇을 검색했는지" 볼 수 있게 trace에만 남긴다. 인용은 문서상 항상 켜져 있다.
+    """
+    for block in content:
+        if getattr(block, "type", None) == "server_tool_use":
+            query = dict(getattr(block, "input", None) or {}).get("query", "")
+            tool_trace.append({"name": getattr(block, "name", "web_search"), "input": {"query": query}, "server": True})
+        for citation in getattr(block, "citations", None) or []:
+            url = getattr(citation, "url", None)
+            if not url or any(s["url"] == url for s in sources):
+                continue
+            sources.append({"url": url, "title": getattr(citation, "title", "") or url})
+
+
 def agent_chat(messages: list[dict], context: str = "") -> dict:
     """대화 이력을 받아 Claude 응답을 돌려준다. 도구 호출 루프를 직접 돈다."""
     state = availability()
@@ -333,20 +383,32 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
         return {"ok": False, "error": "대화 내용이 비어 있습니다."}
 
     tool_trace: list[dict] = []
+    sources: list[dict] = []
+    web_searches = 0
     for _ in range(MAX_TURNS):
         response = client.messages.create(
             model=MODEL,
             max_tokens=MAX_TOKENS,
             system=system,
             output_config={"effort": EFFORT},
-            tools=TOOL_SCHEMAS,
+            tools=TOOL_SCHEMAS + [WEB_SEARCH_TOOL],
             messages=history,
         )
 
         if response.stop_reason == "refusal":
             return {"ok": False, "error": "안전 정책에 따라 응답이 거부되었습니다. 질문을 바꿔 다시 시도해 주세요."}
 
+        # 검색 횟수는 요청마다 따로 잡히므로 누적해야 한다. 검색이 한 번도 안 돌면 None이다.
+        web_searches += _web_search_count(response.usage)
+        _collect_web_blocks(response.content, tool_trace, sources)
+
+        # 검색 결과 블록은 encrypted_content를 포함해 그대로 되돌려줘야 다음 턴에 복원된다.
         history.append({"role": "assistant", "content": response.content})
+
+        # 긴 검색 턴은 결과 없이 멈춘다. assistant 응답을 그대로 되돌려 보내면 이어진다.
+        # 이걸 안 잡으면 tool_use가 없다는 이유로 아래 분기를 타서 잘린 답변이 정상 응답으로 나간다.
+        if response.stop_reason == "pause_turn":
+            continue
 
         tool_uses = [block for block in response.content if block.type == "tool_use"]
         if not tool_uses:
@@ -355,10 +417,12 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
                 "ok": True,
                 "answer": text,
                 "toolTrace": tool_trace,
+                "sources": sources,
                 "model": response.model,
                 "usage": {
                     "inputTokens": response.usage.input_tokens,
                     "outputTokens": response.usage.output_tokens,
+                    "webSearches": web_searches,
                 },
             }
 
@@ -367,6 +431,9 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
             output = _run_tool(block.name, dict(block.input))
             tool_trace.append({"name": block.name, "input": dict(block.input)})
             results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
+        # 웹 검색과 우리 도구가 같은 턴에 병렬로 불리면 stop_reason이 tool_use로 오고 검색은
+        # 아직 안 돈다. 이 user 메시지에는 tool_result만 담아야 하고(텍스트를 붙이면 400),
+        # 다음 요청에서 API가 검색을 실행한다.
         history.append({"role": "user", "content": results})
 
     return {"ok": False, "error": f"도구 호출이 {MAX_TURNS}회를 넘었습니다.", "toolTrace": tool_trace}

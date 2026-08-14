@@ -93,7 +93,17 @@ assert payload["name"] == "논현동부센트레빌", payload
 assert "테스트 맥락" in calls[0]["system"]
 assert calls[0]["model"] == "claude-opus-5"
 assert calls[0]["output_config"]["effort"] == "medium"
-assert len(calls[0]["tools"]) == len(agent_llm.TOOL_SCHEMAS)
+
+# 클라이언트 도구 + 서버사이드 웹 검색이 함께 실린다
+assert len(calls[0]["tools"]) == len(agent_llm.TOOL_SCHEMAS) + 1
+web_tool = calls[0]["tools"][-1]
+assert web_tool["type"] == "web_search_20250305" and web_tool["name"] == "web_search", web_tool
+# allowed_domains와 blocked_domains를 함께 보내면 API가 400을 준다
+assert "blocked_domains" not in web_tool
+assert "khug.or.kr" in web_tool["allowed_domains"]
+# 검색이 안 돌면 usage.server_tool_use가 없다 — 0으로 떨어져야 한다
+assert result["usage"]["webSearches"] == 0
+assert result["sources"] == []
 
 # 2. 여러 도구를 한 턴에 호출해도 결과가 모두 회신된다
 calls = install_fake_anthropic([
@@ -140,5 +150,62 @@ assert result["ok"] is False and "넘었습니다" in result["error"], result
 install_fake_anthropic([])
 agent_llm = reload_agent_llm()
 assert agent_llm.agent_chat([])["ok"] is False
+
+# 7. pause_turn은 이어서 요청해야 한다.
+# 이 처리가 없으면 tool_use가 없다는 이유로 최종 응답 분기를 타서, 검색이 끝나기도 전의
+# 잘린 텍스트("검색해 보겠습니다")가 정상 답변으로 사용자에게 나간다.
+calls = install_fake_anthropic([
+    _Response([
+        _Block(type="text", text="HUG 기준을 검색해 보겠습니다."),
+        _Block(type="server_tool_use", id="srv_1", name="web_search", input={"query": "HUG 전세보증금반환보증 가입 요건"}),
+    ], stop_reason="pause_turn"),
+    _Response([
+        _Block(
+            type="text",
+            text="가입 요건은 전세가율 90% 이하입니다.",
+            citations=[_Block(type="web_search_result_location", url="https://khug.or.kr/jeonse", title="HUG 전세보증")],
+        ),
+    ]),
+])
+agent_llm = reload_agent_llm()
+result = agent_llm.agent_chat([{"role": "user", "content": "보증보험 요건 알려줘"}])
+assert result["ok"] is True, result
+assert result["answer"] == "가입 요건은 전세가율 90% 이하입니다.", result
+# 멈춘 assistant 응답을 그대로 되돌려 보내야 이어진다
+assert len(calls) == 2, calls
+assert calls[1]["messages"][-1]["role"] == "assistant"
+# 검색어는 trace에 남고, _run_tool을 타면 안 된다(우리 도구가 아니다)
+assert result["toolTrace"] == [
+    {"name": "web_search", "input": {"query": "HUG 전세보증금반환보증 가입 요건"}, "server": True}
+], result["toolTrace"]
+assert result["sources"] == [{"url": "https://khug.or.kr/jeonse", "title": "HUG 전세보증"}], result["sources"]
+
+
+# 8. 검색 횟수는 요청마다 따로 잡히므로 누적돼야 한다
+class _UsageWithSearch(_Usage):
+    def __init__(self, count):
+        self.server_tool_use = _Block(web_search_requests=count)
+
+
+paused = _Response([_Block(type="server_tool_use", id="s1", name="web_search", input={"query": "a"})], stop_reason="pause_turn")
+paused.usage = _UsageWithSearch(2)
+final = _Response([_Block(type="text", text="끝")])
+final.usage = _UsageWithSearch(1)
+install_fake_anthropic([paused, final])
+agent_llm = reload_agent_llm()
+result = agent_llm.agent_chat([{"role": "user", "content": "검색"}])
+assert result["usage"]["webSearches"] == 3, result["usage"]
+
+# 9. 같은 URL이 여러 번 인용돼도 출처는 한 번만 보여준다
+dup = _Block(type="web_search_result_location", url="https://molit.go.kr/a", title="국토교통부")
+install_fake_anthropic([
+    _Response([
+        _Block(type="text", text="앞", citations=[dup]),
+        _Block(type="text", text="뒤", citations=[dup]),
+    ]),
+])
+agent_llm = reload_agent_llm()
+result = agent_llm.agent_chat([{"role": "user", "content": "중복"}])
+assert result["sources"] == [{"url": "https://molit.go.kr/a", "title": "국토교통부"}], result["sources"]
 
 print("agent_llm loop test OK")
