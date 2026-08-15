@@ -5752,6 +5752,20 @@ function bindEvents() {
       return;
     }
 
+    // 예산 0으로 매칭하면 cost_score_for_budget이 전 단지에 0점을 주므로 총점이
+    // 89점대에서 55점대로 눌린 채 순위만 나온다. 결과를 내주는 대신 입력을 요구한다.
+    if (!Number(state.budget)) {
+      state.hasMatched = false;
+      state.matchValidationMessage = `${budgetConfig().label}을 입력해주세요.`;
+      state.results = [];
+      state.selectedId = null;
+      state.showAllCards = false;
+      state.detailPanelOpen = false;
+      render();
+      nodes.budgetInput?.focus();
+      return;
+    }
+
     state.matchValidationMessage = "";
     window.clearTimeout(state.refreshTimer);
     state.showAllCards = false;

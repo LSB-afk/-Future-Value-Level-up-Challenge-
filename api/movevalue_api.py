@@ -333,9 +333,15 @@ def normalize_query(raw: dict[str, list[str]]) -> Query:
         limit = 8
 
     budget_min, budget_max = BUDGET_LIMITS[budget_mode]
+    budget = number("budget", 0, budget_min, budget_max)
+    # 예산이 0이면 cost_score_for_budget이 모든 후보에 0점을 주고, 순위는 나오지만
+    # 총점만 눌린 결과가 정상처럼 내려간다. 조용히 틀린 순위 대신 입력을 요구한다.
+    if not budget:
+        label = {"monthly": "월 주거 예산", "jeonse": "전세 예산", "sale": "매매 예산"}[budget_mode]
+        raise ValueError(f"{label}을 입력해주세요.")
 
     return Query(
-        budget=number("budget", 0, budget_min, budget_max),
+        budget=budget,
         budget_mode=budget_mode,
         destination=destination,
         destination_query=destination_query,
