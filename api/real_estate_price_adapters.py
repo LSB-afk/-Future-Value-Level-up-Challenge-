@@ -247,8 +247,33 @@ def record_address_matches(apartment: dict[str, Any], record: dict[str, Any]) ->
     return False
 
 
+def record_dong_conflicts(apartment: dict[str, Any], record: dict[str, Any]) -> bool:
+    """법정동이 서로 다르면 같은 단지일 수 없다."""
+    apartment_dong = str(apartment.get("dong") or "")
+    record_dong = str(record.get("dong") or "")
+    if not apartment_dong or not record_dong or record_dong == apartment_dong:
+        return False
+    return record_dong not in str(apartment.get("address") or "")
+
+
+def series_number(name: str) -> int:
+    """단지명 끝의 N차를 읽는다. 차수 표기가 없으면 1차로 본다."""
+    match = re.search(r"(\d+)차", normalize_name(name))
+    return int(match.group(1)) if match else 1
+
+
 def apartment_record_matches(apartment: dict[str, Any], record: dict[str, Any]) -> bool:
-    if apt_name_matches(apartment, record.get("name", "")):
+    # 단지명이 서로의 접두어인 경우가 흔하다. 서울숲아이파크(송정동)는
+    # 서울숲아이파크리버포레1차(성수동1가)의 부분 문자열이라 이름만으로는 갈리지 않고,
+    # 전월세 레코드에는 도로명이 비어 있어 이름 매칭이 먼저 통과하면 주소 검증이
+    # 아예 실행되지 않는다. 법정동과 차수는 이름 매칭에도 선행 조건으로 건다.
+    record_name = record.get("name", "")
+    if record_dong_conflicts(apartment, record):
+        return False
+    if series_number(apartment.get("name", "")) != series_number(record_name):
+        return False
+
+    if apt_name_matches(apartment, record_name):
         record["matchMethod"] = "name"
         return True
     if record_address_matches(apartment, record):
