@@ -403,7 +403,7 @@ legend {
 }
 
 .budget-number-input {
-  width: 3ch;
+  width: 7ch;
   height: 20px;
   min-height: 20px;
   padding: 0;
@@ -748,6 +748,10 @@ input[type="range"]::-moz-range-thumb {
   border-color: rgba(3, 199, 90, 0.55);
   background: var(--naver-soft);
   color: var(--naver-strong);
+}
+
+.budget-mode-selector {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .weights {
@@ -1380,6 +1384,10 @@ details > summary span {
 
 .infrastructure-map-marker.type-convenience {
   color: #0f766e;
+}
+
+.infrastructure-map-marker.type-leisure {
+  color: #0ea5e9;
 }
 
 .infrastructure-map-marker.type-welfare {
@@ -3384,22 +3392,72 @@ details > summary span {
   text-decoration: none;
 }
 
+.trend-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.trend-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.trend-market-tabs {
+  display: flex;
+  align-items: center;
+}
+
+.trend-market-tabs button {
+  min-width: 50px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  background: #f1f5f9;
+  color: var(--naver-strong);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  cursor: pointer;
+}
+
+.trend-market-tabs button.active {
+  border-color: var(--naver);
+  background: var(--naver);
+  color: #fff;
+}
+
+.trend-summary-label {
+  margin: 0;
+  color: var(--naver-strong);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.trend-summary-value {
+  color: var(--naver-strong);
+  font-family: inherit;
+  font-size: 26px;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
 .property-trend-chart {
   width: 100%;
   height: auto;
-  min-height: 170px;
+  min-height: 245px;
 }
 
 .property-trend-chart line {
   stroke: var(--line);
-  stroke-width: 1.5;
+  stroke-width: 1;
 }
 
-.property-trend-chart polyline {
-  fill: none;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.property-trend-chart .trend-grid-line {
+  stroke: #dbe4ef;
+  stroke-width: 1;
 }
 
 .property-trend-chart text {
@@ -3407,24 +3465,74 @@ details > summary span {
   font-size: 11px;
 }
 
-.sale-line {
-  stroke: var(--blue);
+.property-trend-chart .trend-average-line {
+  stroke: #f43bd2;
+  stroke-width: 3;
+  stroke-linecap: round;
 }
 
-.jeonse-line {
-  stroke: var(--gold);
+.trend-primary-line {
+  fill: none;
+  stroke: var(--naver-strong);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.sale-point {
-  fill: var(--blue);
+.trend-latest-zone {
+  fill: rgba(15, 23, 42, 0.04);
+}
+
+.property-trend-chart .trend-latest-line {
+  stroke: #cbd5e1;
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+}
+
+.trend-axis-label,
+.volume-title {
+  fill: #64748b;
+  font-size: 11px;
+}
+
+.sale-point,
+.trend-primary-point {
+  fill: var(--naver);
   stroke: #fff;
   stroke-width: 1.5;
 }
 
-.jeonse-point {
-  fill: var(--gold);
+.highest-sale-point {
+  fill: #ff4d59;
   stroke: #fff;
   stroke-width: 1.5;
+}
+
+.lowest-jeonse-point {
+  fill: #3478ff;
+  stroke: #fff;
+  stroke-width: 1.5;
+}
+
+.highest-sale-label {
+  fill: #ff4d59 !important;
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.lowest-jeonse-label {
+  fill: #3478ff !important;
+  font-weight: 800;
+  font-size: 11px;
+}
+
+.highest-sale-label.sub,
+.lowest-jeonse-label.sub {
+  font-size: 10px;
+}
+
+.volume-bar {
+  fill: #c9ced6;
 }
 
 .chart-legend,
@@ -3445,11 +3553,15 @@ details > summary span {
 }
 
 .chart-dot.sale {
-  background: var(--blue);
+  background: var(--naver);
+}
+
+.chart-dot.average {
+  background: #f43bd2;
 }
 
 .chart-dot.jeonse {
-  background: var(--gold);
+  background: #3478ff;
 }
 
 .ai-summary-grid,
@@ -3508,6 +3620,10 @@ details > summary span {
   cursor: pointer;
   box-shadow: var(--shadow-strong);
   transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.agent-launcher[hidden] {
+  display: none !important;
 }
 
 .agent-launcher svg {
