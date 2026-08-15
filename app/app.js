@@ -138,15 +138,6 @@ const state = {
     llmReason: "",
     llmModel: ""
   },
-  agent: {
-    open: false,
-    messages: [],
-    followUps: [],
-    targetId: null,
-    targetName: "",
-    isLoading: false,
-    error: ""
-  },
   bookmarks: {
     ids: [],
     details: {},
