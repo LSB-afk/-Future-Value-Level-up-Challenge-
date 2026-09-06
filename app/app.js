@@ -8,6 +8,8 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "movevalue-sidebar-width-v3";
 const SIDEBAR_MIN_WIDTH = 360;
 const SIDEBAR_MAX_WIDTH = 620;
 const DEFAULT_ROUTE_TRANSPORT_MODE = "car";
+const KAKAO_SOC_RADIUS_METERS = 1000;
+const KAKAO_SAFETY_RADIUS_METERS = 1000;
 const ROUTE_TRANSPORT_MODES = [
   { key: "car", label: "자동차", icon: "car-front" },
   { key: "transit", label: "대중교통", icon: "bus-front" },
@@ -64,6 +66,91 @@ const PERSONA_DEFAULT_WEIGHTS = {
   family: { commute: 15, cost: 20, service: 35, safety: 30 },
   senior: { commute: 10, cost: 20, service: 35, safety: 35 }
 };
+const BUDGET_MODE_CONFIG = {
+  monthly: { label: "월 주거 예산", shortLabel: "월세", min: 0, max: 400, step: 1, defaultValue: 0, unit: "만원", displayScale: 1, displayStep: 1 },
+  jeonse: { label: "전세 예산", shortLabel: "전세", min: 0, max: 200000, step: 1000, defaultValue: 0, unit: "억", displayScale: 10000, displayStep: 0.1 },
+  sale: { label: "매매 예산", shortLabel: "매매", min: 0, max: 400000, step: 1000, defaultValue: 0, unit: "억", displayScale: 10000, displayStep: 0.1 }
+};
+const WEIGHT_AXES = ["commute", "cost", "service", "safety"];
+const VOICE_WEIGHT_RULES = [
+  {
+    key: "commute",
+    label: "통근",
+    keywords: ["통근", "출퇴근", "출근", "퇴근", "직장", "회사", "교통", "대중교통", "지하철", "버스", "정류장", "역세권", "역 근처", "역 가까운", "회사 근처", "직장 근처", "이동", "가까운", "가까웠으면", "근처", "빠른", "빨리", "시간", "덜 걸리는", "안 막히는", "환승", "차로", "자동차"]
+  },
+  {
+    key: "cost",
+    label: "주거비",
+    keywords: ["예산", "월세", "전세", "매매", "보증금", "가격", "돈", "비용", "주거비", "관리비", "저렴", "저렴한", "저렴했으면", "저렴하면", "저렴한 곳", "싼", "싼 곳", "싼데", "싼곳", "싸", "싸게", "싸면", "싸고", "쌌", "쌌으면", "합리적", "가성비", "아끼", "아낄", "절약", "부담", "부담없는", "대출"]
+  },
+  {
+    key: "service",
+    label: "생활 SOC",
+    keywords: ["생활", "생활권", "인프라", "주변", "주변에", "많았으면", "많으면", "가까웠으면", "편의", "편의시설", "편의점", "마트", "상권", "카페", "병원", "의료", "약국", "학교", "교육", "학원", "어린이집", "유치원", "아이", "아기", "자녀", "공원", "산책", "운동", "복지", "문화", "시장"]
+  },
+  {
+    key: "safety",
+    label: "안전",
+    keywords: ["안전", "안전한", "안전했으면", "안심", "치안", "위험", "위험하지", "범죄", "cctv", "씨씨티비", "전세사기", "전세 사기", "깡통", "사기", "등기", "권리", "보증보험", "환경", "대기", "공기", "조용", "밤길", "밝은", "여성", "경찰", "파출소"]
+  }
+];
+const VOICE_PHRASE_RULES = [
+  { pattern: /가격.{0,8}(싸|쌌|저렴|낮|부담|가성비)|싸.{0,8}(좋|원|곳|집)|저렴.{0,8}(좋|원|곳|집)|예산.{0,8}(맞|안|내|초과|부담)/, weights: { cost: 5 } },
+  { pattern: /월세|전세|매매|보증금|관리비|주거비|대출/, weights: { cost: 3 } },
+  { pattern: /회사|직장|출근|퇴근|출퇴근|통근/, weights: { commute: 4 } },
+  { pattern: /역세권|지하철|버스|정류장|환승|대중교통|교통/, weights: { commute: 3, service: 1 } },
+  { pattern: /가까.{0,8}(회사|직장|역|지하철|버스|정류장|목적지)|회사.{0,8}가까|직장.{0,8}가까|역.{0,8}가까/, weights: { commute: 4 } },
+  { pattern: /편의점|마트|카페|상권|시장|병원|약국|학교|학원|어린이집|유치원|공원|산책|운동|복지|문화/, weights: { service: 4 } },
+  { pattern: /주변.{0,10}(많|편의|인프라|시설|마트|병원|학교|공원)|생활권|생활.{0,8}(편|좋)/, weights: { service: 4 } },
+  { pattern: /안전|안심|치안|밤길|범죄|cctv|씨씨티비|경찰|파출소|밝은/, weights: { safety: 4 } },
+  { pattern: /전세.{0,8}(사기|안전|위험)|깡통|등기|권리|보증보험|근저당|압류/, weights: { safety: 5, cost: 1 } },
+  { pattern: /조용|쾌적|공기|대기|환경|깨끗/, weights: { safety: 2, service: 2 } }
+];
+const VOICE_STT_CORRECTIONS = [
+  [/썼으면|썻으면|쓸면|섰으면|썻음|썼음/g, "쌌으면"],
+  [/가격이\s*(썼|썻|섰|쓸)/g, "가격이 쌌"],
+  [/싸\s*슴|싸슴|쌓|쌋/g, "쌌"],
+  [/편의\s*점|펴니점|편이점|편의전|편의 정/g, "편의점"],
+  [/마트가|마트는/g, "마트"],
+  [/병원이|병원은/g, "병원"],
+  [/공원이|공원은/g, "공원"],
+  [/시안|취안/g, "치안"],
+  [/씨씨\s*티비|시시티비|씨시티비|c\s*c\s*t\s*v/g, "cctv"],
+  [/전세\s*사끼|전세\s*사귀/g, "전세 사기"],
+  [/깡통\s*주택|깡통집/g, "깡통"],
+  [/총근|충근|통근이/g, "통근"],
+  [/출근이|퇴근이/g, "출근 퇴근"],
+  [/지하철이|지하철은/g, "지하철"],
+  [/버스가|버스는/g, "버스"],
+  [/정류장이|정류장은/g, "정류장"],
+  [/가까우면|가까우면은|가까우면좋|가까우면 좋/g, "가까웠으면 좋"],
+  [/많으면|많으면은|많으면좋|많으면 좋/g, "많았으면 좋"],
+  [/골구루|골고로|고루고루/g, "골고루"],
+  [/균형적|균형적인|균형잡힌|균형 잡힌|벨런스|밸런스/g, "균형"]
+];
+const VOICE_CONTEXT_RULES = [
+  { pattern: /혼자|1인|원룸|오피스텔|사회초년|대학생|취준|자취/, weights: { commute: 1, cost: 2, safety: 1 } },
+  { pattern: /신혼|부부|결혼|배우자|둘이/, weights: { cost: 1, service: 2, safety: 1 } },
+  { pattern: /가족|애들|아이|아기|자녀|초등|중등|고등|등하교|학군|학교/, weights: { service: 3, safety: 2 } },
+  { pattern: /부모님|어머니|아버지|어르신|노인|고령|병원|약국|의료/, weights: { service: 3, safety: 2, commute: 1 } },
+  { pattern: /야근|늦게|밤|새벽|혼자\s*귀가|퇴근이\s*늦|밤길/, weights: { safety: 3, commute: 2 } },
+  { pattern: /재택|집에\s*있는|동네|생활권|살기\s*좋|살기좋|쾌적|조용|깨끗/, weights: { service: 2, safety: 2 } },
+  { pattern: /차\s*없|뚜벅|대중교통|환승|역|정류장|버스|지하철/, weights: { commute: 3, service: 1 } },
+  { pattern: /차\s*있|운전|주차|자동차/, weights: { commute: 2, service: 1 } },
+  { pattern: /대출|돈이\s*없|여유가\s*없|아껴|부담|월급|가성비|최대한\s*싸|저렴|싼/, weights: { cost: 3 } },
+  { pattern: /전세|보증금|계약|등기|권리|깡통|사기|위험/, weights: { safety: 3, cost: 1 } },
+  { pattern: /공원|산책|운동|헬스|문화|카페|마트|시장|상권|편의/, weights: { service: 3 } },
+  { pattern: /추천|찾아|골라|보고\s*싶|좋은\s*곳|괜찮은\s*곳|살\s*곳|집|아파트/, weights: { commute: 1, cost: 1, service: 1, safety: 1 } }
+];
+const VOICE_PERSONA_FALLBACK_SCORES = {
+  single: { commute: 2, cost: 3, service: 1, safety: 2 },
+  newlywed: { commute: 2, cost: 2, service: 3, safety: 2 },
+  family: { commute: 1, cost: 2, service: 4, safety: 3 },
+  senior: { commute: 1, cost: 2, service: 4, safety: 4 }
+};
+const VOICE_LISTENING_MAX_MS = 18000;
+const VOICE_SILENCE_SETTLE_MS = 3000;
+let agentHintTimer = null;
 
 const state = {
   neighborhoods: [],
@@ -74,6 +161,7 @@ const state = {
   destinationQuery: "",
   destinationLocation: null,
   budget: 0,
+  budgetMode: "monthly",
   persona: "single",
   apiMeta: null,
   apiOnline: false,
@@ -119,6 +207,34 @@ const state = {
     category: "",
     label: ""
   },
+  liveInfrastructure: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
+  liveSafety: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
+  liveAir: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
+  liveCctv: {
+    selectedId: null,
+    requestId: 0,
+    isLoading: false,
+    data: null,
+    error: ""
+  },
   property: {
     selectedId: null,
     isLoading: false,
@@ -137,7 +253,10 @@ const state = {
     targetId: null,
     targetName: "",
     isLoading: false,
-    error: ""
+    error: "",
+    llmMode: null,
+    llmReason: "",
+    llmModel: ""
   },
   bookmarks: {
     ids: [],
@@ -145,6 +264,15 @@ const state = {
     panelOpen: false,
     isLoading: false,
     error: ""
+  },
+  voiceWeights: {
+    recognition: null,
+    listening: false,
+    status: "",
+    transcript: "",
+    settleTimer: null,
+    maxTimer: null,
+    errorStatus: ""
   },
   showAllCards: false,
   evidenceRendered: false,
@@ -254,15 +382,17 @@ const areaAddressDefaults = {
 
 const scoreTips = {
   commute: "목적지까지의 대중교통 통근시간을 반영한 점수",
-  cost: "예산 대비 단지 추정 월세를 반영한 주거비 점수",
+  cost: "선택한 예산 기준 대비 추정 가격을 반영한 주거비 점수",
   service: "의료·교통·생활편의·교육·여가복지·복지시설을 가구 유형별 비중으로 합산한 생활 SOC 점수",
   safety: "치안·환경 접근성과 단지 전세 위험 신호를 결합한 안전 점수"
 };
 
 const nodes = {
   main: document.querySelector("main"),
+  budgetLabel: document.querySelector("#budgetLabel"),
   budgetInput: document.querySelector("#budgetInput"),
   budgetOutput: document.querySelector("#budgetOutput"),
+  budgetUnit: document.querySelector("#budgetUnit"),
   destinationInput: document.querySelector("#destinationInput"),
   destinationClearButton: document.querySelector("#destinationClearButton"),
   destinationSuggestions: document.querySelector("#destinationSuggestions"),
@@ -275,6 +405,8 @@ const nodes = {
   costWeightOutput: document.querySelector("#costWeightOutput"),
   serviceWeightOutput: document.querySelector("#serviceWeightOutput"),
   safetyWeightOutput: document.querySelector("#safetyWeightOutput"),
+  voiceWeightButton: document.querySelector("#voiceWeightButton"),
+  voiceWeightStatus: document.querySelector("#voiceWeightStatus"),
   refreshButton: document.querySelector("#refreshButton"),
   bookmarkPanelButton: document.querySelector("#bookmarkPanelButton"),
   bookmarkCount: document.querySelector("#bookmarkCount"),
@@ -373,12 +505,351 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function speechRecognitionConstructor() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function compactVoiceText(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, "");
+}
+
+function normalizeVoiceIntentText(value) {
+  let text = String(value || "").toLowerCase();
+  VOICE_STT_CORRECTIONS.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function voiceIntentDisplayText(value) {
+  return normalizeVoiceIntentText(value) || String(value || "").trim();
+}
+
+function voiceStatusDisplayText(value) {
+  const text = String(value || "");
+  if (text.startsWith("인식:")) {
+    return `인식: ${voiceIntentDisplayText(text.slice(3))}`;
+  }
+  if (text.startsWith("듣는 중...")) {
+    return `듣는 중... ${voiceIntentDisplayText(text.slice(7))}`;
+  }
+  return text;
+}
+
+function isBalancedVoiceIntent(value) {
+  const text = normalizeVoiceIntentText(value);
+  const compactText = compactVoiceText(text);
+  return /골고루|균형|밸런스|전체적으로|고르게|무난|다\s*중요|모두\s*중요|전부\s*중요|비슷하게|반반/.test(text)
+    || /골고루|균형|밸런스|전체적으로|고르게|무난|다중요|모두중요|전부중요|비슷하게|반반/.test(compactText);
+}
+
+function directlyMentionedVoiceAxes(value) {
+  const text = normalizeVoiceIntentText(value);
+  const compactText = compactVoiceText(text);
+  const axisPatterns = {
+    commute: /통근|출퇴근|출근|퇴근|교통|역세권|지하철|버스|회사|직장/,
+    cost: /주거비|예산|가격|월세|전세|매매|보증금|관리비|가성비|저렴|싼|쌌/,
+    service: /생활\s*soc|생활soc|soc|생활권|인프라|편의|편의점|마트|병원|학교|공원|상권/,
+    safety: /안전|치안|cctv|씨씨티비|전세\s*사기|깡통|위험|밤길|보증보험/
+  };
+  return WEIGHT_AXES.filter((key) => (
+    axisPatterns[key].test(text) || axisPatterns[key].test(compactText)
+  ));
+}
+
+function directAxisWeights(transcript) {
+  const axes = directlyMentionedVoiceAxes(transcript);
+  if (axes.length < 2) return null;
+  const text = normalizeVoiceIntentText(transcript);
+  const compactText = compactVoiceText(text);
+  const hasDirectPriorityIntent = /높은|높게|중요|우선|찾고|원해|좋겠|맞춰|반영/.test(text)
+    || /높은|높게|중요|우선|찾고|원해|좋겠|맞춰|반영/.test(compactText);
+  if (!hasDirectPriorityIntent) return null;
+  const low = axes.length === 2 ? 15 : 10;
+  const remaining = 100 - low * (WEIGHT_AXES.length - axes.length);
+  const base = Math.floor(remaining / axes.length / 5) * 5;
+  const weights = Object.fromEntries(WEIGHT_AXES.map((key) => [key, axes.includes(key) ? base : low]));
+  let delta = 100 - WEIGHT_AXES.reduce((sum, key) => sum + weights[key], 0);
+  axes.forEach((key) => {
+    if (delta > 0) {
+      weights[key] += 5;
+      delta -= 5;
+    }
+  });
+  return weights;
+}
+
+function scoreVoiceWeights(transcript) {
+  const text = String(transcript || "").toLowerCase();
+  const normalizedText = normalizeVoiceIntentText(text);
+  const searchableText = `${text} ${normalizedText}`;
+  const compactText = compactVoiceText(searchableText);
+  const scores = Object.fromEntries(WEIGHT_AXES.map((key) => [key, 0]));
+
+  VOICE_WEIGHT_RULES.forEach((rule) => {
+    let matchedKeywords = 0;
+    rule.keywords.forEach((keyword) => {
+      const compactKeyword = compactVoiceText(keyword);
+      if (searchableText.includes(keyword) || compactText.includes(compactKeyword)) {
+        matchedKeywords += 1;
+      }
+    });
+    scores[rule.key] += Math.min(matchedKeywords, 3);
+  });
+
+  VOICE_PHRASE_RULES.forEach((rule) => {
+    if (!rule.pattern.test(searchableText) && !rule.pattern.test(compactText)) return;
+    Object.entries(rule.weights).forEach(([key, value]) => {
+      scores[key] += value;
+    });
+  });
+
+  VOICE_CONTEXT_RULES.forEach((rule) => {
+    if (!rule.pattern.test(searchableText) && !rule.pattern.test(compactText)) return;
+    Object.entries(rule.weights).forEach(([key, value]) => {
+      scores[key] += value;
+    });
+  });
+
+  if (/아이|자녀|초등|유치|학교|교육/.test(searchableText)) {
+    scores.service += 2;
+    scores.safety += 1;
+  }
+  if (/부모님|어르신|노인|병원|의료|복지/.test(searchableText)) {
+    scores.service += 2;
+    scores.safety += 1;
+  }
+  if (/전세\s*사기|깡통|보증금|위험/.test(searchableText)) {
+    scores.safety += 2;
+    scores.cost += 1;
+  }
+  if (/제일|가장|최우선|우선|중요|먼저|신경/.test(searchableText)) {
+    WEIGHT_AXES.forEach((key) => {
+      if (scores[key] > 0) scores[key] += 1;
+    });
+  }
+  if (/상관\s*없|괜찮|덜\s*중요|포기|낮춰|줄여/.test(searchableText)) {
+    if (/통근|출퇴근|회사|교통|역/.test(searchableText)) scores.commute = Math.max(0, scores.commute - 2);
+    if (/가격|예산|월세|전세|비용|돈/.test(searchableText)) scores.cost = Math.max(0, scores.cost - 2);
+    if (/생활|편의|병원|학교|마트|공원/.test(searchableText)) scores.service = Math.max(0, scores.service - 2);
+    if (/안전|치안|위험|환경|조용/.test(searchableText)) scores.safety = Math.max(0, scores.safety - 2);
+  }
+
+  WEIGHT_AXES.forEach((key) => {
+    scores[key] = Math.min(scores[key], 10);
+  });
+  return scores;
+}
+
+function fallbackVoiceScores(transcript) {
+  if (!String(transcript || "").trim()) return null;
+  return {
+    ...(VOICE_PERSONA_FALLBACK_SCORES[state.persona] || VOICE_PERSONA_FALLBACK_SCORES.single)
+  };
+}
+
+function roundedWeightsFromScores(scores) {
+  const totalScore = WEIGHT_AXES.reduce((sum, key) => sum + Number(scores[key] || 0), 0);
+  if (!totalScore) return null;
+
+  const weights = Object.fromEntries(WEIGHT_AXES.map((key) => {
+    const raw = 10 + (Number(scores[key] || 0) / totalScore) * 60;
+    return [key, clamp(Math.round(raw / 5) * 5, 0, 50)];
+  }));
+
+  let delta = 100 - WEIGHT_AXES.reduce((sum, key) => sum + weights[key], 0);
+  let guard = 0;
+  while (delta !== 0 && guard < 32) {
+    const candidates = [...WEIGHT_AXES].sort((a, b) => (
+      delta > 0
+        ? weights[a] - weights[b] || Number(scores[b] || 0) - Number(scores[a] || 0)
+        : weights[b] - weights[a] || Number(scores[a] || 0) - Number(scores[b] || 0)
+    ));
+    const key = candidates.find((axis) => delta > 0 ? weights[axis] <= 45 : weights[axis] >= 5);
+    if (!key) break;
+    weights[key] += delta > 0 ? 5 : -5;
+    delta += delta > 0 ? -5 : 5;
+    guard += 1;
+  }
+
+  return weights;
+}
+
+function voiceWeightSummary(weights) {
+  return VOICE_WEIGHT_RULES
+    .map((rule) => `${rule.label} ${weights[rule.key]}%`)
+    .join(" · ");
+}
+
+function applyVoiceWeights(transcript) {
+  if (isBalancedVoiceIntent(transcript)) {
+    state.weights = { commute: 25, cost: 25, service: 25, safety: 25 };
+    syncWeightInputs();
+    state.voiceWeights.status = `인식: ${voiceIntentDisplayText(transcript)}`;
+    scheduleRefresh(0);
+    return;
+  }
+
+  const directWeights = directAxisWeights(transcript);
+  if (directWeights) {
+    state.weights = directWeights;
+    syncWeightInputs();
+    state.voiceWeights.status = `인식: ${voiceIntentDisplayText(transcript)}`;
+    scheduleRefresh(0);
+    return;
+  }
+
+  let scores = scoreVoiceWeights(transcript);
+  let usedFallback = false;
+  if (!WEIGHT_AXES.some((key) => Number(scores[key] || 0) > 0)) {
+    scores = fallbackVoiceScores(transcript);
+    usedFallback = Boolean(scores);
+  }
+  const weights = roundedWeightsFromScores(scores);
+  if (!weights) {
+    const spoken = String(transcript || "").trim();
+    state.voiceWeights.status = spoken
+      ? `인식: ${spoken} → 기준을 찾지 못했습니다. 통근, 예산, 생활, 안전처럼 말해보세요.`
+      : "상황을 다시 말해주세요. 통근, 예산, 생활, 안전 중 중요한 기준을 반영합니다.";
+    renderControls();
+    return;
+  }
+
+  state.weights = weights;
+  syncWeightInputs();
+  state.voiceWeights.status = `인식: ${voiceIntentDisplayText(transcript)}`;
+  scheduleRefresh(0);
+}
+
+function clearVoiceWeightTimers() {
+  window.clearTimeout(state.voiceWeights.settleTimer);
+  window.clearTimeout(state.voiceWeights.maxTimer);
+  state.voiceWeights.settleTimer = null;
+  state.voiceWeights.maxTimer = null;
+}
+
+function stopVoiceWeightRecognition() {
+  clearVoiceWeightTimers();
+  try {
+    state.voiceWeights.recognition?.stop();
+  } catch {
+    // Some browsers throw when recognition has already stopped.
+  }
+}
+
+function queueVoiceWeightAutoStop() {
+  window.clearTimeout(state.voiceWeights.settleTimer);
+  state.voiceWeights.settleTimer = window.setTimeout(() => {
+    state.voiceWeights.status = "말한 내용을 정리하는 중...";
+    renderControls();
+    stopVoiceWeightRecognition();
+  }, VOICE_SILENCE_SETTLE_MS);
+}
+
+function startVoiceWeightRecognition() {
+  const Recognition = speechRecognitionConstructor();
+  if (!Recognition) {
+    state.voiceWeights.status = "이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Edge에서 사용할 수 있습니다.";
+    renderControls();
+    return;
+  }
+
+  if (state.voiceWeights.listening) {
+    state.voiceWeights.status = "지금까지 말한 내용을 반영합니다.";
+    renderControls();
+    stopVoiceWeightRecognition();
+    return;
+  }
+
+  const recognition = new Recognition();
+  state.voiceWeights.recognition = recognition;
+  recognition.lang = "ko-KR";
+  recognition.interimResults = true;
+  recognition.continuous = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    clearVoiceWeightTimers();
+    state.voiceWeights.listening = true;
+    state.voiceWeights.transcript = "";
+    state.voiceWeights.errorStatus = "";
+    state.voiceWeights.status = "듣는 중... 어떤 집을 찾고 있는지 자연스럽게 말해주세요.";
+    state.voiceWeights.maxTimer = window.setTimeout(() => {
+      state.voiceWeights.status = "충분히 들었습니다. 말한 내용을 반영합니다.";
+      renderControls();
+      stopVoiceWeightRecognition();
+    }, VOICE_LISTENING_MAX_MS);
+    renderControls();
+  };
+  recognition.onerror = (event) => {
+    const messages = {
+      "not-allowed": "마이크 권한이 필요합니다.",
+      "no-speech": "음성을 인식하지 못했습니다.",
+      "audio-capture": "마이크를 찾을 수 없습니다."
+    };
+    state.voiceWeights.errorStatus = messages[event.error] || "음성 인식에 실패했습니다.";
+    state.voiceWeights.status = state.voiceWeights.errorStatus;
+    state.voiceWeights.listening = false;
+    clearVoiceWeightTimers();
+    renderControls();
+  };
+  recognition.onend = () => {
+    clearVoiceWeightTimers();
+    state.voiceWeights.listening = false;
+    const transcript = state.voiceWeights.transcript.trim();
+    if (transcript) {
+      applyVoiceWeights(transcript);
+    } else {
+      state.voiceWeights.status = state.voiceWeights.errorStatus || "음성을 인식하지 못했습니다.";
+      renderControls();
+    }
+  };
+  recognition.onresult = (event) => {
+    let finalText = "";
+    let interimText = "";
+    Array.from(event.results || []).forEach((result) => {
+      const text = Array.from(result || [])
+        .map((item) => item.transcript)
+        .join(" ")
+        .trim();
+      if (!text) return;
+      if (result.isFinal) {
+        finalText += `${text} `;
+      } else {
+        interimText += `${text} `;
+      }
+    });
+
+    const transcript = `${finalText}${interimText}`.replace(/\s+/g, " ").trim();
+    if (transcript) {
+      state.voiceWeights.transcript = transcript;
+      state.voiceWeights.status = `듣는 중... ${voiceIntentDisplayText(transcript)}`;
+      queueVoiceWeightAutoStop();
+      renderControls();
+    }
+  };
+
+  try {
+    recognition.start();
+  } catch {
+    state.voiceWeights.listening = false;
+    state.voiceWeights.status = "이미 음성 인식이 실행 중입니다.";
+    renderControls();
+  }
+}
+
 function formatDistance(value) {
   const meters = Math.round(Number(value || 0));
   if (meters >= 1000) {
     return `${(meters / 1000).toFixed(1)}km`;
   }
   return `${formatNumber(meters)}m`;
+}
+
+function greenAccessScoreFromDistance(distanceMeters) {
+  const distance = Number(distanceMeters);
+  if (!Number.isFinite(distance)) return 0;
+  return Math.round(clamp(100 - (distance / KAKAO_SAFETY_RADIUS_METERS) * 60, 40, 100));
 }
 
 function formatFare(value) {
@@ -973,6 +1444,7 @@ function buildRecommendationQuery() {
     destination: state.destination,
     destinationQuery: state.destinationQuery.trim(),
     destinationAddress: destinationLocation?.address || state.destinationQuery.trim(),
+    budgetMode: state.budgetMode,
     persona: state.persona,
     commuteWeight: state.weights.commute,
     costWeight: state.weights.cost,
@@ -1110,15 +1582,20 @@ function scoreApartmentCandidate(apartment) {
   const deposit = Math.round(Number(area.deposit10k || 1000) * stableFactor(`${apartment.id}:deposit`, 0.85, 1.3));
   const jeonse = Number(pricePreview.jeonse10k) || Math.round(Number(area.jeonse10k || 26000) * marketFactor);
   const sale = Number(pricePreview.sale10k) || Math.round(jeonse / stableFactor(`${apartment.id}:ratio`, 0.55, 0.72));
+  const budgetTarget = budgetTargetValue({
+    rentMonthly10k: monthlyRent,
+    monthlyRent10k: monthlyRent,
+    jeonse10k: jeonse,
+    sale10k: sale,
+    pricePreview
+  }, state.budgetMode);
   const destination = currentDestinationCoordinates();
   const areaMinutes = Number(area.commuteMinutes?.[state.destination] || 60);
   const apartmentDistance = haversineKm(apartment.lat, apartment.lng, destination.lat, destination.lng);
   const areaDistance = haversineKm(area.lat, area.lng, destination.lat, destination.lng);
   const minutes = Math.round(clamp(areaMinutes + (apartmentDistance - areaDistance) * 2.2, 10, 120));
   const commuteScore = clamp(105 - minutes * 1.18);
-  const overBudget = Math.max(0, monthlyRent - state.budget);
-  const underBudget = Math.max(0, state.budget - monthlyRent);
-  const costScore = clamp(82 + underBudget * 0.55 - overBudget * 1.9);
+  const costScore = costScoreForBudget(budgetTarget, state.budget, state.budgetMode);
   const neighborhoodSafety = Number(area.safetyScore || 70) * 0.58 + Number(area.carbonScore || 70) * 0.42;
   const propertySafety = 100 - Number(pricePreview.riskScore || 0);
   const socScoring = computePersonaSocScore(area, state.persona);
@@ -1165,9 +1642,7 @@ function scoreApartmentCandidate(apartment) {
 function scoreNeighborhood(item) {
   const minutes = Number(item.commuteMinutes?.[state.destination] || 60);
   const commuteScore = clamp(105 - minutes * 1.18);
-  const overBudget = Math.max(0, Number(item.rentMonthly10k) - state.budget);
-  const underBudget = Math.max(0, state.budget - Number(item.rentMonthly10k));
-  const costScore = clamp(82 + underBudget * 0.55 - overBudget * 1.9);
+  const costScore = costScoreForBudget(budgetTargetValue(item, state.budgetMode), state.budget, state.budgetMode);
   const safetyEnvScore = Math.round(Number(item.safetyScore) * 0.58 + Number(item.carbonScore) * 0.42);
   const socScoring = computePersonaSocScore(item, state.persona);
   const adjusted = {
@@ -1227,7 +1702,7 @@ function enrichRecommendationResult(item) {
 function calculateFallback() {
   return state.apartmentCandidates
     .map(scoreApartmentCandidate)
-    .sort((a, b) => b.total - a.total || a.rentMonthly10k - b.rentMonthly10k || a.name.localeCompare(b.name))
+    .sort((a, b) => b.total - a.total || budgetTargetValue(a) - budgetTargetValue(b) || a.name.localeCompare(b.name))
     .slice(0, MATCH_RESULT_LIMIT);
 }
 
@@ -1355,7 +1830,7 @@ function routeModeColor(step = {}) {
   if (key === "bus") return "#386DE8";
   if (key === "walk") return "#64748B";
   if (key === "rail") return "#6D5DFC";
-  return "#03C75A";
+  return "#14B8A6";
 }
 
 function routeModeIcon(mode = "") {
@@ -1655,7 +2130,7 @@ function drawRouteLine(bounds) {
     radius: 7,
     color: "#ffffff",
     weight: 2,
-    fillColor: "#03C75A",
+    fillColor: "#14B8A6",
     fillOpacity: 1
   }).bindTooltip(route.origin.label || "출발지", { direction: "top" }).addTo(state.map.routeLayer);
 
@@ -1735,8 +2210,317 @@ function offsetLatLng(lat, lng, distanceMeters = 400, bearingDeg = 0) {
   return [lat2 * 180 / Math.PI, lng2 * 180 / Math.PI];
 }
 
+function liveInfrastructureStateFor(selected) {
+  if (!selected?.id || state.liveInfrastructure.selectedId !== selected.id) return null;
+  return state.liveInfrastructure;
+}
+
+function liveInfrastructureDataFor(selected) {
+  const liveState = liveInfrastructureStateFor(selected);
+  const data = liveState?.data;
+  if (!data || !["live_api", "partial_error"].includes(data.mode)) return null;
+  return data;
+}
+
+function liveSocCategoryDisplayData(selected, category) {
+  const live = liveInfrastructureDataFor(selected);
+  const data = live?.categories?.[category];
+  if (!data) return null;
+  return {
+    count: Number(data.count || 0),
+    hasValue: true,
+    nearest: data.nearest || null,
+    samples: Array.isArray(data.samples) ? data.samples : []
+  };
+}
+
+function ensureLiveInfrastructure(selected) {
+  if (!selected?.id) return;
+  const lat = Number(selected.lat);
+  const lng = Number(selected.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+  const liveState = liveInfrastructureStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveInfrastructure.requestId + 1;
+  state.liveInfrastructure = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({
+    id: selected.id,
+    lat: String(lat),
+    lng: String(lng),
+    radius: String(KAKAO_SOC_RADIUS_METERS)
+  });
+
+  fetchJson(`/api/kakao-soc?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveInfrastructure.requestId !== requestId) return;
+      state.liveInfrastructure = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "생활 SOC 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveInfrastructure.requestId !== requestId) return;
+      state.liveInfrastructure = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "생활 SOC 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
+function liveSafetyStateFor(selected) {
+  if (!selected?.id || state.liveSafety.selectedId !== selected.id) return null;
+  return state.liveSafety;
+}
+
+function liveSafetyDataFor(selected) {
+  const liveState = liveSafetyStateFor(selected);
+  const data = liveState?.data;
+  if (!data || !["live_api", "partial_error"].includes(data.mode)) return null;
+  return data;
+}
+
+function liveSafetyCategoryDisplayData(selected, category) {
+  const live = liveSafetyDataFor(selected);
+  const data = live?.categories?.[category];
+  if (!data) return null;
+  return {
+    count: Number(data.count || 0),
+    hasValue: true,
+    nearest: data.nearest || null,
+    samples: Array.isArray(data.samples) ? data.samples : []
+  };
+}
+
+function ensureLiveSafety(selected) {
+  if (!selected?.id) return;
+  const lat = Number(selected.lat);
+  const lng = Number(selected.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+  const liveState = liveSafetyStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveSafety.requestId + 1;
+  state.liveSafety = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({
+    id: selected.id,
+    lat: String(lat),
+    lng: String(lng),
+    radius: String(KAKAO_SAFETY_RADIUS_METERS)
+  });
+
+  fetchJson(`/api/kakao-safety?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveSafety.requestId !== requestId) return;
+      state.liveSafety = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "안전 시설 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveSafety.requestId !== requestId) return;
+      state.liveSafety = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "안전 시설 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
+function districtNameForAir(selected) {
+  const district = cleanDistrictName(selected?.district || "");
+  if (district) return district;
+  const address = String(selected?.address || "");
+  const match = address.match(/서울(?:특별시|시)?\s*([가-힣]+구)/);
+  return match?.[1] || "";
+}
+
+function liveAirStateFor(selected) {
+  if (!selected?.id || state.liveAir.selectedId !== selected.id) return null;
+  return state.liveAir;
+}
+
+function liveAirDataFor(selected) {
+  const liveState = liveAirStateFor(selected);
+  const data = liveState?.data;
+  if (!data || data.mode !== "live_api" || !data.air) return null;
+  return data.air;
+}
+
+function airDescription(air) {
+  if (!air) return "정보 없음";
+  const parts = [];
+  if (air.station) parts.push(`${air.station} 측정소`);
+  if (air.grade) parts.push(air.grade);
+  if (air.pm25 != null) parts.push(`PM2.5 ${formatNumber(air.pm25)}㎍/㎥`);
+  if (air.pm10 != null) parts.push(`PM10 ${formatNumber(air.pm10)}㎍/㎥`);
+  return parts.join(" · ") || "서울시 대기환경 API";
+}
+
+function ensureLiveAir(selected) {
+  if (!selected?.id) return;
+  const district = districtNameForAir(selected);
+  if (!district) return;
+
+  const liveState = liveAirStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveAir.requestId + 1;
+  state.liveAir = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({ district });
+  fetchJson(`/api/seoul-air?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveAir.requestId !== requestId) return;
+      state.liveAir = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "대기환경 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveAir.requestId !== requestId) return;
+      state.liveAir = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "대기환경 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
+function liveCctvStateFor(selected) {
+  if (!selected?.id || state.liveCctv.selectedId !== selected.id) return null;
+  return state.liveCctv;
+}
+
+function liveCctvDataFor(selected) {
+  const liveState = liveCctvStateFor(selected);
+  const data = liveState?.data;
+  if (!data || data.mode !== "live_api" || !data.category) return null;
+  return data.category;
+}
+
+function cctvDescription(category) {
+  if (!category) return "정보 없음";
+  const nearest = category.nearest;
+  const parts = [];
+  if (nearest?.name) parts.push(nearest.name);
+  if (nearest?.distanceMeters != null) parts.push(formatDistance(nearest.distanceMeters));
+  if (category.count != null) parts.push(`CCTV ${formatNumber(category.count)}대`);
+  return parts.join(" · ") || "공공데이터포털 CCTV API";
+}
+
+function ensureLiveCctv(selected) {
+  if (!selected?.id) return;
+  const lat = Number(selected.lat);
+  const lng = Number(selected.lng);
+  const district = districtNameForAir(selected);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || !district) return;
+
+  const liveState = liveCctvStateFor(selected);
+  if (liveState?.isLoading || liveState?.data || liveState?.error) return;
+
+  const requestId = state.liveCctv.requestId + 1;
+  state.liveCctv = {
+    selectedId: selected.id,
+    requestId,
+    isLoading: true,
+    data: null,
+    error: ""
+  };
+
+  const params = new URLSearchParams({
+    district,
+    lat: String(lat),
+    lng: String(lng),
+    radius: String(KAKAO_SAFETY_RADIUS_METERS)
+  });
+  fetchJson(`/api/public-cctv?${params.toString()}`)
+    .then((payload) => {
+      if (state.liveCctv.requestId !== requestId) return;
+      state.liveCctv = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: payload,
+        error: payload?.ok ? "" : (payload?.error || "CCTV 정보를 불러오지 못했습니다.")
+      };
+      renderInfrastructurePanel();
+      renderMap();
+    })
+    .catch((error) => {
+      if (state.liveCctv.requestId !== requestId) return;
+      state.liveCctv = {
+        selectedId: selected.id,
+        requestId,
+        isLoading: false,
+        data: null,
+        error: error.message || "CCTV 정보를 불러오지 못했습니다."
+      };
+      renderInfrastructurePanel();
+    });
+}
+
 function infrastructureSamplesFor(selected, category) {
   const meta = INFRASTRUCTURE_CATEGORY_META[category] || {};
+  if (meta.source === "soc") {
+    const liveSamples = liveInfrastructureDataFor(selected)?.categories?.[category]?.samples;
+    if (Array.isArray(liveSamples) && liveSamples.length) return liveSamples;
+  }
+  if (category === "cctv") {
+    const liveSamples = liveCctvDataFor(selected)?.samples;
+    if (Array.isArray(liveSamples) && liveSamples.length) return liveSamples;
+  }
+  if (meta.source === "safety" && ["police", "green"].includes(category)) {
+    const liveSamples = liveSafetyDataFor(selected)?.categories?.[category]?.samples;
+    if (Array.isArray(liveSamples) && liveSamples.length) return liveSamples;
+  }
   const soc = selected.socSummary || {};
   const safety = selected.safetyEnvSummary || {};
   if (category === "green") {
@@ -1744,6 +2528,17 @@ function infrastructureSamplesFor(selected, category) {
       .filter(Boolean);
   }
   if (category === "air") {
+    const liveAir = liveAirDataFor(selected);
+    if (liveAir) {
+      return [{
+        category: "air",
+        name: liveAir.nearest?.name || `${liveAir.station || districtNameForAir(selected)} 대기측정소`,
+        description: airDescription(liveAir),
+        lat: liveAir.nearest?.lat,
+        lng: liveAir.nearest?.lng,
+        distanceMeters: liveAir.nearest?.distanceMeters ?? 900
+      }];
+    }
     return [{
       category: "air",
       name: safety.airStation || "대기측정소",
@@ -2423,6 +3218,9 @@ function renderDetailSubpanelState() {
 function activateDetailSubpanelTab(tab) {
   state.detailSubpanelTab = tab;
   renderDetailSubpanelState();
+  if (tab === "infrastructure") {
+    renderInfrastructurePanel();
+  }
   renderMap();
   if (tab !== "route") {
     focusSelectedMarker({ zoom: true });
@@ -2844,6 +3642,33 @@ function renderAgentBasisGroups(answer) {
   `;
 }
 
+const AGENT_TOOL_LABELS = {
+  lookup_apartment: "단지 조회",
+  apartment_snapshot: "가격·위험 신호",
+  jeonse_safeguard: "전세사기 안전장치",
+  contract_checklist: "계약 체크리스트",
+  safer_alternatives: "더 안전한 대안",
+  commute_route: "통근 경로",
+  web_search: "공공기관 웹 검색"
+};
+
+function renderAgentToolTrace(message) {
+  const trace = Array.isArray(message.toolTrace) ? message.toolTrace : [];
+  if (!trace.length) return "";
+  const names = [...new Set(trace.map((item) => AGENT_TOOL_LABELS[item.name] || item.name))];
+  return `<div class="agent-tooltrace">조회한 데이터: ${names.map((name) => escapeHtml(name)).join(" · ")}</div>`;
+}
+
+function renderAgentSources(message) {
+  const sources = Array.isArray(message.sources) ? message.sources : [];
+  if (!sources.length) return "";
+  const links = sources
+    .filter((item) => typeof item?.url === "string" && /^https?:\/\//.test(item.url))
+    .map((item) => `<li><a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title || item.url)}</a></li>`);
+  if (!links.length) return "";
+  return `<div class="agent-sources"><span>출처</span><ul>${links.join("")}</ul></div>`;
+}
+
 function renderAgentMessage(message) {
   if (message.role === "user") {
     return `<div class="agent-msg is-user"><p>${escapeHtml(message.text)}</p></div>`;
@@ -2854,6 +3679,8 @@ function renderAgentMessage(message) {
     <div class="agent-msg is-agent">
       ${message.target ? `<span class="agent-msg-target">${escapeHtml(message.target)}</span>` : ""}
       <p>${escapeHtml(answer.answer || message.text || "")}</p>
+      ${renderAgentToolTrace(message)}
+      ${renderAgentSources(message)}
       ${renderAgentBasisGroups(answer)}
       ${comparisons.length ? `
         <div class="agent-suggestions">
@@ -2882,9 +3709,12 @@ function renderAgentPanel() {
   const target = agentTarget();
   const context = document.querySelector("#agentContextLabel");
   if (context) {
-    context.textContent = target
+    const engine = state.agent.llmMode === true
+      ? ` · ${state.agent.llmModel || "Claude"} 연동`
+      : "";
+    context.textContent = (target
       ? `${target.name} 기준으로 답변합니다`
-      : "매칭을 실행하거나 단지를 선택하면 그 단지 기준으로 답변합니다";
+      : "매칭을 실행하거나 단지를 선택하면 그 단지 기준으로 답변합니다") + engine;
   }
 
   const thread = document.querySelector("#agentThread");
@@ -2913,6 +3743,7 @@ function renderAgentPanel() {
 }
 
 function openAgentPanel() {
+  dismissAgentHint();
   state.agent.open = true;
   renderAgentPanel();
   document.querySelector("#agentInput")?.focus();
@@ -2929,6 +3760,45 @@ function resetAgentConversation() {
   state.agent.followUps = [];
   state.agent.error = "";
   renderAgentPanel();
+}
+
+function dismissAgentHint() {
+  const launcher = document.querySelector("#agentLauncher");
+  document.querySelector(".agent-hint")?.remove();
+  if (agentHintTimer) {
+    window.clearTimeout(agentHintTimer);
+    agentHintTimer = null;
+  }
+  launcher?.classList.remove("is-hinting");
+  launcher?.classList.add("is-hinted");
+}
+
+function showAgentHint() {
+  const launcher = document.querySelector("#agentLauncher");
+  if (
+    !launcher
+    || state.agent.open
+    || state.bookmarks.panelOpen
+    || launcher.classList.contains("is-hinted")
+    || document.querySelector(".agent-hint")
+  ) return;
+
+  const hint = document.createElement("div");
+  hint.className = "agent-hint";
+  hint.innerHTML = `
+    <p><strong>AI Agent</strong><br>전세 안전성이나 계약 전 확인 서류를 질문할 수 있어요.</p>
+    <button class="agent-hint-close" type="button" aria-label="AI Agent 안내 닫기">×</button>
+  `;
+
+  const rect = launcher.getBoundingClientRect();
+  hint.style.top = `${Math.round(rect.bottom + 12)}px`;
+  hint.style.right = `${Math.max(18, Math.round(window.innerWidth - rect.right))}px`;
+  hint.style.setProperty("--tail-right", `${Math.round(rect.width / 2)}px`);
+
+  launcher.classList.add("is-hinting");
+  launcher.insertAdjacentElement("afterend", hint);
+  hint.querySelector(".agent-hint-close")?.addEventListener("click", dismissAgentHint);
+  agentHintTimer = window.setTimeout(dismissAgentHint, 6500);
 }
 
 async function sendAgentMessage(question) {
@@ -2948,17 +3818,81 @@ async function sendAgentMessage(question) {
   renderAgentPanel();
 
   try {
-    const params = new URLSearchParams({ id: target.id, question: text });
-    const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
-    const answer = payload.agent || null;
-    state.agent.messages.push({ role: "agent", answer, target: target.name });
-    state.agent.followUps = answer?.followUps || [];
+    if (await agentLlmAvailable()) {
+      await sendAgentMessageViaLlm(target);
+    } else {
+      await sendAgentMessageViaRules(target, text);
+    }
   } catch (error) {
     state.agent.error = `AI Agent 응답 실패: ${error.message}`;
   } finally {
     state.agent.isLoading = false;
     renderAgentPanel();
   }
+}
+
+async function agentLlmAvailable() {
+  if (state.agent.llmMode !== null) return state.agent.llmMode;
+  try {
+    const status = await fetchJson("/api/agent-status");
+    state.agent.llmMode = Boolean(status.available);
+    state.agent.llmReason = status.reason || "";
+    state.agent.llmModel = status.model || "";
+  } catch {
+    state.agent.llmMode = false;
+    state.agent.llmReason = "AI 상태를 확인하지 못해 기본 답변으로 안내합니다.";
+  }
+  return state.agent.llmMode;
+}
+
+function agentHistoryForLlm() {
+  return state.agent.messages
+    .map((message) => ({
+      role: message.role === "user" ? "user" : "assistant",
+      content: message.role === "user" ? message.text : message.answer?.answer || message.text || ""
+    }))
+    .filter((message) => message.content);
+}
+
+async function sendAgentMessageViaLlm(target) {
+  const response = await fetch("/api/agent-chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: agentHistoryForLlm(),
+      context: `사용자가 현재 보고 있는 단지: ${target.name} (id: ${target.id})`
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+
+  if (!response.ok || !payload.ok) {
+    state.agent.llmMode = false;
+    state.agent.llmReason = payload.error || `LLM 응답 실패 (${response.status})`;
+    await sendAgentMessageViaRules(target, state.agent.messages.at(-1)?.text || "");
+    return;
+  }
+
+  state.agent.messages.push({
+    role: "agent",
+    answer: { answer: payload.answer, disclaimer: agentDisclaimer() },
+    target: target.name,
+    toolTrace: payload.toolTrace || [],
+    sources: payload.sources || [],
+    engine: "llm"
+  });
+  state.agent.followUps = AGENT_DEFAULT_FOLLOW_UPS;
+}
+
+async function sendAgentMessageViaRules(target, text) {
+  const params = new URLSearchParams({ id: target.id, question: text });
+  const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
+  const answer = payload.agent || null;
+  state.agent.messages.push({ role: "agent", answer, target: target.name, engine: "rules" });
+  state.agent.followUps = answer?.followUps || [];
+}
+
+function agentDisclaimer() {
+  return "전세 위험 신호는 법적 판정이 아니며, 등기부등본·건축물대장·임대인 세금 체납 여부 확인을 대체하지 않습니다.";
 }
 
 function bindAgentThreadEvents() {
@@ -3114,6 +4048,10 @@ function renderBookmarkPanel() {
   if (!nodes.bookmarkPanel) return;
   renderBookmarkHeader();
   nodes.bookmarkPanel.hidden = !state.bookmarks.panelOpen;
+  document.body.classList.toggle("bookmark-panel-open", state.bookmarks.panelOpen);
+  if (state.bookmarks.panelOpen) {
+    dismissAgentHint();
+  }
   if (!state.bookmarks.panelOpen) {
     nodes.bookmarkPanel.innerHTML = "";
     return;
@@ -3489,11 +4427,11 @@ function buildReason(item) {
 
 function buildSpecificReason(item) {
   const destinationLabel = item.destinationLabel || destinationLabels[state.destination] || "목적지";
-  const monthlyRent = Math.round(Number(item.rentMonthly10k || 0));
-  const budgetDelta = Math.round(state.budget - monthlyRent);
-  const budgetText = budgetDelta >= 0 ? "예산 내" : `예산 ${Math.abs(budgetDelta)}만원 초과`;
+  const targetValue = budgetTargetValue(item, state.budgetMode);
+  const budgetDelta = Math.round(state.budget - targetValue);
+  const budgetText = budgetDelta >= 0 ? "예산 내" : `예산 ${formatBudgetValue(Math.abs(budgetDelta), state.budgetMode)} 초과`;
   const socText = socSummaryTextFor(item, state.persona, 3);
-  return `${destinationLabel} ${formatNumber(item.minutes)}분 · 추정 월세 ${formatNumber(monthlyRent)}만원 · 추정 매매 ${formatMoney10k(item.sale10k)} · ${socText} · ${budgetText}`;
+  return `${destinationLabel} ${formatNumber(item.minutes)}분 · ${budgetConfig().shortLabel} ${formatBudgetValue(targetValue)} · ${socText} · ${budgetText}`;
 }
 
 function formatRentExample(example) {
@@ -3568,7 +4506,7 @@ function renderCards() {
     card.classList.toggle("is-selected", item.id === state.selectedId);
     fragment.querySelector(".rank").textContent = index + 1;
     fragment.querySelector(".name").textContent = item.name;
-    fragment.querySelector(".card-meta").textContent = `${item.district || "서울"} ${item.dong || ""} · 월 ${formatNumber(item.rentMonthly10k)}만원 · ${formatNumber(item.minutes)}분`;
+    fragment.querySelector(".card-meta").textContent = representativeAddressFor(item);
     button.addEventListener("click", () => selectApartmentMatch(item.id, { source: "card", openDetailPanel: true }));
     const bookmarked = isBookmarked(item.id);
     bookmarkButton.textContent = bookmarked ? "★" : "☆";
@@ -3668,7 +4606,7 @@ function shouldCondenseRouteSteps(route = {}) {
 function renderRouteEndpointSteps(route) {
   return `
     <ol class="route-steps">
-      <li style="--route-color:#03C75A">
+      <li style="--route-color:#14B8A6">
         <span class="route-mode">S</span>
         <strong>출발지</strong>
         <span>${escapeHtml(route.origin?.label || "출발지")}</span>
@@ -3819,7 +4757,7 @@ function renderDetail() {
           <p>조건을 입력하고 매칭하기를 누르면 통근, 주거비, 생활 SOC, 안전 점수가 표시됩니다.</p>
         </div>
       </section>
-      ${selectedDetail?.aiSummary ? renderAiSummaryCard(selectedDetail.aiSummary) : renderAiSummaryPendingCard()}
+      ${aiSummary ? renderAiSummaryCard(aiSummary) : renderAiSummaryPendingCard()}
       ${renderAgentCtaCard()}
     `;
     bindAgentCtaEvents();
@@ -3837,54 +4775,11 @@ function renderDetail() {
         ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
         ${scoreRow("안전", selected.adjusted.safety, scoreTips.safety)}
       </div>
-      ${renderMatchHighlights(selected)}
     </section>
     ${aiSummary ? renderAiSummaryCard(aiSummary) : renderAiSummaryPendingCard()}
     ${renderAgentCtaCard()}
   `;
   bindAgentCtaEvents();
-}
-
-function matchHighlight(title, value, note = "") {
-  return `
-    <div class="match-highlight">
-      <span>${escapeHtml(title)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      ${note ? `<small>${escapeHtml(note)}</small>` : ""}
-    </div>
-  `;
-}
-
-function renderMatchHighlights(selected) {
-  const safetyCounts = selected.evidence?.safetyEnvCounts || selected.safetyEnvSummary?.counts || {};
-  const socSummary = socSummaryTextFor(selected, state.persona, 3);
-  const budgetGap = Math.round(Number(state.budget || 0) - Number(selected.rentMonthly10k || 0));
-  const budgetValue = budgetGap >= 0
-    ? `월 ${formatNumber(budgetGap)}만원 여유`
-    : `월 ${formatNumber(Math.abs(budgetGap))}만원 초과`;
-  const commuteNote = selected.minutes <= 20
-    ? "목적지 접근성이 좋은 편입니다."
-    : selected.minutes <= 35
-      ? "일상 통근 부담이 보통 수준입니다."
-      : "통근 시간을 한 번 더 확인해보세요.";
-  const budgetNote = budgetGap >= 0
-    ? `월 주거 예산 ${formatNumber(state.budget)}만원 기준`
-    : `월 주거 예산 ${formatNumber(state.budget)}만원 기준`;
-
-  return `
-    <div class="match-summary-block">
-      <div class="match-summary-heading">
-        <strong>추천 포인트</strong>
-        <span>현재 조건 기준</span>
-      </div>
-      <div class="match-highlight-grid">
-        ${matchHighlight("통근", `${formatNumber(selected.minutes)}분`, commuteNote)}
-        ${matchHighlight("예산", budgetValue, budgetNote)}
-        ${matchHighlight("생활 SOC", socSummary, `${PERSONA_LABELS[state.persona] || "가구 유형"} 기준 비중 반영`)}
-        ${matchHighlight("안전", `치안시설 ${formatNumber(safetyCounts.police || 0)} · CCTV ${formatNumber(safetyCounts.cctv || 0)}`, "치안·환경 지표 반영")}
-      </div>
-    </div>
-  `;
 }
 
 function renderRoutePanel() {
@@ -3949,24 +4844,104 @@ function renderInfrastructurePanel() {
     return;
   }
 
+  if (state.detailPanelOpen && state.detailSubpanelTab === "infrastructure") {
+    ensureLiveInfrastructure(selected);
+    ensureLiveSafety(selected);
+    ensureLiveAir(selected);
+    ensureLiveCctv(selected);
+  }
+  const liveState = liveInfrastructureStateFor(selected);
+  const liveData = liveInfrastructureDataFor(selected);
+  const liveSafetyState = liveSafetyStateFor(selected);
+  const liveSafetyData = liveSafetyDataFor(selected);
+  const liveAirState = liveAirStateFor(selected);
+  const liveAir = liveAirDataFor(selected);
+  const liveCctvState = liveCctvStateFor(selected);
+  const liveCctv = liveCctvDataFor(selected);
   const soc = selected.socSummary || {};
   const safety = selected.safetyEnvSummary || {};
   const safetyCounts = safety.counts || {};
   const safetyNearest = safety.nearestFacilities || {};
+  const isSocLoading = Boolean(liveState?.isLoading && !liveData);
+  const isSafetyLoading = Boolean(liveSafetyState?.isLoading && !liveSafetyData);
+  const isAirLoading = Boolean(liveAirState?.isLoading && !liveAir);
+  const isCctvLoading = Boolean(liveCctvState?.isLoading && !liveCctv);
   const socDisplay = (category) => {
-    const data = socCategoryDisplayData(selected, category);
+    const label = SOC_CATEGORY_DEFINITIONS[category]?.label || category;
+    if (isSocLoading) {
+      return infrastructureItem(label, "불러오는 중", { name: "카카오 API 조회 중" }, category);
+    }
+    const data = liveSocCategoryDisplayData(selected, category) || socCategoryDisplayData(selected, category);
     return infrastructureItem(
-      SOC_CATEGORY_DEFINITIONS[category]?.label || category,
+      label,
       data.hasValue ? `${formatNumber(data.count)}개` : "정보 없음",
       data.nearest,
       category
     );
   };
+  const socNote = liveData
+    ? "아파트 기준 반경 1km에 존재하는 생활 SOC 입니다."
+    : liveState?.isLoading
+      ? `카카오 장소 검색으로 반경 ${formatDistance(KAKAO_SOC_RADIUS_METERS)} 공공성 높은 생활 SOC를 불러오는 중입니다.`
+      : liveState?.data?.mode === "missing_key"
+        ? "카카오 API 키가 없어 기존 공공 기준 인프라를 표시합니다."
+        : liveState?.error
+          ? "카카오 장소 검색에 실패해 기존 공공 기준 인프라를 표시합니다."
+          : `${selected.livingArea?.name || "인근 생활권"} 기준 인프라입니다.`;
+  const livePolice = liveSafetyCategoryDisplayData(selected, "police");
+  const liveGreen = liveSafetyCategoryDisplayData(selected, "green");
+  const policeItem = isSafetyLoading
+    ? infrastructureItem("치안시설", "불러오는 중", { name: "카카오 API 조회 중" }, "police")
+    : infrastructureItem(
+      "치안시설",
+      livePolice ? `${formatNumber(livePolice.count)}개` : `${formatNumber(safetyCounts.police)}개`,
+      livePolice?.nearest || safetyNearest.police,
+      "police"
+    );
+  const greenItem = isSafetyLoading
+    ? infrastructureItem("녹지 접근", "불러오는 중", { name: "카카오 API 조회 중" }, "green")
+    : infrastructureItem(
+      "녹지 접근",
+      liveGreen?.nearest ? `${formatNumber(greenAccessScoreFromDistance(liveGreen.nearest.distanceMeters))}점` : `${formatNumber(safety.greenScore)}점`,
+      liveGreen?.nearest || safetyNearest.park,
+      "green"
+    );
+  const airItem = isAirLoading
+    ? infrastructureItem("대기환경", "불러오는 중", { name: "서울시 API 조회 중" }, "air")
+    : liveAir
+      ? infrastructureItem(
+        "대기환경",
+        `${formatNumber(liveAir.score)}점`,
+        {
+          name: liveAir.nearest?.name || `${liveAir.station || districtNameForAir(selected)} 대기측정소`,
+          description: airDescription(liveAir)
+        },
+        "air"
+      )
+      : infrastructureItem(
+        "대기환경",
+        `${formatNumber(safety.airQualityScore)}점`,
+        safety.airStation ? { name: safety.airStation } : null,
+        "air"
+      );
+  const cctvItem = isCctvLoading
+    ? infrastructureItem("CCTV", "불러오는 중", { name: "공공데이터포털 조회 중" }, "cctv")
+    : liveCctv
+      ? infrastructureItem(
+        "CCTV",
+        `${formatNumber(liveCctv.siteCount)}개 지점`,
+        {
+          ...(liveCctv.nearest || {}),
+          description: cctvDescription(liveCctv)
+        },
+        "cctv"
+      )
+      : infrastructureItem("CCTV", `${formatNumber(safetyCounts.cctv)}대`, safetyNearest.cctv, "cctv");
 
   nodes.infrastructureContent.innerHTML = `
     <section class="infrastructure-category">
       <div class="infrastructure-category-title">생활 SOC</div>
-      <p class="infrastructure-note">${escapeHtml(selected.livingArea?.name || "인근 생활권")} 기준 인프라입니다.</p>
+      <p class="infrastructure-note">${escapeHtml(socNote)}</p>
       <div class="infrastructure-list">
         ${socDisplay("medical")}
         ${socDisplay("transport")}
@@ -3980,10 +4955,10 @@ function renderInfrastructurePanel() {
     <section class="infrastructure-category">
       <div class="infrastructure-category-title">안전</div>
       <div class="infrastructure-list">
-        ${infrastructureItem("치안시설", `${formatNumber(safetyCounts.police)}개`, safetyNearest.police, "police")}
-        ${infrastructureItem("CCTV", `${formatNumber(safetyCounts.cctv)}대`, safetyNearest.cctv, "cctv")}
-        ${infrastructureItem("대기환경", `${formatNumber(safety.airQualityScore)}점`, safety.airStation ? { name: safety.airStation } : null, "air")}
-        ${infrastructureItem("녹지 접근", `${formatNumber(safety.greenScore)}점`, safetyNearest.park, "green")}
+        ${policeItem}
+        ${cctvItem}
+        ${airItem}
+        ${greenItem}
       </div>
     </section>
   `;
@@ -4231,18 +5206,87 @@ function syncAllRangeProgress() {
 }
 
 function normalizeBudgetValue(value) {
-  const min = Number(nodes.budgetInput?.min || 0);
-  const max = Number(nodes.budgetInput?.max || 150);
-  const step = Number(nodes.budgetInput?.step || 1);
+  const config = budgetConfig();
+  const min = Number(nodes.budgetInput?.min || config.min);
+  const max = Number(nodes.budgetInput?.max || config.max);
+  const step = Number(nodes.budgetInput?.step || config.step);
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) return state.budget;
   return clamp(Math.round(numeric / step) * step, min, max);
 }
 
+function budgetConfig(mode = state.budgetMode) {
+  return BUDGET_MODE_CONFIG[mode] || BUDGET_MODE_CONFIG.monthly;
+}
+
+function displayBudgetValue(value = state.budget, mode = state.budgetMode) {
+  const config = budgetConfig(mode);
+  const displayValue = Number(value || 0) / Number(config.displayScale || 1);
+  return Number.isInteger(displayValue) ? String(displayValue) : displayValue.toFixed(1);
+}
+
+function parseBudgetDisplayValue(value, mode = state.budgetMode) {
+  const config = budgetConfig(mode);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return state.budget;
+  return numeric * Number(config.displayScale || 1);
+}
+
+function budgetTargetValue(item = {}, mode = state.budgetMode) {
+  const pricePreview = item.pricePreview || {};
+  if (mode === "sale") return Math.round(Number(item.sale10k || pricePreview.sale10k || 0));
+  if (mode === "jeonse") return Math.round(Number(item.jeonse10k || pricePreview.jeonse10k || 0));
+  return Math.round(Number(item.rentMonthly10k || item.monthlyRent10k || pricePreview.monthlyRent10k || 0));
+}
+
+function formatBudgetValue(value, mode = state.budgetMode) {
+  return mode === "monthly" ? `${formatNumber(value)}만원` : formatMoney10k(value);
+}
+
+function costScoreForBudget(targetValue, budgetValue, mode = state.budgetMode) {
+  const target = Number(targetValue || 0);
+  const budget = Number(budgetValue || 0);
+  if (!target) return 50;
+  if (!budget) return 0;
+  const usageRatio = target / budget;
+  if (usageRatio <= 1) {
+    return clamp(100 - Math.abs(1 - usageRatio) * 72);
+  }
+  return clamp(100 - (usageRatio - 1) * 600);
+}
+
+function syncBudgetModeControls() {
+  const config = budgetConfig();
+  if (nodes.budgetLabel) nodes.budgetLabel.textContent = config.label;
+  if (nodes.budgetUnit) nodes.budgetUnit.textContent = config.unit;
+  if (nodes.budgetInput) {
+    nodes.budgetInput.min = config.min;
+    nodes.budgetInput.max = config.max;
+    nodes.budgetInput.step = config.step;
+  }
+  if (nodes.budgetOutput) {
+    nodes.budgetOutput.min = config.min / Number(config.displayScale || 1);
+    nodes.budgetOutput.max = config.max / Number(config.displayScale || 1);
+    nodes.budgetOutput.step = config.displayStep || config.step;
+    nodes.budgetOutput.setAttribute("aria-label", config.label);
+  }
+  document.querySelectorAll('input[name="budgetMode"]').forEach((input) => {
+    input.checked = input.value === state.budgetMode;
+  });
+}
+
+function setBudgetMode(mode, { refresh = true } = {}) {
+  if (!BUDGET_MODE_CONFIG[mode]) return;
+  state.budgetMode = mode;
+  state.budget = budgetConfig(mode).defaultValue;
+  syncBudgetModeControls();
+  setBudget(state.budget, { refresh });
+}
+
 function setBudget(value, { syncTextInput = true, refresh = true } = {}) {
   state.budget = normalizeBudgetValue(value);
   if (nodes.budgetInput) nodes.budgetInput.value = state.budget;
-  if (syncTextInput && nodes.budgetOutput) nodes.budgetOutput.value = String(state.budget);
+  if (syncTextInput && nodes.budgetOutput) nodes.budgetOutput.value = displayBudgetValue(state.budget);
   syncRangeProgress(nodes.budgetInput);
   if (refresh) scheduleRefresh();
 }
@@ -4263,13 +5307,27 @@ function applyPersonaDefaultWeights(persona) {
 }
 
 function renderControls() {
+  syncBudgetModeControls();
   if (nodes.budgetOutput && document.activeElement !== nodes.budgetOutput) {
-    nodes.budgetOutput.value = String(state.budget);
+    nodes.budgetOutput.value = displayBudgetValue(state.budget);
   }
   nodes.commuteWeightOutput.textContent = `${state.weights.commute}%`;
   nodes.costWeightOutput.textContent = `${state.weights.cost}%`;
   nodes.serviceWeightOutput.textContent = `${state.weights.service}%`;
   nodes.safetyWeightOutput.textContent = `${state.weights.safety}%`;
+  if (nodes.voiceWeightButton) {
+    const supported = Boolean(speechRecognitionConstructor());
+    nodes.voiceWeightButton.disabled = false;
+    nodes.voiceWeightButton.setAttribute("aria-disabled", supported ? "false" : "true");
+    nodes.voiceWeightButton.classList.toggle("is-listening", state.voiceWeights.listening);
+    nodes.voiceWeightButton.setAttribute("aria-pressed", state.voiceWeights.listening ? "true" : "false");
+    nodes.voiceWeightButton.title = supported ? "상황 말하기" : "음성 인식 미지원";
+    nodes.voiceWeightButton.onclick = startVoiceWeightRecognition;
+  }
+  if (nodes.voiceWeightStatus) {
+    nodes.voiceWeightStatus.hidden = !state.voiceWeights.status;
+    nodes.voiceWeightStatus.textContent = voiceStatusDisplayText(state.voiceWeights.status);
+  }
   if (nodes.candidateCount) {
     nodes.candidateCount.textContent = state.apiMeta?.totalCandidates || state.apartmentCandidates.length;
   }
@@ -4351,7 +5409,7 @@ function setActiveNav(sectionId) {
 }
 
 function activateSection(sectionId, options = {}) {
-  const target = document.getElementById(sectionId) ? sectionId : "recommend";
+  const target = document.getElementById(sectionId) ? sectionId : "home";
   state.activeSection = target;
   document.body.classList.toggle("is-map-view", target === "map");
   document.querySelectorAll("main > .anchor-target").forEach((section) => {
@@ -4363,7 +5421,7 @@ function activateSection(sectionId, options = {}) {
     window.history.pushState(null, "", `#${target}`);
   }
 
-  if (target === "map" && state.map?.instance) {
+  if ((target === "map" || target === "recommend") && state.map?.instance) {
     window.setTimeout(() => {
       state.map.instance.invalidateSize();
       if (state.apartments.enabled) {
@@ -4371,6 +5429,10 @@ function activateSection(sectionId, options = {}) {
       }
       focusSelectedMarker();
     }, 80);
+  }
+
+  if (target === "recommend") {
+    window.setTimeout(showAgentHint, 260);
   }
 }
 
@@ -4383,13 +5445,32 @@ function initNavigation() {
   });
 
   window.addEventListener("hashchange", () => {
-    activateSection(window.location.hash.replace("#", "") || "recommend");
+    activateSection(window.location.hash.replace("#", "") || "home");
   });
-  activateSection(window.location.hash.replace("#", "") || "recommend");
+  activateSection(window.location.hash.replace("#", "") || "home");
+}
+
+function openRecommendFromHome({ agent = false } = {}) {
+  activateSection("recommend", { updateHash: true });
+  window.setTimeout(() => {
+    state.map?.instance?.invalidateSize({ pan: false });
+    if (agent) {
+      openAgentPanel();
+      return;
+    }
+    nodes.destinationInput?.focus();
+  }, 100);
 }
 
 function resetUserSettings() {
+  clearVoiceWeightTimers();
+  try {
+    state.voiceWeights.recognition?.abort?.();
+  } catch {
+    // Ignore cleanup failures while resetting UI state.
+  }
   state.budget = 0;
+  state.budgetMode = "monthly";
   state.destination = "gangnam";
   state.destinationQuery = "";
   state.destinationLocation = null;
@@ -4415,10 +5496,16 @@ function resetUserSettings() {
   state.locationSearch.items = [];
   state.locationSearch.error = "";
   state.locationSearch.isLoading = false;
+  state.voiceWeights.status = "";
+  state.voiceWeights.listening = false;
+  state.voiceWeights.transcript = "";
+  state.voiceWeights.errorStatus = "";
 
   nodes.budgetInput.value = state.budget;
-  nodes.budgetOutput.value = state.budget;
+  nodes.budgetOutput.value = displayBudgetValue(state.budget);
   nodes.destinationInput.value = state.destinationQuery;
+  document.querySelector("input[name='budgetMode'][value='monthly']").checked = true;
+  syncBudgetModeControls();
   document.querySelector("input[name='persona'][value='single']").checked = true;
   syncWeightInputs();
   if (nodes.apartmentLayerToggle) nodes.apartmentLayerToggle.checked = true;
@@ -4504,17 +5591,54 @@ function bindSidebarResize() {
   });
 }
 
+function initHomeShowcaseCarousel() {
+  document.querySelectorAll("[data-showcase-carousel]").forEach((carousel) => {
+    const slides = Array.from(carousel.querySelectorAll(".home-showcase-slide"));
+    const captions = Array.from(carousel.querySelectorAll(".home-showcase-caption-item"));
+    if (slides.length < 2) return;
+
+    const setActiveShowcaseItem = (index) => {
+      slides.forEach((slide, slideIndex) => {
+        const isActive = slideIndex === index;
+        slide.classList.toggle("is-active", isActive);
+        slide.setAttribute("aria-hidden", isActive ? "false" : "true");
+      });
+
+      captions.forEach((caption, captionIndex) => {
+        caption.classList.toggle("is-active", captionIndex === index);
+      });
+    };
+
+    let activeIndex = Math.max(0, slides.findIndex((slide) => slide.classList.contains("is-active")));
+    setActiveShowcaseItem(activeIndex);
+
+    window.setInterval(() => {
+      activeIndex = (activeIndex + 1) % slides.length;
+      setActiveShowcaseItem(activeIndex);
+    }, 5000);
+  });
+}
+
 function bindEvents() {
   bindSidebarResize();
+  initHomeShowcaseCarousel();
+
+  document.querySelectorAll("[data-start-recommend]").forEach((button) => {
+    button.addEventListener("click", () => openRecommendFromHome());
+  });
+
+  document.querySelectorAll("[data-start-agent]").forEach((button) => {
+    button.addEventListener("click", () => openRecommendFromHome({ agent: true }));
+  });
 
   nodes.budgetInput.addEventListener("input", (event) => {
     setBudget(event.target.value);
   });
 
   nodes.budgetOutput.addEventListener("input", (event) => {
-    const nextValue = Number(event.target.value);
+    const nextValue = parseBudgetDisplayValue(event.target.value);
     if (!Number.isFinite(nextValue)) return;
-    state.budget = clamp(nextValue, Number(nodes.budgetInput.min || 0), Number(nodes.budgetInput.max || 150));
+    state.budget = normalizeBudgetValue(nextValue);
     nodes.budgetInput.value = state.budget;
     syncRangeProgress(nodes.budgetInput);
     scheduleRefresh();
@@ -4527,11 +5651,11 @@ function bindEvents() {
   });
 
   nodes.budgetOutput.addEventListener("change", (event) => {
-    setBudget(event.target.value);
+    setBudget(parseBudgetDisplayValue(event.target.value));
   });
 
   nodes.budgetOutput.addEventListener("blur", (event) => {
-    setBudget(event.target.value, { refresh: false });
+    setBudget(parseBudgetDisplayValue(event.target.value), { refresh: false });
   });
 
   const updateDestinationFromInput = (value, delay = 180) => {
@@ -4576,11 +5700,20 @@ function bindEvents() {
 
   bindLocationSuggestionList("main");
 
+  document.querySelectorAll("input[name='budgetMode']").forEach((radio) => {
+    radio.addEventListener("change", (event) => {
+      if (event.target.checked) {
+        setBudgetMode(event.target.value, { refresh: true });
+      }
+    });
+  });
+
   document.querySelectorAll("input[name='persona']").forEach((radio) => {
     radio.addEventListener("change", (event) => {
       if (event.target.checked) {
         state.persona = event.target.value;
         applyPersonaDefaultWeights(state.persona);
+        state.voiceWeights.status = "";
         scheduleRefresh(0);
       }
     });
@@ -4594,9 +5727,12 @@ function bindEvents() {
   ].forEach(([inputId, key]) => {
     nodes[inputId].addEventListener("input", (event) => {
       state.weights[key] = Number(event.target.value);
+      state.voiceWeights.status = "";
       scheduleRefresh();
     });
   });
+
+  nodes.voiceWeightButton?.addEventListener("click", startVoiceWeightRecognition);
 
   nodes.toggleCards.addEventListener("click", () => {
     state.showAllCards = !state.showAllCards;
@@ -4633,6 +5769,18 @@ function bindEvents() {
       requestLocationSuggestions(nodes.destinationInput.value, "main");
       render();
       nodes.destinationInput.focus();
+      return;
+    }
+
+    if (!Number(state.budget)) {
+      state.hasMatched = false;
+      state.matchValidationMessage = `${budgetConfig().label}을 입력해주세요.`;
+      state.results = [];
+      state.selectedId = null;
+      state.showAllCards = false;
+      state.detailPanelOpen = false;
+      render();
+      nodes.budgetInput?.focus();
       return;
     }
 
@@ -4724,9 +5872,11 @@ async function init() {
   bindAgentPanelEvents();
   initNavigation();
   render();
+  window.lucide?.createIcons();
   await loadAreas();
   await loadApartmentCandidates();
   render();
+  window.lucide?.createIcons();
 }
 
 init().catch((error) => {

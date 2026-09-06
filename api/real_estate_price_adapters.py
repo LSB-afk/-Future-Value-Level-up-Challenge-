@@ -13,6 +13,7 @@ import re
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from difflib import SequenceMatcher
 from typing import Any
@@ -31,6 +32,8 @@ TRADE_KEY_ENVS = ("MOLIT_APT_TRADE_KEY", "MOLIT_SERVICE_KEY", "MOLIT_API_KEY", "
 RENT_KEY_ENVS = ("MOLIT_APT_RENT_KEY", "MOLIT_SERVICE_KEY", "MOLIT_API_KEY", "PUBLIC_DATA_API_KEY")
 PUBLIC_PRICE_KEY_ENVS = ("PUBLIC_PRICE_API_KEY", "OFFICIAL_PRICE_API_KEY", "MOLIT_PUBLIC_PRICE_KEY", "NSDI_API_KEY")
 KAKAO_KEY_ENVS = ("KAKAO_REST_API_KEY", "MOVEVALUE_KAKAO_REST_API_KEY")
+MOLIT_REQUEST_TIMEOUT_SECONDS = max(3, int(os.getenv("MOLIT_REQUEST_TIMEOUT_SECONDS", "6") or 6))
+MOLIT_FETCH_WORKERS = max(1, min(8, int(os.getenv("MOLIT_FETCH_WORKERS", "6") or 6)))
 
 SEOUL_LAWD_CODES = {
     "종로구": "11110",
@@ -174,7 +177,7 @@ def request_xml(endpoint: str, params: dict[str, str]) -> ET.Element:
     encoded = urllib.parse.urlencode(params, safe="%")
     request = urllib.request.Request(f"{endpoint}?{encoded}", headers={"User-Agent": "MoveValue/0.1"})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(request, timeout=18) as response:  # noqa: S310 - official public API endpoint.
+    with opener.open(request, timeout=MOLIT_REQUEST_TIMEOUT_SECONDS) as response:  # noqa: S310 - official public API endpoint.
         return ET.fromstring(response.read())
 
 
@@ -310,7 +313,9 @@ def fetch_molit_records(
 ) -> tuple[list[dict[str, Any]], str]:
     records: list[dict[str, Any]] = []
     last_error = ""
-    for deal_ym in recent_deal_months(months):
+    deal_months = recent_deal_months(months)
+
+    def fetch_month(deal_ym: str) -> tuple[str, list[dict[str, Any]], str]:
         params = {
             "serviceKey": service_key,
             "LAWD_CD": lawd_code,
@@ -321,17 +326,31 @@ def fetch_molit_records(
         try:
             root = request_xml(endpoint, params)
         except Exception as exc:  # noqa: BLE001 - live adapter must not break prototype.
-            last_error = str(exc)
-            continue
+            return deal_ym, [], str(exc)
         error = response_error(root)
         if error:
-            last_error = error
-            continue
+            return deal_ym, [], error
+        month_records = []
         for item in root.findall(".//item"):
             parsed = parser(item)
             if parsed.get("amount10k") or parsed.get("deposit10k"):
                 if apartment_record_matches(apartment, parsed):
-                    records.append(parsed)
+                    month_records.append(parsed)
+        return deal_ym, month_records, ""
+
+    with ThreadPoolExecutor(max_workers=min(MOLIT_FETCH_WORKERS, len(deal_months))) as executor:
+        futures = [executor.submit(fetch_month, deal_ym) for deal_ym in deal_months]
+        for future in as_completed(futures):
+            _, month_records, error = future.result()
+            if error:
+                last_error = error
+                continue
+            records.extend(month_records)
+
+    records.sort(
+        key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")),
+        reverse=True,
+    )
     return records, last_error
 
 

@@ -19,10 +19,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
+from kakao_safety_adapters import kakao_safety_response, kakao_safety_status
+from kakao_soc_adapters import kakao_soc_response, kakao_soc_status
 from property_adapters import property_agent_response, property_detail_response
 from property_model import build_property_preview, estimate_market, nearest_living_area
+from public_cctv_adapters import public_cctv_response, public_cctv_status
 from real_estate_price_adapters import price_credential_status
 from route_adapters import build_commute_route, credential_status, resolve_location, search_locations_with_kakao
+from seoul_air_adapters import seoul_air_response, seoul_air_status
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,6 +60,12 @@ AREA_ADDRESSES = {
 }
 
 VALID_PERSONAS = {"single", "family", "newlywed", "senior"}
+VALID_BUDGET_MODES = {"monthly", "jeonse", "sale"}
+BUDGET_LIMITS = {
+    "monthly": (0, 150),
+    "jeonse": (0, 200000),
+    "sale": (0, 400000),
+}
 PERSONA_DEFAULT_WEIGHTS = {
     "single": {"commute": 30, "cost": 35, "service": 15, "safety": 20},
     "newlywed": {"commute": 25, "cost": 30, "service": 25, "safety": 20},
@@ -106,6 +116,7 @@ SOC_PERSONA_WEIGHTS = {
 @dataclass
 class Query:
     budget: float
+    budget_mode: str
     destination: str
     destination_query: str
     destination_location: dict
@@ -126,6 +137,27 @@ def number(value: object, fallback: float = 0) -> float:
     if math.isnan(numeric) or math.isinf(numeric):
         return fallback
     return numeric
+
+
+def budget_target_value(item: dict, mode: str) -> float:
+    if mode == "sale":
+        return number(item.get("sale10k") or item.get("recentSale10k"))
+    if mode == "jeonse":
+        return number(item.get("jeonse10k") or item.get("recentJeonse10k"))
+    return number(item.get("rentMonthly10k") or item.get("monthlyRent10k"))
+
+
+def cost_score_for_budget(target_value: float, budget_value: float, mode: str) -> float:
+    target = number(target_value)
+    budget = number(budget_value)
+    if not target:
+        return 50
+    if not budget:
+        return 0
+    usage_ratio = target / budget
+    if usage_ratio <= 1:
+        return clamp(100 - abs(1 - usage_ratio) * 72)
+    return clamp(100 - (usage_ratio - 1) * 600)
 
 
 def soc_count_from_aliases(sources: list[dict], aliases: list[str]) -> tuple[float, bool]:
@@ -227,13 +259,14 @@ def estimate_commute_minutes(area: dict, destination: str, destination_location:
 def recommendation_reason(area: dict, minutes: int, query: Query) -> str:
     evidence = area.get("evidence", {})
     safety_counts = evidence.get("safetyEnvCounts") or area.get("safetyEnvSummary", {}).get("counts", {})
-    monthly_rent = round(float(area.get("rentMonthly10k") or 0))
-    budget_delta = round(float(query.budget) - monthly_rent)
+    target_value = round(budget_target_value(area, query.budget_mode))
+    budget_delta = round(float(query.budget) - target_value)
     destination_label = query.destination_location.get("label") or DESTINATIONS[query.destination]["label"]
     budget_text = "예산 내" if budget_delta >= 0 else f"예산 {abs(budget_delta)}만원 초과"
     soc_text = soc_summary_text(area, query.persona)
+    budget_label = {"monthly": "월세", "jeonse": "전세", "sale": "매매"}.get(query.budget_mode, "월세")
     return (
-        f"{destination_label}까지 {minutes}분, 월세 중앙값 {monthly_rent}만원, "
+        f"{destination_label}까지 {minutes}분, {budget_label} {target_value}만원, "
         f"{soc_text}, "
         f"치안시설 {safety_counts.get('police', 0)}개·CCTV {safety_counts.get('cctv', 0)}대 근거로 "
         f"{budget_text} 생활권입니다."
@@ -282,6 +315,10 @@ def normalize_query(raw: dict[str, list[str]]) -> Query:
     if persona not in VALID_PERSONAS:
         persona = "single"
 
+    budget_mode = raw.get("budgetMode", ["monthly"])[0]
+    if budget_mode not in VALID_BUDGET_MODES:
+        budget_mode = "monthly"
+
     default_weights = PERSONA_DEFAULT_WEIGHTS.get(persona, DEFAULT_WEIGHTS)
     weights = {
         "commute": number("commuteWeight", default_weights["commute"], 0, 100),
@@ -295,8 +332,15 @@ def normalize_query(raw: dict[str, list[str]]) -> Query:
     except (TypeError, ValueError):
         limit = 8
 
+    budget_min, budget_max = BUDGET_LIMITS[budget_mode]
+    budget = number("budget", 0, budget_min, budget_max)
+    if not budget:
+        label = {"monthly": "월 주거 예산", "jeonse": "전세 예산", "sale": "매매 예산"}[budget_mode]
+        raise ValueError(f"{label}을 입력해주세요.")
+
     return Query(
-        budget=number("budget", 70, 20, 250),
+        budget=budget,
+        budget_mode=budget_mode,
         destination=destination,
         destination_query=destination_query,
         destination_location=destination_location,
@@ -780,11 +824,8 @@ def known_locations() -> dict[str, dict]:
 def score_area(area: dict, query: Query) -> dict:
     custom_destination = query.destination_location if query.destination_query else None
     minutes = estimate_commute_minutes(area, query.destination, custom_destination)
-    monthly_rent = float(area.get("rentMonthly10k") or 0)
     commute_score = clamp(105 - minutes * 1.18)
-    over_budget = max(0, monthly_rent - query.budget)
-    under_budget = max(0, query.budget - monthly_rent)
-    cost_score = clamp(82 + under_budget * 0.55 - over_budget * 1.9)
+    cost_score = cost_score_for_budget(budget_target_value(area, query.budget_mode), query.budget, query.budget_mode)
     safety_env_score = round(float(area.get("safetyScore", 70)) * 0.58 + float(area.get("carbonScore", 70)) * 0.42)
     soc_scoring = persona_soc_score(area, query.persona)
     adjusted = {
@@ -822,7 +863,7 @@ def score_area(area: dict, query: Query) -> dict:
 def recommendations(query: Query) -> dict:
     dataset = load_dataset()
     scored = [score_area(area, query) for area in dataset["areas"]]
-    scored.sort(key=lambda area: (-area["total"], area.get("rentMonthly10k", 999), area["name"]))
+    scored.sort(key=lambda area: (-area["total"], budget_target_value(area, query.budget_mode) or 999999, area["name"]))
     return {
         "meta": {
             **dataset.get("meta", {}),
@@ -833,6 +874,7 @@ def recommendations(query: Query) -> dict:
             "destinationAddresses": destination_addresses(),
             "persona": query.persona,
             "budget": query.budget,
+            "budgetMode": query.budget_mode,
             "weights": query.weights,
             "returned": min(query.limit, len(scored)),
             "totalCandidates": len(scored),
@@ -862,12 +904,14 @@ def estimate_apartment_commute_minutes(apartment: dict, area: dict, query: Query
 
 
 def apartment_recommendation_reason(apartment: dict, area: dict, market: dict, minutes: int, query: Query) -> str:
-    monthly_rent = round(float(market.get("monthlyRent10k") or 0))
-    budget_delta = round(float(query.budget) - monthly_rent)
+    target_value = round(budget_target_value(market, query.budget_mode))
+    budget_delta = round(float(query.budget) - target_value)
     budget_text = "예산 내" if budget_delta >= 0 else f"예산 {abs(budget_delta)}만원 초과"
     soc_text = soc_summary_text(area, query.persona)
+    budget_label = {"monthly": "월세", "jeonse": "전세", "sale": "매매"}.get(query.budget_mode, "월세")
     return (
-        f"{query.destination_location.get('label') or DESTINATIONS[query.destination]['label']}까지 {minutes}분, 추정 월세 {monthly_rent}만원, "
+        f"{query.destination_location.get('label') or DESTINATIONS[query.destination]['label']}까지 {minutes}분, "
+        f"{budget_label} {target_value}만원, "
         f"{area.get('name', '')} 기준 {soc_text}를 반영한 "
         f"{budget_text} 아파트입니다."
     )
@@ -878,11 +922,8 @@ def score_apartment(apartment: dict, query: Query) -> dict:
     market = estimate_market(apartment, area)
     preview = build_property_preview(apartment, query.destination)
     minutes = estimate_apartment_commute_minutes(apartment, area, query)
-    monthly_rent = float(market.get("monthlyRent10k") or 0)
     commute_score = clamp(105 - minutes * 1.18)
-    over_budget = max(0, monthly_rent - query.budget)
-    under_budget = max(0, query.budget - monthly_rent)
-    cost_score = clamp(82 + under_budget * 0.55 - over_budget * 1.9)
+    cost_score = cost_score_for_budget(budget_target_value(market, query.budget_mode), query.budget, query.budget_mode)
     neighborhood_safety = float(area.get("safetyScore", 70)) * 0.58 + float(area.get("carbonScore", 70)) * 0.42
     property_safety = 100 - float(preview.get("riskScore") or 0)
     safety_score = neighborhood_safety * 0.85 + property_safety * 0.15
@@ -945,7 +986,7 @@ def apartment_recommendations(query: Query) -> dict:
     apartment_dataset, source_mode, source_error = load_apartment_dataset()
     apartments = apartment_dataset.get("apartments", [])
     scored = [score_apartment(apartment, query) for apartment in apartments]
-    scored.sort(key=lambda item: (-item["total"], item.get("rentMonthly10k", 999), item.get("name", "")))
+    scored.sort(key=lambda item: (-item["total"], budget_target_value(item, query.budget_mode) or 999999, item.get("name", "")))
     apartment_meta = apartment_dataset.get("meta", {})
     return {
         "meta": {
@@ -958,6 +999,7 @@ def apartment_recommendations(query: Query) -> dict:
             "destinationAddresses": destination_addresses(),
             "persona": query.persona,
             "budget": query.budget,
+            "budgetMode": query.budget_mode,
             "weights": query.weights,
             "returned": min(query.limit, len(scored)),
             "totalCandidates": len(scored),
@@ -1012,7 +1054,15 @@ def commute_route(raw: dict[str, list[str]]) -> dict:
 
 
 def integration_status() -> dict:
-    return {**credential_status(), **apartment_credential_status(), **price_credential_status()}
+    return {
+        **credential_status(),
+        **apartment_credential_status(),
+        **price_credential_status(),
+        **kakao_soc_status(),
+        **kakao_safety_status(),
+        **seoul_air_status(),
+        **public_cctv_status(),
+    }
 
 
 def apartment_health() -> dict:
@@ -1028,6 +1078,24 @@ def apartment_health() -> dict:
         "prototypeRecords": int(meta.get("prototypeRecords") or 0),
         "source": meta.get("source", {}),
     }
+
+
+def select_agent_engine() -> tuple:
+    """Pick the available AI agent engine, then fall back to rules when needed."""
+    import agent_llm
+
+    remote = agent_llm.availability()
+    if remote["available"]:
+        return agent_llm, remote
+
+    import agent_ollama
+
+    local = agent_ollama.availability()
+    if local["available"]:
+        return agent_ollama, local
+
+    local["reason"] = f"Claude: {remote['reason']} / Ollama: {local['reason']}"
+    return None, local
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1050,9 +1118,38 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path != "/api/agent-chat":
+            self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"unknown path: {parsed.path}"})
+            return
+
+        engine, state = select_agent_engine()
+        if engine is None:
+            self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"ok": False, "error": state["reason"]})
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+            if length <= 0 or length > 1_000_000:
+                raise ValueError("요청 본문 크기가 올바르지 않습니다.")
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            messages = payload.get("messages")
+            if not isinstance(messages, list) or not messages:
+                raise ValueError("messages 배열이 필요합니다.")
+            result = engine.agent_chat(messages, str(payload.get("context") or ""))
+        except ValueError as exc:
+            self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
+        except Exception as exc:  # noqa: BLE001 - prototype API returns JSON failures.
+            self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": str(exc)})
+            return
+
+        self.send_json(HTTPStatus.OK if result.get("ok") else HTTPStatus.SERVICE_UNAVAILABLE, result)
 
     def do_HEAD(self) -> None:
         parsed = urlparse(self.path)
@@ -1083,6 +1180,15 @@ class Handler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if path == "/api/agent-status":
+                try:
+                    self.send_json(HTTPStatus.OK, {"ok": True, **select_agent_engine()[1]})
+                except Exception as exc:  # noqa: BLE001 - status failures should let the UI fall back.
+                    self.send_json(
+                        HTTPStatus.OK,
+                        {"ok": True, "available": False, "reason": f"LLM 모듈 로드 실패: {exc}"},
+                    )
+                return
             if path == "/api/areas":
                 self.send_json(HTTPStatus.OK, decorate_dataset(load_dataset()))
                 return
@@ -1099,6 +1205,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/apartments":
                 self.send_json(HTTPStatus.OK, apartments_response(parse_qs(parsed.query)))
+                return
+            if path == "/api/kakao-soc":
+                self.send_json(HTTPStatus.OK, kakao_soc_response(parse_qs(parsed.query)))
+                return
+            if path == "/api/kakao-safety":
+                self.send_json(HTTPStatus.OK, kakao_safety_response(parse_qs(parsed.query)))
+                return
+            if path == "/api/seoul-air":
+                self.send_json(HTTPStatus.OK, seoul_air_response(parse_qs(parsed.query)))
+                return
+            if path == "/api/public-cctv":
+                self.send_json(HTTPStatus.OK, public_cctv_response(parse_qs(parsed.query)))
                 return
             if path == "/api/property-detail":
                 self.send_json(HTTPStatus.OK, property_detail_response(parse_qs(parsed.query)))

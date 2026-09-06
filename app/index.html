@@ -3,9 +3,9 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="MoveValue - 데이터 기반 아파트 매칭 서비스">
-    <title>MoveValue 아파트 매칭</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%2303C75A'/%3E%3Cpath d='M9 11h4.4l2.6 6.3L18.6 11H23v10h-3v-5.7L17.6 21h-3.2L12 15.3V21H9z' fill='white'/%3E%3C/svg%3E">
+    <meta name="description" content="FitHome - 데이터 기반 아파트 매칭 서비스">
+    <title>FitHome 아파트 매칭</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%2314B8A6'/%3E%3Cpath d='M9 11h4.4l2.6 6.3L18.6 11H23v10h-3v-5.7L17.6 21h-3.2L12 15.3V21H9z' fill='white'/%3E%3C/svg%3E">
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -16,12 +16,122 @@
   </head>
   <body>
     <main>
-      <section id="recommend" class="workspace anchor-target is-active-view" aria-label="MoveValue 아파트 매칭 화면">
+      <section id="home" class="home-screen anchor-target is-active-view" aria-label="FitHome 첫 화면">
+        <header class="home-nav" aria-label="FitHome 메뉴">
+          <div class="home-brand">
+            <strong>FitHome</strong>
+          </div>
+        </header>
+
+        <section class="home-hero" aria-label="FitHome 소개">
+          <div class="home-hero-copy">
+            <h1>출퇴근, 예산, 안전까지<br>내 조건에 맞는 집만 골라보세요</h1>
+            <p>
+              원하는 조건을 입력하면 조건에 맞는 집을 바로 추천해드립니다.
+            </p>
+          </div>
+
+          <div class="home-visual" aria-label="지도 기반 매칭 예시">
+            <figure class="home-preview-frame">
+              <img src="./assets/home-preview.png" alt="FitHome 실제 매칭 화면 미리보기">
+            </figure>
+          </div>
+        </section>
+
+        <section class="home-section home-category-section" aria-label="추천 탐색 기준">
+          <div class="home-section-head">
+            <h2>어떤 기준으로 찾고 있나요?</h2>
+          </div>
+          <div class="home-category-grid">
+            <div class="home-category-card">출퇴근이 편한 집</div>
+            <div class="home-category-card">예산에 맞는 집</div>
+            <div class="home-category-card">생활 인프라가 좋은 집</div>
+            <div class="home-category-card">전세 사기 없는 집</div>
+            <div class="home-category-card">가족이 살기 좋은 집</div>
+            <div class="home-category-card">조용하고 쾌적한 집</div>
+          </div>
+        </section>
+
+        <section class="home-section home-feature-section" aria-label="FitHome 주요 기능">
+          <div class="home-section-head centered">
+            <h2>FitHome이 제공하는 스마트한 주거 솔루션</h2>
+          </div>
+          <div class="home-feature-grid">
+            <article>
+              <span>01</span>
+              <strong>내 조건 기반 매칭</strong>
+              <p>예산부터 출퇴근 목적지, 우선순위까지 나에게 꼭 맞춘 최적의 단지를 추천해 드립니다.</p>
+            </article>
+            <article>
+              <span>02</span>
+              <strong>지도 위 후보 비교</strong>
+              <p>추천 단지의 정확한 위치와 이동 경로, 인근 생활권을 한눈에 비교할 수 있습니다.</p>
+            </article>
+            <article>
+              <span>03</span>
+              <strong>생활 SOC 확인</strong>
+              <p>의료·교육·교통 등 일상에 꼭 필요한 주변 인프라와 시설 접근성을 꼼꼼하게 분석합니다.</p>
+            </article>
+            <article>
+              <span>04</span>
+              <strong>전세 위험 신호 확인</strong>
+              <p>시세와 권리관계를 철저히 분석하여 안전한 계약을 위한 핵심 체크 포인트를 짚어줍니다.</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="home-showcase-section" aria-label="조건 입력 화면 미리보기">
+          <div class="home-showcase-copy">
+            <p>조건 입력</p>
+            <h2>필요한 조건만 고르면<br>맞는 집을 바로 비교할 수 있어요.</h2>
+          </div>
+          <div class="home-showcase-carousel" data-showcase-carousel>
+            <figure class="home-showcase-frame">
+              <img class="home-showcase-slide is-active" src="./assets/home-condition-form.png" alt="FitHome 조건 입력 화면">
+              <img class="home-showcase-slide" src="./assets/home-weight-controls.png" alt="FitHome 매칭 가중치 설정 화면">
+            </figure>
+            <div class="home-showcase-caption" aria-live="polite">
+              <p class="home-showcase-caption-item is-active">예산과 출퇴근 장소, 가구 유형을 입력해주세요.</p>
+              <p class="home-showcase-caption-item">원하는 주거 환경을 설정해 보세요<br>마이크 버튼을 눌러 음성으로 말씀하시면, 가중치가 자동으로 조절됩니다</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="home-showcase-section home-result-showcase" aria-label="매칭 결과 화면 미리보기">
+          <div class="home-showcase-copy">
+            <p>결과 확인</p>
+            <h2>추천된 집의 정보를<br>화면별로 자세히 확인할 수 있어요.</h2>
+          </div>
+          <div class="home-showcase-carousel" data-showcase-carousel>
+            <figure class="home-showcase-frame">
+              <img class="home-showcase-slide is-active" src="./assets/home-result-summary.png" alt="FitHome 매칭 결과와 AI 요약 화면">
+              <img class="home-showcase-slide" src="./assets/home-result-apartment-info.png" alt="FitHome 아파트 정보 화면">
+              <img class="home-showcase-slide" src="./assets/home-result-route.png" alt="FitHome 출퇴근 경로 화면">
+              <img class="home-showcase-slide" src="./assets/home-result-infra.png" alt="FitHome 주변 인프라 화면">
+              <img class="home-showcase-slide" src="./assets/home-result-risk.png" alt="FitHome 전세 위험 신호 점검 화면">
+            </figure>
+            <div class="home-showcase-caption" aria-live="polite">
+              <p class="home-showcase-caption-item is-active">AI가 분석한 맞춤형 점수와 장단점을 한눈에 확인해 보세요.</p>
+              <p class="home-showcase-caption-item">면적, 세대 수부터 아파트 시세까지 투명하게 공개합니다.</p>
+              <p class="home-showcase-caption-item">자동차, 대중교통 등 이동 수단별 맞춤 경로와 소요 시간을 확인하세요.</p>
+              <p class="home-showcase-caption-item">단지 주변의 인프라를 꼼꼼하게 불러옵니다.<br>버튼을 클릭하시면 해당 장소의 위치를 파악할 수 있습니다.</p>
+              <p class="home-showcase-caption-item">안전한 계약을 위해 미리 꼼꼼히 체크해 보세요.</p>
+            </div>
+          </div>
+        </section>
+
+        <div class="home-fixed-cta" aria-label="매칭 시작">
+          <span>원하는 조건을 입력하고 맞는 집을 추천받아보세요.</span>
+          <button type="button" data-start-recommend>내 조건으로 매칭하기</button>
+        </div>
+      </section>
+
+      <section id="recommend" class="workspace anchor-target" aria-label="FitHome 아파트 매칭 화면">
         <aside class="mv-sidebar" aria-label="조건 설정과 매칭 결과">
           <header class="sidebar-brand">
-            <span class="brand-mark">MV</span>
+            <span class="brand-mark">FH</span>
             <div class="brand-copy">
-              <strong>MoveValue</strong>
+              <strong>FitHome</strong>
               <span>데이터 기반 아파트 매칭</span>
             </div>
             <div class="header-actions">
@@ -41,13 +151,20 @@
           </header>
 
           <section class="sidebar-section controls" aria-label="아파트 조건 설정">
+            <fieldset class="segmented budget-mode-selector" aria-label="예산 기준">
+              <legend>예산 기준</legend>
+              <label><input type="radio" name="budgetMode" value="monthly" checked><span>월세</span></label>
+              <label><input type="radio" name="budgetMode" value="jeonse"><span>전세</span></label>
+              <label><input type="radio" name="budgetMode" value="sale"><span>매매</span></label>
+            </fieldset>
+
             <label class="field">
-              <span>월 주거 예산</span>
+              <span id="budgetLabel">월 주거 예산</span>
               <span class="budget-input-wrap">
-                <input id="budgetOutput" class="budget-number-input" type="number" min="0" max="150" step="1" value="0" inputmode="numeric" aria-label="월 주거 예산">
-                <span>만원</span>
+                <input id="budgetOutput" class="budget-number-input" type="number" min="0" max="400" step="1" value="0" inputmode="decimal" aria-label="월 주거 예산">
+                <span id="budgetUnit">만원</span>
               </span>
-              <input id="budgetInput" type="range" min="0" max="150" value="0" step="1">
+              <input id="budgetInput" type="range" min="0" max="400" value="0" step="1">
             </label>
 
             <label class="field destination-search-field">
@@ -78,13 +195,17 @@
             <div class="weights" aria-label="가중치 설정">
               <div class="weight-title">
                 <strong>매칭 가중치</strong>
+                <button id="voiceWeightButton" class="voice-weight-button" type="button" title="상황 말하기" aria-label="마이크로 상황 말하기">
+                  <i data-lucide="mic" aria-hidden="true"></i>
+                </button>
               </div>
+              <p id="voiceWeightStatus" class="voice-weight-status" aria-live="polite" hidden></p>
               <label class="field compact" title="목적지까지의 대중교통 통근 시간을 점수화합니다.">
                 <span>통근</span>
                 <output id="commuteWeightOutput">30%</output>
                 <input id="commuteWeight" type="range" min="0" max="50" value="30" step="5">
               </label>
-              <label class="field compact" title="예산 대비 아파트 단지 추정 월세를 점수화합니다.">
+              <label class="field compact" title="선택한 예산 기준 대비 아파트 단지 가격을 점수화합니다.">
                 <span>주거비</span>
                 <output id="costWeightOutput">35%</output>
                 <input id="costWeight" type="range" min="0" max="50" value="35" step="5">
@@ -187,7 +308,7 @@
           <aside id="agentPanel" class="agent-panel" aria-label="AI Agent 대화" hidden>
             <header class="agent-panel-head">
               <div class="agent-panel-title">
-                <strong>MoveValue AI Agent</strong>
+                <strong>FitHome AI Agent</strong>
                 <span id="agentContextLabel" class="agent-context"></span>
               </div>
               <div class="agent-panel-actions">
@@ -232,6 +353,6 @@
       crossorigin=""></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-    <script src="./app.js"></script>
+    <script src="./app.js?v=infra-live-1"></script>
   </body>
 </html>
