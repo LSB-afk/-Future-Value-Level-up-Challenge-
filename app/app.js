@@ -5596,6 +5596,26 @@ function initHomeShowcaseCarousel() {
     const slides = Array.from(carousel.querySelectorAll(".home-showcase-slide"));
     const captions = Array.from(carousel.querySelectorAll(".home-showcase-caption-item"));
     if (slides.length < 2) return;
+    let carouselTimer = null;
+    const dots = document.createElement("div");
+    dots.className = "home-showcase-dots";
+    dots.setAttribute("aria-label", "화면 미리보기 선택");
+
+    const dotButtons = slides.map((slide, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "home-showcase-dot";
+      button.setAttribute("aria-label", `${slide.alt || "미리보기"} 보기`);
+      button.addEventListener("click", () => {
+        activeIndex = index;
+        setActiveShowcaseItem(activeIndex);
+        restartCarouselTimer();
+      });
+      dots.append(button);
+      return button;
+    });
+
+    carousel.append(dots);
 
     const setActiveShowcaseItem = (index) => {
       slides.forEach((slide, slideIndex) => {
@@ -5607,15 +5627,27 @@ function initHomeShowcaseCarousel() {
       captions.forEach((caption, captionIndex) => {
         caption.classList.toggle("is-active", captionIndex === index);
       });
+
+      dotButtons.forEach((button, buttonIndex) => {
+        const isActive = buttonIndex === index;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-current", isActive ? "true" : "false");
+      });
+    };
+
+    const restartCarouselTimer = () => {
+      if (carouselTimer) {
+        window.clearInterval(carouselTimer);
+      }
+      carouselTimer = window.setInterval(() => {
+        activeIndex = (activeIndex + 1) % slides.length;
+        setActiveShowcaseItem(activeIndex);
+      }, 5000);
     };
 
     let activeIndex = Math.max(0, slides.findIndex((slide) => slide.classList.contains("is-active")));
     setActiveShowcaseItem(activeIndex);
-
-    window.setInterval(() => {
-      activeIndex = (activeIndex + 1) % slides.length;
-      setActiveShowcaseItem(activeIndex);
-    }, 5000);
+    restartCarouselTimer();
   });
 }
 

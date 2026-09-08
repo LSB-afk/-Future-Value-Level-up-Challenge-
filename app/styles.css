@@ -113,14 +113,24 @@ h4 {
 }
 
 .home-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
+  color: var(--naver-strong);
+}
+
+.home-brand-icon {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
 }
 
 .home-brand strong {
   display: block;
   overflow: hidden;
-  color: #0f172a;
-  font-size: 22px;
+  color: inherit;
+  font-size: 24px;
   font-weight: 900;
   line-height: 1.1;
   text-overflow: ellipsis;
@@ -371,6 +381,34 @@ h4 {
   opacity: 1;
 }
 
+.home-showcase-dots {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 16px;
+}
+
+.home-showcase-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #cbd5e1;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+.home-showcase-dot:hover,
+.home-showcase-dot.is-active {
+  background: var(--naver-strong);
+}
+
+.home-showcase-dot.is-active {
+  transform: scale(1.18);
+}
+
 .home-showcase-frame {
   position: relative;
   width: min(380px, 100%);
@@ -528,6 +566,12 @@ h4 {
   color: #fff;
   font-size: 13px;
   font-weight: 900;
+}
+
+.brand-mark svg {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
 
 .brand-copy {
