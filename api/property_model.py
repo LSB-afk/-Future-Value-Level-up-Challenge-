@@ -448,38 +448,6 @@ def lifestyle_summary(area: dict) -> dict:
     }
 
 
-def ai_summary(apartment: dict, area: dict, market: dict, risk: dict) -> dict:
-    lifestyle = lifestyle_summary(area)
-    strengths = [
-        f"{lifestyle['livingAreaName']} 인근 입지를 기준으로 지하철 접근성 {lifestyle['transitScore']}점입니다.",
-        f"월세 기준은 {format_money_10k(market['monthlyRent10k'])}로 인근 중앙값과 비교 가능한 수준입니다.",
-        f"병원 {lifestyle['counts']['hospital']}개, 학교 {lifestyle['counts']['school']}개, 공원 {lifestyle['counts']['park']}개가 생활 SOC 점수에 반영됐습니다.",
-    ]
-    cautions = []
-    weaknesses = []
-    if number(market.get("saleGapPercent")) > 8:
-        weaknesses.append(f"주변 평균 매매 추정가보다 {market['saleGapPercent']}% 높아 가격 협상 여지가 제한될 수 있습니다.")
-    if building_age(apartment) >= 25:
-        weaknesses.append("준공 후 25년 이상 경과해 수선비, 배관, 주차 편의 확인이 필요합니다.")
-    if not weaknesses:
-        weaknesses.append("단지 단위 실거래 API 매칭 전까지 가격 정보는 확인 가능한 항목만 표시합니다.")
-
-    if number(market.get("saleGapPercent")) > 8:
-        recommendation = "입지와 생활 편의성은 장점이 있으나 가격 수준은 주변 후보와 함께 비교해보는 것이 좋습니다."
-    elif building_age(apartment) >= 25:
-        recommendation = "입지 조건은 무난하지만 준공연식이 오래된 만큼 관리 상태와 주차 편의를 함께 확인하는 것이 좋습니다."
-    else:
-        recommendation = "현재 공개 데이터 기준으로는 입지·가격·생활 편의성의 균형이 무난한 후보입니다."
-
-    return {
-        "headline": f"{topic(apartment.get('name'))} {lifestyle['livingAreaName']} 인근의 주거비·이동·생활 SOC를 함께 검토할 수 있는 아파트 후보입니다.",
-        "strengths": strengths,
-        "weaknesses": weaknesses,
-        "cautions": cautions,
-        "recommendation": recommendation,
-    }
-
-
 def build_property_preview(apartment: dict, destination: str = "gangnam") -> dict:
     area = nearest_living_area(apartment)
     market = estimate_market(apartment, area)
@@ -542,7 +510,6 @@ def build_property_detail(apartment: dict) -> dict:
         "safeguard": safeguard,
         "lifestyle": lifestyle,
         "socRadius": {"meters": 1600, "lat": apartment.get("lat"), "lng": apartment.get("lng")},
-        "aiSummary": ai_summary(apartment, area, market, risk),
         "dataStatus": {
             "buildingInfo": "실데이터: 서울시 OpenAptInfo",
             "rentalMarket": "실데이터 집계: 서울시 2025 인근 전월세 거래 중앙값",

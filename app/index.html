@@ -12,7 +12,7 @@
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin="">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-    <link rel="stylesheet" href="./styles.css">
+    <link rel="stylesheet" href="./styles.css?v=timeline-clean-1">
   </head>
   <body>
     <main>
@@ -162,7 +162,6 @@
               <legend>예산 기준</legend>
               <label><input type="radio" name="budgetMode" value="monthly" checked><span>월세</span></label>
               <label><input type="radio" name="budgetMode" value="jeonse"><span>전세</span></label>
-              <label><input type="radio" name="budgetMode" value="sale"><span>매매</span></label>
             </fieldset>
 
             <label class="field">
@@ -291,6 +290,24 @@
 
         <section class="map-stage" aria-label="아파트 지도">
           <div class="map-canvas" id="mapCanvas" role="region" aria-label="추천 아파트와 대중교통 경로 지도"></div>
+          <div id="sunlight3dCanvas" class="sunlight-3d-canvas" role="region" aria-label="3D 아파트 햇빛 분포 지도" hidden>
+            <div id="sunlight3dCompass" class="sunlight-3d-compass" aria-label="3D 지도 북쪽 방향">
+              <span>N</span>
+              <i aria-hidden="true"></i>
+            </div>
+            <div class="sunlight-3d-attribution">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a></div>
+          </div>
+
+          <div class="map-mode-control" role="group" aria-label="지도 보기 방식" hidden>
+            <button class="map-mode-button is-active" type="button" data-map-mode="normal" aria-pressed="true">
+              <span class="map-mode-preview normal" aria-hidden="true"></span>
+              <strong>일반지도</strong>
+            </button>
+            <button class="map-mode-button" type="button" data-map-mode="sunlight" aria-pressed="false">
+              <span class="map-mode-preview sunlight" aria-hidden="true"></span>
+              <strong>햇빛 분포</strong>
+            </button>
+          </div>
 
           <button
             id="agentLauncher"
@@ -311,6 +328,17 @@
             </svg>
             <span>AI Agent</span>
           </button>
+
+          <div id="sunlightTimeControl" class="sunlight-time-control" hidden>
+            <button id="sunlightNowButton" class="sunlight-now-button" type="button">지금으로</button>
+            <label class="sunlight-time-slider" aria-label="햇빛 분포 기준 시각">
+              <input id="sunlightTimeInput" type="range" min="0" max="1439" step="1">
+            </label>
+            <div class="sunlight-time-readout">
+              <span>현재 시각</span>
+              <strong id="sunlightTimeOutput">--:--</strong>
+            </div>
+          </div>
 
           <aside id="agentPanel" class="agent-panel" aria-label="AI Agent 대화" hidden>
             <header class="agent-panel-head">
@@ -360,6 +388,7 @@
       crossorigin=""></script>
     <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-    <script src="./app.js?v=infra-live-1"></script>
+    <script type="module" src="./three-bootstrap.js?v=sunlight-3d-8"></script>
+    <script src="./app.js?v=live-rule-summary-1"></script>
   </body>
 </html>

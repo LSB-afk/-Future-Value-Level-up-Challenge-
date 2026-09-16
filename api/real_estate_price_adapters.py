@@ -519,6 +519,7 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
         if records:
             recent = sorted(records, key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")), reverse=True)[0]
             market["recentSale10k"] = recent["amount10k"]
+            market["molitLatestTradeRecord"] = recent
             market["molitTradeRecordsForTrend"] = records
             market["molitTradeRecords"] = records[:6]
             market["sourceMode"] = "molit_live_trade_partial"
@@ -539,10 +540,12 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
         if jeonse_records:
             recent = sorted(jeonse_records, key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")), reverse=True)[0]
             market["recentJeonse10k"] = recent["deposit10k"]
+            market["molitLatestJeonseRecord"] = recent
         if monthly_records:
             recent = sorted(monthly_records, key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")), reverse=True)[0]
             market["monthlyDeposit10k"] = recent["deposit10k"]
             market["monthlyRent10k"] = recent["monthlyRent10k"]
+            market["molitLatestMonthlyRecord"] = recent
         if records:
             market["molitRentRecordsForTrend"] = records
             market["molitRentRecords"] = records[:6]

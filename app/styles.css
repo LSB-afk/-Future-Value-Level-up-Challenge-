@@ -12,6 +12,8 @@
   --naver-strong: #0f766e;
   --naver-soft: #e0f7f4;
   --blue: #2563eb;
+  --map-selected-orange: #ff8a00;
+  --map-home-yellow: #facc15;
   --bus: #386de8;
   --walk: #64748b;
   --gold: #b98a00;
@@ -1143,7 +1145,7 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .budget-mode-selector {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .weights {
@@ -2243,6 +2245,88 @@ details > summary span {
   background: #e9eef4;
 }
 
+.map-canvas.is-hidden-for-3d {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.sunlight-3d-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 420;
+  overflow: hidden;
+  background: #d7e2e0;
+}
+
+.sunlight-3d-canvas[hidden] {
+  display: none;
+}
+
+.sunlight-3d-canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+
+.sunlight-3d-canvas canvas:active {
+  cursor: grabbing;
+}
+
+.sunlight-3d-attribution {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  z-index: 2;
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #475569;
+  font-size: 9px;
+  line-height: 1.2;
+}
+
+.sunlight-3d-attribution a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.sunlight-3d-compass {
+  position: absolute;
+  top: 132px;
+  left: 18px;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(15, 23, 42, 0.18);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9);
+  color: #dc2626;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+.sunlight-3d-compass span {
+  position: absolute;
+  top: 3px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.sunlight-3d-compass i {
+  width: 0;
+  height: 0;
+  border-right: 5px solid transparent;
+  border-bottom: 19px solid #dc2626;
+  border-left: 5px solid transparent;
+  transform: translateY(-1px);
+  transform-origin: 50% 100%;
+}
+
 .map-canvas.synthetic-map {
   background:
     linear-gradient(90deg, rgba(100, 116, 139, 0.11) 1px, transparent 1px),
@@ -2304,6 +2388,216 @@ details > summary span {
 .leaflet-top.leaflet-left {
   top: 86px;
   left: 18px;
+}
+
+.map-mode-control {
+  position: fixed;
+  top: 18px;
+  right: 150px;
+  z-index: 1340;
+  display: flex;
+  gap: 6px;
+}
+
+.map-mode-control[hidden] {
+  display: none;
+}
+
+.map-mode-button {
+  display: grid;
+  gap: 3px;
+  width: 58px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+}
+
+.map-mode-button.is-active {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 1px var(--blue), 0 8px 18px rgba(37, 99, 235, 0.16);
+  color: var(--blue);
+}
+
+.map-mode-button[data-map-mode="sunlight"].is-active {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.72), 0 8px 18px rgba(180, 83, 9, 0.2);
+  color: #b45309;
+}
+
+.map-mode-preview {
+  display: block;
+  width: 100%;
+  height: 33px;
+  background:
+    linear-gradient(135deg, transparent 46%, rgba(59, 130, 246, 0.72) 47% 53%, transparent 54%),
+    linear-gradient(90deg, rgba(20, 184, 166, 0.32), transparent 38%),
+    linear-gradient(#dbeafe, #f8fafc);
+}
+
+.map-mode-preview.normal {
+  background: url("./assets/map-normal-preview.png") center / cover no-repeat;
+}
+
+.map-mode-preview.sunlight {
+  background: url("./assets/map-sunlight-preview.png") center 28% / cover no-repeat;
+}
+
+.map-mode-button strong {
+  display: block;
+  padding: 0 3px 5px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.map-canvas.is-sunlight-map {
+  box-shadow: inset 0 0 0 4px rgba(245, 158, 11, 0.82);
+}
+
+.sunlight-time-control {
+  position: fixed;
+  top: 80px;
+  right: 18px;
+  z-index: 1340;
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 310px;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+  backdrop-filter: blur(10px);
+}
+
+.sunlight-time-control[hidden] {
+  display: none;
+}
+
+.sunlight-now-button {
+  min-height: 22px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.sunlight-now-button::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: #94a3b8;
+  vertical-align: 1px;
+}
+
+.sunlight-time-slider {
+  position: relative;
+  display: grid;
+  align-items: center;
+  min-width: 0;
+}
+
+.sunlight-time-slider::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #cbd5e1 0%, #facc15 52%, #cbd5e1 100%);
+  transform: translateY(-50%);
+}
+
+.sunlight-time-slider input {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sunlight-time-slider input::-webkit-slider-runnable-track {
+  height: 4px;
+  background: transparent;
+}
+
+.sunlight-time-slider input::-webkit-slider-thumb {
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  margin-top: -6px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #f97316;
+  box-shadow: 0 1px 5px rgba(120, 53, 15, 0.32);
+}
+
+.sunlight-time-slider input::-moz-range-track {
+  height: 4px;
+  background: transparent;
+}
+
+.sunlight-time-slider input::-moz-range-thumb {
+  width: 17px;
+  height: 17px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #f97316;
+  box-shadow: 0 1px 5px rgba(120, 53, 15, 0.32);
+}
+
+.sunlight-time-readout {
+  display: grid;
+  gap: 1px;
+  min-width: 42px;
+  color: #475569;
+  text-align: right;
+  line-height: 1.05;
+}
+
+.sunlight-time-readout span {
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.sunlight-time-readout strong {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.sunlight-shadow-shape {
+  fill: #334155;
+}
+
+.sunlight-sun-zone {
+  fill: #facc15;
+}
+
+.sunlight-direction-line {
+  stroke: #f59e0b;
+  stroke-dasharray: 7 6;
+  stroke-linecap: round;
 }
 
 .leaflet-touch .leaflet-bar {
@@ -2390,7 +2684,7 @@ details > summary span {
 }
 
 .mv-map-icon.is-selected {
-  outline: 4px solid var(--naver);
+  outline: 4px solid var(--map-selected-orange);
   outline-offset: 3px;
 }
 
@@ -2483,8 +2777,10 @@ details > summary span {
 }
 
 .property-price-marker.is-selected {
-  outline: 3px solid var(--blue);
+  background: var(--map-home-yellow);
+  outline: 3px solid var(--map-selected-orange);
   outline-offset: 2px;
+  box-shadow: 0 4px 12px rgba(180, 83, 9, 0.28);
 }
 
 .property-home-icon,
@@ -2580,7 +2876,7 @@ details > summary span {
 }
 
 .area-marker.is-selected {
-  outline: 3px solid var(--naver);
+  outline: 3px solid var(--map-selected-orange);
   outline-offset: 3px;
 }
 
@@ -2909,6 +3205,10 @@ body.bookmark-panel-open .agent-hint {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.ai-summary-grid.is-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .risk-pill {
   display: inline-flex;
   align-items: center;
@@ -2940,6 +3240,15 @@ body.bookmark-panel-open .agent-hint {
   border-color: rgba(239, 68, 68, 0.35);
   background: #fff1f2;
   color: var(--danger);
+}
+
+.jeonse-risk-card {
+  gap: 8px;
+}
+
+.jeonse-risk-card .gaptong-verdict,
+.jeonse-risk-card .risk-summary {
+  margin-bottom: 0;
 }
 
 .price-live-status,
@@ -2995,6 +3304,45 @@ body.bookmark-panel-open .agent-hint {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.risk-detail-toggle {
+  display: grid;
+  gap: 10px;
+}
+
+.risk-detail-toggle summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(20, 184, 166, 0.35);
+  border-radius: 8px;
+  background: var(--naver-soft);
+  color: var(--naver-strong);
+  font-size: 12px;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.risk-detail-toggle summary::-webkit-details-marker {
+  display: none;
+}
+
+.risk-detail-toggle summary span {
+  font-size: 12px;
+}
+
+.risk-detail-toggle .risk-detail-close,
+.risk-detail-toggle[open] .risk-detail-open {
+  display: none;
+}
+
+.risk-detail-toggle[open] .risk-detail-close {
+  display: inline;
 }
 
 .risk-signal,
@@ -3695,7 +4043,6 @@ body.bookmark-panel-open .agent-hint {
 .timeline-summary {
   margin: 0 0 12px;
   padding: 10px;
-  border-left: 3px solid var(--danger);
   background: #fff7f7;
 }
 
@@ -3921,6 +4268,21 @@ body.bookmark-panel-open .agent-hint {
     width: min(460px, calc(100% - 24px));
   }
 
+  .map-mode-control {
+    top: 66px;
+    right: 12px;
+  }
+
+  .map-mode-button {
+    width: 56px;
+  }
+
+  .sunlight-time-control {
+    top: 122px;
+    right: 12px;
+    width: min(310px, calc(100vw - 24px));
+  }
+
   .bookmark-panel {
     inset: 10px;
     width: auto;
@@ -4014,6 +4376,7 @@ body.bookmark-panel-open .agent-hint {
   .infrastructure-list,
   .property-metrics.two,
   .ai-summary-grid,
+  .ai-summary-grid.is-three,
   .data-status dl,
   .agent-basis-grid,
   .agent-form {

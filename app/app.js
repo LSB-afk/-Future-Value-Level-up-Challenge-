@@ -10,6 +10,10 @@ const SIDEBAR_MAX_WIDTH = 620;
 const DEFAULT_ROUTE_TRANSPORT_MODE = "car";
 const KAKAO_SOC_RADIUS_METERS = 1000;
 const KAKAO_SAFETY_RADIUS_METERS = 1000;
+const MAP_MODES = ["normal", "sunlight"];
+const SUNLIGHT_3D_BUILDING_LIMIT = 140;
+const SUNLIGHT_3D_WORLD_SCALE = 12;
+const RULE_SUMMARY_COMMUTE_THRESHOLD_MINUTES = 45;
 const ROUTE_TRANSPORT_MODES = [
   { key: "car", label: "자동차", icon: "car-front" },
   { key: "transit", label: "대중교통", icon: "bus-front" },
@@ -173,6 +177,7 @@ const state = {
   refreshTimer: null,
   requestId: 0,
   routeRequestId: 0,
+  ruleSummaryRouteRequestId: 0,
   map: null,
   locationSearch: {
     target: "main",
@@ -192,6 +197,14 @@ const state = {
     focusMap: false,
     transportMode: DEFAULT_ROUTE_TRANSPORT_MODE
   },
+  ruleSummaryRoute: {
+    selectedId: null,
+    isLoading: false,
+    result: null,
+    error: ""
+  },
+  mapMode: "normal",
+  sunlightMinutes: currentDayMinutes(),
   apartments: {
     enabled: true,
     labelMode: "sale",
@@ -417,6 +430,14 @@ const nodes = {
   resultSummary: document.querySelector("#resultSummary"),
   sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
   mapCanvas: document.querySelector("#mapCanvas"),
+  sunlight3dCanvas: document.querySelector("#sunlight3dCanvas"),
+  sunlight3dCompass: document.querySelector("#sunlight3dCompass"),
+  mapModeControl: document.querySelector(".map-mode-control"),
+  mapModeButtons: document.querySelectorAll("[data-map-mode]"),
+  sunlightTimeControl: document.querySelector("#sunlightTimeControl"),
+  sunlightNowButton: document.querySelector("#sunlightNowButton"),
+  sunlightTimeInput: document.querySelector("#sunlightTimeInput"),
+  sunlightTimeOutput: document.querySelector("#sunlightTimeOutput"),
   detailContent: document.querySelector("#detailContent"),
   routeContent: document.querySelector("#routeContent"),
   infrastructureContent: document.querySelector("#infrastructureContent"),
@@ -438,6 +459,34 @@ const nodes = {
   evidenceTableBody: document.querySelector("#evidenceTableBody"),
   navLinks: document.querySelectorAll(".app-nav .nav-link"),
   cardTemplate: document.querySelector("#cardTemplate")
+};
+
+const sunlight3d = {
+  initialized: false,
+  failed: false,
+  renderer: null,
+  scene: null,
+  camera: null,
+  cameraTarget: null,
+  sunLight: null,
+  hemisphereLight: null,
+  mapGround: null,
+  fallbackOverlayGroup: null,
+  mapTextureRequestId: 0,
+  mapCenterKey: "",
+  windowTexture: null,
+  windowFacades: [],
+  cityGroup: null,
+  buildingMeshes: [],
+  sceneSignature: "",
+  radius: 620,
+  theta: 0,
+  phi: Math.PI * 0.31,
+  dragging: false,
+  moved: false,
+  pointerX: 0,
+  pointerY: 0,
+  resizeObserver: null
 };
 
 function clamp(value, min = 0, max = 100) {
@@ -470,6 +519,7 @@ function setSidebarWidth(width, { persist = false } = {}) {
   }
   window.requestAnimationFrame(() => {
     state.map?.instance?.invalidateSize({ pan: false });
+    resizeSunlight3dRenderer();
   });
 }
 
@@ -2044,6 +2094,7 @@ function initializeLeafletMap() {
     routeLayer: L.layerGroup().addTo(instance),
     destinationLayer: L.layerGroup().addTo(instance),
     infrastructureLayer: L.layerGroup().addTo(instance),
+    sunlightLayer: L.layerGroup().addTo(instance),
     markersById: {},
     propertyMarkersById: {},
     fitted: false,
@@ -2208,6 +2259,782 @@ function offsetLatLng(lat, lng, distanceMeters = 400, bearingDeg = 0) {
     Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
   );
   return [lat2 * 180 / Math.PI, lng2 * 180 / Math.PI];
+}
+
+function currentDayMinutes(date = new Date()) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function clampSunlightMinutes(minutes = currentDayMinutes()) {
+  return Math.round(clamp(Number(minutes) || 0, 0, 1439));
+}
+
+function formatSunlightTime(minutes = currentDayMinutes()) {
+  const clamped = clampSunlightMinutes(minutes);
+  const hour = Math.floor(clamped / 60);
+  const minute = clamped % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function sunlightStateForMinutes(minutes = currentDayMinutes()) {
+  const clamped = clampSunlightMinutes(minutes);
+  const hour = clamped / 60;
+  const daylightRatio = clamp((hour - 6) / 12, 0, 1);
+  const sunBearing = 100 + daylightRatio * 160;
+  const shadowBearing = (sunBearing + 180) % 360;
+  const phase = hour < 10.5 ? "오전 햇빛" : hour < 14.5 ? "정오권 햇빛" : "오후 햇빛";
+  return {
+    hourLabel: formatSunlightTime(clamped),
+    hour,
+    daylight: hour >= 6 && hour <= 18,
+    altitude: hour >= 6 && hour <= 18 ? Math.max(5, Math.sin(daylightRatio * Math.PI) * 62) : 2,
+    phase,
+    sunBearing,
+    shadowBearing,
+    sunSide: sunBearing < 180 ? "동남향" : "서남향",
+    shadeSide: "북향"
+  };
+}
+
+function sunlight3dCenter() {
+  const selected = selectedDetailItem();
+  if (selected?.lat != null && selected?.lng != null) {
+    return { lat: Number(selected.lat), lng: Number(selected.lng) };
+  }
+  const center = state.map?.instance?.getCenter?.();
+  if (center?.lat != null && center?.lng != null) {
+    return { lat: Number(center.lat), lng: Number(center.lng) };
+  }
+  return { lat: SEOUL_CENTER[0], lng: SEOUL_CENTER[1] };
+}
+
+function sunlight3dCandidates(center) {
+  const source = state.results.length ? state.results : state.apartmentCandidates;
+  const candidates = source
+    .filter((item) => Number.isFinite(Number(item?.lat)) && Number.isFinite(Number(item?.lng)))
+    .map((item) => ({
+      item,
+      distance: Math.hypot(
+        (Number(item.lat) - center.lat) * 110540,
+        (Number(item.lng) - center.lng) * 111320 * Math.cos(center.lat * Math.PI / 180)
+      )
+    }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, state.results.length ? MATCH_RESULT_LIMIT : SUNLIGHT_3D_BUILDING_LIMIT)
+    .map((entry) => entry.item);
+
+  const selected = selectedDetailItem();
+  if (selected?.id && !candidates.some((item) => item.id === selected.id)) {
+    candidates.unshift(selected);
+  }
+  return candidates.slice(0, state.results.length ? MATCH_RESULT_LIMIT : SUNLIGHT_3D_BUILDING_LIMIT);
+}
+
+function sunlight3dSeed(value) {
+  let seed = 2166136261;
+  const text = String(value || "building");
+  for (let index = 0; index < text.length; index += 1) {
+    seed ^= text.charCodeAt(index);
+    seed = Math.imul(seed, 16777619);
+  }
+  return Math.abs(seed >>> 0);
+}
+
+function sunlight3dRandom(seed, offset = 0) {
+  const value = Math.sin((seed + offset * 1013) * 0.0001) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function sunlight3dEstimatedFloors(item) {
+  const households = Math.max(0, Number(item?.households || 0));
+  const buildings = Math.max(1, Number(item?.buildingCount || 1));
+  if (!households) return 10;
+  return Math.round(clamp(households / buildings / 4.2, 6, 36));
+}
+
+function updateSunlight3dCompass() {
+  if (!nodes.sunlight3dCompass || !sunlight3d.camera || !sunlight3d.cameraTarget || !window.THREE) return;
+  const THREE = window.THREE;
+  sunlight3d.camera.updateMatrixWorld();
+  const origin = sunlight3d.cameraTarget.clone().project(sunlight3d.camera);
+  const north = sunlight3d.cameraTarget.clone().add(new THREE.Vector3(0, 0, -120)).project(sunlight3d.camera);
+  const screenX = north.x - origin.x;
+  const screenY = -(north.y - origin.y);
+  const angle = Math.atan2(screenY, screenX) * 180 / Math.PI + 90;
+  nodes.sunlight3dCompass.querySelector("i")?.style.setProperty("transform", `translateY(-1px) rotate(${angle.toFixed(1)}deg)`);
+}
+
+function updateSunlight3dCamera() {
+  if (!sunlight3d.camera || !sunlight3d.cameraTarget) return;
+  const horizontal = Math.sin(sunlight3d.phi) * sunlight3d.radius;
+  sunlight3d.camera.position.set(
+    sunlight3d.cameraTarget.x + Math.sin(sunlight3d.theta) * horizontal,
+    sunlight3d.cameraTarget.y + Math.cos(sunlight3d.phi) * sunlight3d.radius,
+    sunlight3d.cameraTarget.z + Math.cos(sunlight3d.theta) * horizontal
+  );
+  sunlight3d.camera.lookAt(sunlight3d.cameraTarget);
+  updateSunlight3dCompass();
+}
+
+function resizeSunlight3dRenderer() {
+  if (!sunlight3d.renderer || !sunlight3d.camera || !nodes.sunlight3dCanvas || nodes.sunlight3dCanvas.hidden) return;
+  const width = Math.max(1, nodes.sunlight3dCanvas.clientWidth);
+  const height = Math.max(1, nodes.sunlight3dCanvas.clientHeight);
+  sunlight3d.renderer.setSize(width, height, false);
+  sunlight3d.camera.aspect = width / height;
+  sunlight3d.camera.updateProjectionMatrix();
+  sunlight3d.renderer.render(sunlight3d.scene, sunlight3d.camera);
+}
+
+function renderSunlight3dFrame() {
+  if (!sunlight3d.renderer || !sunlight3d.scene || !sunlight3d.camera) return;
+  sunlight3d.renderer.render(sunlight3d.scene, sunlight3d.camera);
+}
+
+function pickSunlight3dBuilding(event) {
+  if (sunlight3d.moved || !sunlight3d.renderer || !sunlight3d.camera || !sunlight3d.buildingMeshes.length) return;
+  const THREE = window.THREE;
+  const rect = sunlight3d.renderer.domElement.getBoundingClientRect();
+  const pointer = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(pointer, sunlight3d.camera);
+  const hit = raycaster.intersectObjects(sunlight3d.buildingMeshes, false)[0];
+  const item = hit?.object?.userData?.apartment;
+  if (!item?.id) return;
+  if (state.results.some((result) => result.id === item.id)) {
+    selectApartmentMatch(item.id, { source: "map", openDetailPanel: true });
+  } else {
+    openApartmentFeatureDetail(item);
+  }
+}
+
+function addSunlight3dRoad(parent, width, depth, x, z, rotation = 0) {
+  const THREE = window.THREE;
+  const road = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshStandardMaterial({ color: 0xf4f5f2, roughness: 0.95, metalness: 0 })
+  );
+  road.rotation.x = -Math.PI / 2;
+  road.rotation.z = rotation;
+  road.position.set(x, 0.18, z);
+  road.receiveShadow = true;
+  parent.add(road);
+}
+
+function sunlight3dMercatorPixel(lat, lng, zoom) {
+  const worldSize = 256 * (2 ** zoom);
+  const clampedLat = clamp(Number(lat), -85.05112878, 85.05112878);
+  const sinLat = Math.sin(clampedLat * Math.PI / 180);
+  return {
+    x: (Number(lng) + 180) / 360 * worldSize,
+    y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * worldSize
+  };
+}
+
+function loadSunlight3dMapTile(url) {
+  return new Promise((resolve) => {
+    const tile = new Image();
+    tile.crossOrigin = "anonymous";
+    tile.decoding = "async";
+    tile.onload = () => resolve(tile);
+    tile.onerror = () => resolve(null);
+    tile.src = url;
+  });
+}
+
+async function updateSunlight3dMapTexture(center) {
+  if (!sunlight3d.mapGround || !sunlight3d.renderer || !window.THREE) return;
+  const zoom = 13;
+  const centerKey = `${zoom}:${center.lat.toFixed(3)}:${center.lng.toFixed(3)}`;
+  if (sunlight3d.mapCenterKey === centerKey && sunlight3d.mapGround.material.map) return;
+
+  sunlight3d.mapCenterKey = centerKey;
+  const requestId = ++sunlight3d.mapTextureRequestId;
+  sunlight3d.mapGround.material.map?.dispose?.();
+  sunlight3d.mapGround.material.map = null;
+  sunlight3d.mapGround.material.color.set(0xbfcfc5);
+  sunlight3d.mapGround.material.needsUpdate = true;
+  const canvasSize = 1024;
+  const tileSize = 256;
+  const tileCount = 2 ** zoom;
+  const centerPixel = sunlight3dMercatorPixel(center.lat, center.lng, zoom);
+  const topLeft = {
+    x: centerPixel.x - canvasSize / 2,
+    y: centerPixel.y - canvasSize / 2
+  };
+  const startX = Math.floor(topLeft.x / tileSize);
+  const endX = Math.floor((topLeft.x + canvasSize - 1) / tileSize);
+  const startY = Math.max(0, Math.floor(topLeft.y / tileSize));
+  const endY = Math.min(tileCount - 1, Math.floor((topLeft.y + canvasSize - 1) / tileSize));
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasSize;
+  canvas.height = canvasSize;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#dce5df";
+  context.fillRect(0, 0, canvasSize, canvasSize);
+
+  sunlight3d.fallbackOverlayGroup.visible = true;
+  const tileJobs = [];
+  for (let tileY = startY; tileY <= endY; tileY += 1) {
+    for (let tileX = startX; tileX <= endX; tileX += 1) {
+      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount;
+      tileJobs.push((async () => {
+        const image = await loadSunlight3dMapTile(`https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`);
+        if (!image) return false;
+        const drawX = Math.round(tileX * tileSize - topLeft.x);
+        const drawY = Math.round(tileY * tileSize - topLeft.y);
+        context.drawImage(image, drawX, drawY, tileSize, tileSize);
+        return true;
+      })());
+    }
+  }
+
+  const tileResults = await Promise.all(tileJobs);
+  if (requestId !== sunlight3d.mapTextureRequestId || !tileResults.some(Boolean)) return;
+
+  const THREE = window.THREE;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = Math.min(8, sunlight3d.renderer.capabilities.getMaxAnisotropy());
+  texture.needsUpdate = true;
+  sunlight3d.mapGround.material.map?.dispose?.();
+  sunlight3d.mapGround.material.map = texture;
+  sunlight3d.mapGround.material.color.set(0xffffff);
+  sunlight3d.mapGround.material.roughness = 0.92;
+  sunlight3d.mapGround.material.needsUpdate = true;
+
+  const metersPerPixel = 156543.03392 * Math.cos(center.lat * Math.PI / 180) / (2 ** zoom);
+  const groundSize = canvasSize * metersPerPixel / SUNLIGHT_3D_WORLD_SCALE;
+  sunlight3d.mapGround.geometry.dispose();
+  sunlight3d.mapGround.geometry = new THREE.PlaneGeometry(groundSize, groundSize);
+  sunlight3d.fallbackOverlayGroup.visible = false;
+  renderSunlight3dFrame();
+}
+
+function initializeSunlight3d() {
+  if (sunlight3d.initialized) return true;
+  if (sunlight3d.failed || !nodes.sunlight3dCanvas) return false;
+  if (!window.THREE) return false;
+
+  try {
+    const THREE = window.THREE;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.9;
+    renderer.domElement.setAttribute("aria-label", "3D 햇빛 분포 도시");
+    renderer.domElement.tabIndex = 0;
+    nodes.sunlight3dCanvas.append(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xdbe8e5);
+    scene.fog = new THREE.Fog(0xdbe8e5, 620, 1180);
+
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 3000);
+    const cameraTarget = new THREE.Vector3(0, 0, 0);
+    const hemisphereLight = new THREE.HemisphereLight(0xfff7d6, 0x64748b, 1.6);
+    scene.add(hemisphereLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff1b8, 3.2);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.left = -560;
+    sunLight.shadow.camera.right = 560;
+    sunLight.shadow.camera.top = 560;
+    sunLight.shadow.camera.bottom = -560;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 1600;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+    scene.add(sunLight.target);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(1120, 1120),
+      new THREE.MeshStandardMaterial({ color: 0xbfcfc5, roughness: 1, metalness: 0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const fallbackOverlayGroup = new THREE.Group();
+    const river = new THREE.Mesh(
+      new THREE.PlaneGeometry(1200, 92),
+      new THREE.MeshStandardMaterial({ color: 0x82c8d2, roughness: 0.38, metalness: 0.06 })
+    );
+    river.rotation.x = -Math.PI / 2;
+    river.rotation.z = -0.08;
+    river.position.set(30, 0.25, 310);
+    river.receiveShadow = true;
+    fallbackOverlayGroup.add(river);
+
+    for (let offset = -420; offset <= 420; offset += 70) {
+      addSunlight3dRoad(fallbackOverlayGroup, 1040, offset % 140 === 0 ? 10 : 6, 0, offset, 0);
+      addSunlight3dRoad(fallbackOverlayGroup, 1040, offset % 140 === 0 ? 10 : 6, offset, 0, Math.PI / 2);
+    }
+    addSunlight3dRoad(fallbackOverlayGroup, 1120, 12, 0, 0, Math.PI * 0.19);
+    addSunlight3dRoad(fallbackOverlayGroup, 1120, 8, 0, -40, -Math.PI * 0.27);
+    scene.add(fallbackOverlayGroup);
+
+    sunlight3d.renderer = renderer;
+    sunlight3d.scene = scene;
+    sunlight3d.camera = camera;
+    sunlight3d.cameraTarget = cameraTarget;
+    sunlight3d.sunLight = sunLight;
+    sunlight3d.hemisphereLight = hemisphereLight;
+    sunlight3d.mapGround = ground;
+    sunlight3d.fallbackOverlayGroup = fallbackOverlayGroup;
+    sunlight3d.initialized = true;
+    updateSunlight3dCamera();
+
+    renderer.domElement.addEventListener("pointerdown", (event) => {
+      sunlight3d.dragging = true;
+      sunlight3d.moved = false;
+      sunlight3d.pointerX = event.clientX;
+      sunlight3d.pointerY = event.clientY;
+      renderer.domElement.setPointerCapture?.(event.pointerId);
+    });
+    renderer.domElement.addEventListener("pointermove", (event) => {
+      if (!sunlight3d.dragging) return;
+      const deltaX = event.clientX - sunlight3d.pointerX;
+      const deltaY = event.clientY - sunlight3d.pointerY;
+      if (Math.abs(deltaX) + Math.abs(deltaY) > 2) sunlight3d.moved = true;
+      sunlight3d.pointerX = event.clientX;
+      sunlight3d.pointerY = event.clientY;
+      sunlight3d.theta -= deltaX * 0.006;
+      sunlight3d.phi = clamp(sunlight3d.phi + deltaY * 0.005, 0.32, 1.42);
+      updateSunlight3dCamera();
+      renderSunlight3dFrame();
+    });
+    renderer.domElement.addEventListener("pointerup", (event) => {
+      const shouldPick = !sunlight3d.moved;
+      sunlight3d.dragging = false;
+      renderer.domElement.releasePointerCapture?.(event.pointerId);
+      if (shouldPick) pickSunlight3dBuilding(event);
+    });
+    renderer.domElement.addEventListener("pointercancel", () => {
+      sunlight3d.dragging = false;
+    });
+    renderer.domElement.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      sunlight3d.radius = clamp(sunlight3d.radius * (event.deltaY > 0 ? 1.09 : 0.91), 180, 1050);
+      updateSunlight3dCamera();
+      renderSunlight3dFrame();
+    }, { passive: false });
+
+    if (window.ResizeObserver) {
+      sunlight3d.resizeObserver = new ResizeObserver(resizeSunlight3dRenderer);
+      sunlight3d.resizeObserver.observe(nodes.sunlight3dCanvas);
+    }
+    resizeSunlight3dRenderer();
+    return true;
+  } catch (error) {
+    sunlight3d.failed = true;
+    console.warn("3D sunlight view unavailable", error);
+    return false;
+  }
+}
+
+window.addEventListener("fithome-three-ready", () => {
+  if (state.mapMode === "sunlight") syncSunlight3dView({ rebuild: true });
+});
+
+function disposeSunlight3dCity() {
+  if (!sunlight3d.cityGroup || !sunlight3d.scene) return;
+  sunlight3d.cityGroup.traverse((object) => {
+    object.geometry?.dispose?.();
+    if (Array.isArray(object.material)) {
+      object.material.forEach((material) => {
+        if (material.map && material.map !== sunlight3d.windowTexture) material.map.dispose?.();
+        material.dispose?.();
+      });
+    } else {
+      if (object.material?.map && object.material.map !== sunlight3d.windowTexture) object.material.map.dispose?.();
+      object.material?.dispose?.();
+    }
+  });
+  sunlight3d.scene.remove(sunlight3d.cityGroup);
+  sunlight3d.cityGroup = null;
+  sunlight3d.buildingMeshes = [];
+  sunlight3d.windowFacades = [];
+}
+
+function createSunlight3dApartmentLabel(item, rank, isSelected, x, z, height) {
+  const THREE = window.THREE;
+  const prefix = rank ? `${rank}. ` : "";
+  let name = String(item?.name || "아파트");
+  const measureCanvas = document.createElement("canvas");
+  const measureContext = measureCanvas.getContext("2d");
+  measureContext.font = "800 36px sans-serif";
+  while (name.length > 4 && measureContext.measureText(`${prefix}${name}`).width > 570) {
+    name = `${name.slice(0, -2)}…`;
+  }
+  const labelText = `${prefix}${name}`;
+  const canvasWidth = Math.round(clamp(measureContext.measureText(labelText).width + 62, 220, 640));
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasWidth;
+  canvas.height = 112;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = isSelected ? "rgba(250, 204, 21, 0.96)" : "rgba(15, 23, 42, 0.9)";
+  context.beginPath();
+  if (typeof context.roundRect === "function") {
+    context.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 24);
+  } else {
+    context.rect(8, 8, canvas.width - 16, canvas.height - 16);
+  }
+  context.fill();
+  context.strokeStyle = isSelected ? "#ff8a00" : "rgba(255, 255, 255, 0.8)";
+  context.lineWidth = 5;
+  context.stroke();
+
+  context.fillStyle = isSelected ? "#111827" : "#ffffff";
+  context.font = "800 36px sans-serif";
+  context.textBaseline = "middle";
+  context.fillText(labelText, 30, canvas.height / 2 + 1);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
+  const label = new THREE.Sprite(material);
+  label.position.set(x, height + 18, z);
+  label.scale.set(clamp(canvasWidth * 0.1375, 34, 88), 15.4, 1);
+  label.renderOrder = 20;
+  label.userData.apartment = item;
+  return label;
+}
+
+function sunlight3dWindowTexture() {
+  if (sunlight3d.windowTexture) return sunlight3d.windowTexture;
+  const THREE = window.THREE;
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "rgba(255, 255, 255, 0.96)";
+  const columns = 4;
+  const rows = 12;
+  const windowWidth = 19;
+  const windowHeight = 12;
+  const gapX = 9;
+  const gapY = 8;
+  const startX = (canvas.width - (columns * windowWidth + (columns - 1) * gapX)) / 2;
+  const startY = 10;
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      context.fillRect(
+        startX + column * (windowWidth + gapX),
+        startY + row * (windowHeight + gapY),
+        windowWidth,
+        windowHeight
+      );
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  sunlight3d.windowTexture = texture;
+  return texture;
+}
+
+function addSunlight3dWindows(building, width, height, depth, rotation, isSelected) {
+  const THREE = window.THREE;
+  const rotationDegrees = rotation * 180 / Math.PI;
+  const facades = [
+    { width, x: 0, z: depth / 2 + 0.08, rotationY: 0, baseBearing: 180 },
+    { width, x: 0, z: -depth / 2 - 0.08, rotationY: Math.PI, baseBearing: 0 },
+    { width: depth, x: width / 2 + 0.08, z: 0, rotationY: Math.PI / 2, baseBearing: 90 },
+    { width: depth, x: -width / 2 - 0.08, z: 0, rotationY: -Math.PI / 2, baseBearing: 270 }
+  ];
+  facades.forEach((facade) => {
+    const material = new THREE.MeshBasicMaterial({
+      map: sunlight3dWindowTexture(),
+      color: isSelected ? 0xff8a00 : 0x64748b,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const windows = new THREE.Mesh(
+      new THREE.PlaneGeometry(Math.max(3.5, facade.width * 0.78), Math.max(7, height * 0.82)),
+      material
+    );
+    windows.position.set(facade.x, 0, facade.z);
+    windows.rotation.y = facade.rotationY;
+    windows.renderOrder = 4;
+    building.add(windows);
+    sunlight3d.windowFacades.push({
+      material,
+      bearing: (facade.baseBearing - rotationDegrees + 360) % 360,
+      isSelected
+    });
+  });
+}
+
+function rebuildSunlight3dCity(center, candidates) {
+  const THREE = window.THREE;
+  disposeSunlight3dCity();
+  const group = new THREE.Group();
+  const metersPerLng = 111320 * Math.cos(center.lat * Math.PI / 180);
+  const resultIds = new Set(state.results.map((item) => item.id));
+  const materials = [0xb8c2c8, 0xc9c3b7, 0xaebcc1, 0xd1cec5].map((color) => new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.82,
+    metalness: 0.02
+  }));
+  const resultMaterial = new THREE.MeshStandardMaterial({ color: 0x16a394, roughness: 0.72, metalness: 0.02 });
+  const selectedMaterial = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.62, metalness: 0.03 });
+
+  candidates.forEach((item, itemIndex) => {
+    const baseX = (Number(item.lng) - center.lng) * metersPerLng / SUNLIGHT_3D_WORLD_SCALE;
+    const baseZ = -(Number(item.lat) - center.lat) * 110540 / SUNLIGHT_3D_WORLD_SCALE;
+    if (Math.abs(baseX) > 510 || Math.abs(baseZ) > 510) return;
+
+    const seed = sunlight3dSeed(item.id || item.name || itemIndex);
+    const sourceBuildingCount = Math.max(1, Number(item.buildingCount || 1));
+    const blockCount = Math.round(clamp(sourceBuildingCount, 1, state.results.length ? 4 : 2));
+    const floors = sunlight3dEstimatedFloors(item);
+    const isSelected = item.id === state.selectedId;
+    const material = isSelected
+      ? selectedMaterial
+      : resultIds.has(item.id)
+        ? resultMaterial
+        : materials[seed % materials.length];
+    let maxHeight = 0;
+
+    for (let blockIndex = 0; blockIndex < blockCount; blockIndex += 1) {
+      const angle = sunlight3dRandom(seed, blockIndex + 1) * Math.PI * 2;
+      const spread = blockCount === 1 ? 0 : 8 + sunlight3dRandom(seed, blockIndex + 3) * 12;
+      const width = 7 + sunlight3dRandom(seed, blockIndex + 5) * 7;
+      const depth = 7 + sunlight3dRandom(seed, blockIndex + 7) * 8;
+      const height = Math.max(9, floors * (1.25 + sunlight3dRandom(seed, blockIndex + 9) * 0.35));
+      maxHeight = Math.max(maxHeight, height);
+      const geometry = new THREE.BoxGeometry(width, height, depth);
+      const building = new THREE.Mesh(geometry, material);
+      building.position.set(baseX + Math.cos(angle) * spread, height / 2, baseZ + Math.sin(angle) * spread);
+      const buildingRotation = angle * 0.5;
+      building.rotation.y = buildingRotation;
+      building.castShadow = true;
+      building.receiveShadow = true;
+      building.userData.apartment = item;
+      addSunlight3dWindows(building, width, height, depth, buildingRotation, isSelected);
+      group.add(building);
+      sunlight3d.buildingMeshes.push(building);
+    }
+
+    const rank = state.results.findIndex((result) => result.id === item.id) + 1;
+    const label = createSunlight3dApartmentLabel(item, rank, isSelected, baseX, baseZ, maxHeight);
+    group.add(label);
+    sunlight3d.buildingMeshes.push(label);
+
+    if (isSelected) {
+      const marker = new THREE.Mesh(
+        new THREE.RingGeometry(16, 21, 48),
+        new THREE.MeshBasicMaterial({ color: 0xff8a00, side: THREE.DoubleSide, transparent: true, opacity: 0.94 })
+      );
+      marker.rotation.x = -Math.PI / 2;
+      marker.position.set(baseX, 0.55, baseZ);
+      group.add(marker);
+    }
+  });
+
+  sunlight3d.cityGroup = group;
+  sunlight3d.scene.add(group);
+  void updateSunlight3dMapTexture(center);
+}
+
+function updateSunlight3dLighting() {
+  if (!sunlight3d.initialized) return;
+  const THREE = window.THREE;
+  const sunlight = sunlightStateForMinutes(state.sunlightMinutes);
+  const altitude = sunlight.altitude * Math.PI / 180;
+  const bearing = sunlight.sunBearing * Math.PI / 180;
+  const sunDistance = 720;
+  sunlight3d.sunLight.position.set(
+    Math.sin(bearing) * Math.cos(altitude) * sunDistance,
+    Math.sin(altitude) * sunDistance,
+    -Math.cos(bearing) * Math.cos(altitude) * sunDistance
+  );
+  sunlight3d.sunLight.target.position.set(0, 0, 0);
+  sunlight3d.sunLight.target.updateMatrixWorld();
+
+  const daylightStrength = sunlight.daylight ? Math.max(0.18, Math.sin(altitude)) : 0;
+  sunlight3d.sunLight.intensity = sunlight.daylight ? 0.95 + daylightStrength * 2.2 : 0.04;
+  sunlight3d.hemisphereLight.intensity = sunlight.daylight ? 0.72 + daylightStrength * 0.62 : 0.22;
+  const skyColor = new THREE.Color(sunlight.daylight ? 0xdbe9e7 : 0x18202f);
+  sunlight3d.scene.background = skyColor;
+  sunlight3d.scene.fog.color.copy(skyColor);
+
+  const coolWindow = new THREE.Color(0x2563eb);
+  const warmWindow = new THREE.Color(0xffc928);
+  sunlight3d.windowFacades.forEach((facade) => {
+    const angleDifference = ((facade.bearing - sunlight.sunBearing + 540) % 360) - 180;
+    const exposure = sunlight.daylight ? Math.max(0, Math.cos(angleDifference * Math.PI / 180)) : 0;
+    facade.material.color.copy(coolWindow).lerp(warmWindow, exposure);
+    facade.material.opacity = sunlight.daylight ? 0.72 + exposure * 0.28 : 0.55;
+  });
+
+  renderSunlight3dFrame();
+}
+
+function syncSunlight3dView({ rebuild = false } = {}) {
+  const active = state.mapMode === "sunlight";
+  if (!nodes.sunlight3dCanvas || !nodes.mapCanvas) return;
+  if (!active) {
+    nodes.sunlight3dCanvas.hidden = true;
+    nodes.mapCanvas.classList.remove("is-hidden-for-3d");
+    window.setTimeout(() => state.map?.instance?.invalidateSize?.({ pan: false }), 0);
+    return;
+  }
+
+  dismissAgentHint();
+  nodes.sunlight3dCanvas.hidden = false;
+  nodes.mapCanvas.classList.add("is-hidden-for-3d");
+  if (!window.THREE && !sunlight3d.failed) {
+    nodes.sunlight3dCanvas.hidden = true;
+    nodes.mapCanvas.classList.remove("is-hidden-for-3d");
+    return;
+  }
+  if (!initializeSunlight3d()) {
+    nodes.sunlight3dCanvas.hidden = true;
+    nodes.mapCanvas.classList.remove("is-hidden-for-3d");
+    return;
+  }
+
+  const center = sunlight3dCenter();
+  const candidates = sunlight3dCandidates(center);
+  const signature = [
+    center.lat.toFixed(3),
+    center.lng.toFixed(3),
+    state.selectedId || "",
+    candidates.map((item) => item.id).join(",")
+  ].join("|");
+  if (rebuild || signature !== sunlight3d.sceneSignature) {
+    sunlight3d.sceneSignature = signature;
+    sunlight3d.radius = selectedDetailItem() ? 300 : 620;
+    updateSunlight3dCamera();
+    rebuildSunlight3dCity(center, candidates);
+  }
+  updateSunlight3dLighting();
+  window.requestAnimationFrame(resizeSunlight3dRenderer);
+}
+
+function renderSunlightOverlay(visibleResults = []) {
+  if (!state.map?.sunlightLayer || !window.L) return;
+  state.map.sunlightLayer.clearLayers();
+  const active = state.mapMode === "sunlight" && canUseMapModeControls();
+  nodes.mapCanvas?.classList.toggle("is-sunlight-map", active);
+  if (!active) return;
+
+  const sunlight = sunlightStateForMinutes(state.sunlightMinutes);
+  const candidates = (visibleResults.length ? visibleResults : state.results).slice(0, MATCH_RESULT_LIMIT);
+  const selected = candidates.find((item) => item.id === state.selectedId) || selectedMatchResult();
+  const targets = selected
+    ? [selected, ...candidates.filter((item) => item.id !== selected.id)].slice(0, MATCH_RESULT_LIMIT)
+    : candidates.slice(0, MATCH_RESULT_LIMIT);
+
+  targets.forEach((item, index) => {
+    if (item?.lat == null || item?.lng == null) return;
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    const isSelected = item.id === state.selectedId;
+    const distance = isSelected ? 210 : 150;
+    const shadeEnd = offsetLatLng(lat, lng, distance, sunlight.shadowBearing);
+    const shadeLeft = offsetLatLng(lat, lng, isSelected ? 42 : 30, sunlight.shadowBearing - 90);
+    const shadeRight = offsetLatLng(lat, lng, isSelected ? 42 : 30, sunlight.shadowBearing + 90);
+    const shadeTipLeft = offsetLatLng(shadeEnd[0], shadeEnd[1], isSelected ? 58 : 42, sunlight.shadowBearing - 90);
+    const shadeTipRight = offsetLatLng(shadeEnd[0], shadeEnd[1], isSelected ? 58 : 42, sunlight.shadowBearing + 90);
+
+    L.polygon([shadeLeft, shadeRight, shadeTipRight, shadeTipLeft], {
+      className: `sunlight-shadow-shape${isSelected ? " is-selected" : ""}`,
+      fillColor: "#334155",
+      stroke: false,
+      fillOpacity: isSelected ? 0.42 : 0.28,
+      interactive: false
+    }).addTo(state.map.sunlightLayer);
+
+    L.circle([lat, lng], {
+      radius: isSelected ? 75 : 52,
+      className: `sunlight-sun-zone${isSelected ? " is-selected" : ""}`,
+      fillColor: "#facc15",
+      stroke: false,
+      fillOpacity: isSelected ? 0.28 : 0.16,
+      interactive: false
+    }).addTo(state.map.sunlightLayer);
+
+  });
+
+  const sourcePoint = selected || targets[0];
+  if (sourcePoint?.lat != null && sourcePoint?.lng != null) {
+    const sunPoint = offsetLatLng(Number(sourcePoint.lat), Number(sourcePoint.lng), 260, sunlight.sunBearing);
+    L.polyline([[sourcePoint.lat, sourcePoint.lng], sunPoint], {
+      className: "sunlight-direction-line",
+      color: "#f59e0b",
+      weight: 3,
+      interactive: false
+    }).addTo(state.map.sunlightLayer);
+  }
+
+}
+
+function canUseMapModeControls() {
+  return Boolean(state.hasMatched && state.results.length);
+}
+
+function syncMapModeControls() {
+  const available = canUseMapModeControls();
+  if (!available && state.mapMode !== "normal") {
+    state.mapMode = "normal";
+    renderSunlightOverlay(mapResultsForCurrentView());
+    syncSunlight3dView();
+  }
+  if (nodes.mapModeControl) nodes.mapModeControl.hidden = !available;
+  nodes.mapModeButtons?.forEach((button) => {
+    const active = button.dataset.mapMode === state.mapMode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.disabled = !available;
+  });
+  syncSunlightTimeControls();
+}
+
+function syncSunlightTimeControls() {
+  const visible = state.mapMode === "sunlight" && canUseMapModeControls();
+  if (nodes.sunlightTimeControl) nodes.sunlightTimeControl.hidden = !visible;
+  if (nodes.sunlightTimeInput) nodes.sunlightTimeInput.value = String(clampSunlightMinutes(state.sunlightMinutes));
+  if (nodes.sunlightTimeOutput) nodes.sunlightTimeOutput.textContent = formatSunlightTime(state.sunlightMinutes);
+}
+
+function setMapMode(mode) {
+  if (!MAP_MODES.includes(mode) || state.mapMode === mode) return;
+  if (mode === "sunlight" && !canUseMapModeControls()) return;
+  state.mapMode = mode;
+  if (mode === "sunlight") {
+    sunlight3d.theta = 0;
+    sunlight3d.phi = Math.PI * 0.31;
+    updateSunlight3dCamera();
+  }
+  syncMapModeControls();
+  renderSunlightOverlay(mapResultsForCurrentView());
+  syncSunlight3dView({ rebuild: mode === "sunlight" });
+}
+
+function setSunlightMinutes(minutes, { rerender = true } = {}) {
+  state.sunlightMinutes = clampSunlightMinutes(minutes);
+  syncSunlightTimeControls();
+  if (rerender) {
+    renderSunlightOverlay(mapResultsForCurrentView());
+    syncSunlight3dView();
+  }
 }
 
 function liveInfrastructureStateFor(selected) {
@@ -2689,6 +3516,7 @@ function renderLeafletMap() {
   renderDestinationMarker(bounds);
   renderInfrastructureMarkers(bounds);
   drawRouteLine(bounds);
+  renderSunlightOverlay(visibleResults);
   if (bounds.length && !state.map.fitted) {
     const destinationLocation = selectedDestinationLocation();
     const routePanelFocused = isRouteSubpanelActive() && state.route.result;
@@ -3162,12 +3990,14 @@ function renderMap() {
   updateMapScaleUI();
   if (!state.neighborhoods.length) {
     nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
+    syncSunlight3dView();
     return;
   }
 
   if (!renderLeafletMap()) {
     renderFallbackMap();
   }
+  syncSunlight3dView();
 }
 
 function renderMapSidebar() {
@@ -3376,24 +4206,134 @@ function renderTrendChart(rows) {
   `;
 }
 
+function latestRecord(records, predicate) {
+  return (Array.isArray(records) ? records : [])
+    .filter(predicate)
+    .sort((a, b) => {
+      const left = `${a.dealYear || ""}${String(a.dealMonth || "").padStart(2, "0")}${String(a.dealDay || "").padStart(2, "0")}`;
+      const right = `${b.dealYear || ""}${String(b.dealMonth || "").padStart(2, "0")}${String(b.dealDay || "").padStart(2, "0")}`;
+      return right.localeCompare(left);
+    })[0] || null;
+}
+
+function livePriceRecords(price = {}) {
+  const trade = price.molitLatestTradeRecord || latestRecord(
+    price.molitTradeRecords,
+    (item) => Number(item.amount10k || 0) > 0
+  );
+  const jeonse = price.molitLatestJeonseRecord || latestRecord(
+    price.molitRentRecords,
+    (item) => Number(item.deposit10k || 0) > 0 && !Number(item.monthlyRent10k || 0)
+  );
+  const monthly = price.molitLatestMonthlyRecord || latestRecord(
+    price.molitRentRecords,
+    (item) => Number(item.monthlyRent10k || 0) > 0
+  );
+  return { trade, jeonse, monthly };
+}
+
+function liveBudgetPrice(price = {}, mode = state.budgetMode) {
+  const liveStatus = price.liveStatus || {};
+  const records = livePriceRecords(price);
+  if (mode === "sale" && isLiveStatus(liveStatus.molitTrade) && records.trade) {
+    return { label: "매매 실거래가", value: Number(records.trade.amount10k || 0) };
+  }
+  if (mode === "jeonse" && isLiveStatus(liveStatus.molitRent) && records.jeonse) {
+    return { label: "전세 보증금", value: Number(records.jeonse.deposit10k || 0) };
+  }
+  if (mode === "monthly" && isLiveStatus(liveStatus.molitRent) && records.monthly) {
+    return { label: "월세", value: Number(records.monthly.monthlyRent10k || 0) };
+  }
+  return null;
+}
+
+function buildRuleBasedAiSummary(selected, detail) {
+  if (!selected || !detail) return null;
+  const strengths = [];
+  const neutral = [];
+  const cautions = [];
+  const route = state.ruleSummaryRoute.selectedId === selected.id
+    ? state.ruleSummaryRoute.result
+    : null;
+
+  if (
+    route?.provider === "tmap"
+    && route?.mode === "live_api"
+    && route?.transportMode === "car"
+  ) {
+    const minutes = Math.round(Number(route.summary?.totalMinutes || 0));
+    if (minutes > 0 && minutes <= RULE_SUMMARY_COMMUTE_THRESHOLD_MINUTES) {
+      strengths.push(`자차 기준 약 ${formatNumber(minutes)}분으로 이동이 편리합니다.`);
+    } else if (minutes > RULE_SUMMARY_COMMUTE_THRESHOLD_MINUTES) {
+      cautions.push(`자차 기준 약 ${formatNumber(minutes)}분이 소요되어 이동 부담이 있을 수 있습니다.`);
+    }
+  }
+
+  const price = detail.price || {};
+  const actualPrice = liveBudgetPrice(price);
+  const budget = Number(state.budget || 0);
+  if (actualPrice?.value > 0 && budget > 0) {
+    const difference = Math.round(actualPrice.value - budget);
+    const priceText = formatBudgetValue(actualPrice.value, state.budgetMode);
+    const differenceText = formatBudgetValue(Math.abs(difference), state.budgetMode);
+    if (difference < 0) {
+      strengths.push(`${actualPrice.label}는 ${priceText}으로, 설정하신 예산보다 약 ${differenceText} 저렴합니다.`);
+    } else if (difference === 0) {
+      neutral.push(`${actualPrice.label}는 설정하신 예산과 비슷한 수준입니다.`);
+    } else {
+      cautions.push(`${actualPrice.label}는 ${priceText}으로, 설정하신 예산보다 약 ${differenceText} 높습니다.`);
+    }
+  }
+
+  const liveStatus = price.liveStatus || {};
+  const records = livePriceRecords(price);
+  if (
+    isLiveStatus(liveStatus.molitTrade)
+    && isLiveStatus(liveStatus.molitRent)
+    && records.trade
+    && records.jeonse
+  ) {
+    const sale = Number(records.trade.amount10k || 0);
+    const jeonse = Number(records.jeonse.deposit10k || 0);
+    if (sale > 0 && jeonse > 0) {
+      const ratio = (jeonse / sale) * 100;
+      if (ratio < 80) {
+        strengths.push(`전세가율은 ${formatPercent(ratio)}로, 깡통주택 위험 기준인 80%보다 낮습니다.`);
+      } else {
+        cautions.push(`전세가율은 ${formatPercent(ratio)}로, 깡통주택 위험 기준인 80% 이상입니다. 계약 전 추가 확인이 필요합니다.`);
+      }
+    }
+  }
+
+  if (!strengths.length && !neutral.length && !cautions.length) return null;
+  return {
+    headline: `${detail.name || selected.name || "선택한 아파트"}의 확인된 API 데이터를 기준으로 정리했습니다.`,
+    strengths,
+    neutral,
+    cautions
+  };
+}
+
 function renderAiSummaryCard(summary = {}) {
+  const sections = [
+    { label: "장점", items: summary.strengths || [] },
+    { label: "중립", items: summary.neutral || [] },
+    { label: "주의", items: summary.cautions || [] }
+  ].filter((section) => section.items.length);
   return `
     <section class="property-card ai-summary-card">
       <div class="property-card-title">
         <h4>AI 요약</h4>
       </div>
-      <p class="ai-headline">${escapeHtml(summary.headline || "선택한 단지의 가격·통근·생활권 데이터를 종합합니다.")}</p>
-      <div class="ai-summary-grid">
-        <div>
-          <strong>장점</strong>
-          <ul>${(summary.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
-        <div>
-          <strong>주의</strong>
-          <ul>${([...(summary.weaknesses || []), ...(summary.cautions || [])]).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
+      <p class="ai-headline">${escapeHtml(summary.headline || "확인된 API 데이터를 기준으로 정리했습니다.")}</p>
+      <div class="ai-summary-grid${sections.length === 3 ? " is-three" : ""}">
+        ${sections.map((section) => `
+          <div>
+            <strong>${escapeHtml(section.label)}</strong>
+            <ul>${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </div>
+        `).join("")}
       </div>
-      <p class="recommendation-text">${escapeHtml(summary.recommendation || "입지, 가격, 생활 편의성을 함께 비교해 판단하는 것이 좋습니다.")}</p>
     </section>
   `;
 }
@@ -3403,9 +4343,20 @@ function renderAiSummaryPendingCard() {
     <section class="property-card ai-summary-card ai-summary-card-pending">
       <div class="property-card-title">
         <h4>AI 요약</h4>
-        <span>AI 분석중</span>
+        <span>실데이터 확인 중</span>
       </div>
-      <p class="ai-headline">선택한 아파트의 주거 조건을 종합적으로 분석하고 있습니다.</p>
+      <p class="ai-headline">실거래 가격과 실제 자차 경로를 불러오고 있습니다.</p>
+    </section>
+  `;
+}
+
+function renderAiSummaryEmptyCard() {
+  return `
+    <section class="property-card ai-summary-card">
+      <div class="property-card-title">
+        <h4>AI 요약</h4>
+      </div>
+      <p class="ai-headline">실제 API에서 확인된 통근·가격 데이터가 없어 요약할 항목이 없습니다.</p>
     </section>
   `;
 }
@@ -3421,6 +4372,20 @@ function renderRiskSignals(risk) {
       <em>${escapeHtml(item.value)} · ${statusText(item.status)}</em>
     </li>
   `).join("");
+}
+
+function renderRiskSignalDetails(risk) {
+  const signals = Array.isArray(risk?.signals) ? risk.signals : [];
+  if (!signals.length) return "";
+  return `
+    <details class="risk-detail-toggle">
+      <summary>
+        <span class="risk-detail-open">세부 점검 보기 ▼</span>
+        <span class="risk-detail-close">세부 점검 접기 ▲</span>
+      </summary>
+      <ul class="risk-list">${renderRiskSignals(risk)}</ul>
+    </details>
+  `;
 }
 
 function renderContractChecklist(risk) {
@@ -3447,7 +4412,7 @@ function renderGaptongVerdict(safeguard) {
   return `
     <div class="gaptong-verdict tone-${escapeHtml(verdict.verdictKey || "unknown")}">
       <div class="gaptong-head">
-        <strong>깡통주택 자동 판정 · ${escapeHtml(verdict.verdictLabel || "")}</strong>
+        <strong>깡통주택 위험 요약</strong>
         <em>전세가율 ${formatPercent(verdict.ratioPct)} / 기준 ${formatPercent(verdict.thresholdPct)}</em>
       </div>
       <div class="gaptong-bar" role="img" aria-label="전세가율 ${formatPercent(verdict.ratioPct)}, 깡통주택 기준 ${formatPercent(verdict.thresholdPct)}">
@@ -3515,7 +4480,6 @@ function renderTenancyTimeline(safeguard) {
   const steps = Array.isArray(timeline?.steps) ? timeline.steps : [];
   if (!steps.length) return "";
   return `
-    <p class="timeline-summary">${escapeHtml(timeline.gapSummary || "")}</p>
     <ol class="tenancy-timeline">
       ${steps.map((step) => `
         <li class="tenancy-step risk-${escapeHtml(step.risk || "safe")}">
@@ -3557,15 +4521,9 @@ function renderSupportCenter(safeguard) {
         <strong>${escapeHtml(center.name)}</strong>
         <em>약 ${escapeHtml(String(center.distanceKm))}km</em>
       </div>
-      <p>${escapeHtml(center.service)}</p>
-      <div class="support-center-meta">
-        ${propertyMetric("운영 요일", center.days)}
-        ${propertyMetric("운영 시간", center.hours)}
-        ${propertyMetric("전화", center.phone)}
-        ${propertyMetric("주소", center.address)}
-      </div>
+      <p>공인중개사(안전계약 컨설턴트)가 등기부등본·건축물대장을 함께 검토합니다.</p>
+      <small class="property-note">상담은 참고용이며 법적 책임을 부담하지 않습니다.</small>
       <a class="support-center-link" href="${escapeHtml(center.reserveUrl)}" target="_blank" rel="noopener noreferrer">안전계약 컨설팅 예약</a>
-      <small class="property-note">${escapeHtml(center.note)}</small>
     </div>
   `;
 }
@@ -4243,15 +5201,11 @@ function renderPropertyDashboard() {
   const parkingCount = Number(detail.parkingCount || 0);
   const households = Number(detail.households || 0);
   const parkingPerHousehold = parkingCount && households ? `세대당 ${(parkingCount / households).toFixed(2)}대` : "세대당 정보 없음";
-  const priceSourceLabel = tradeLive || jeonseLive || monthlyLive
-    ? "확인된 API 데이터만 표시"
-    : "확인된 가격 정보 없음";
   nodes.propertyDashboard.innerHTML = `
     <div class="property-grid">
       <section class="property-card">
         <div class="property-card-title">
           <h4>기본 정보</h4>
-          <span>${detail.prototype ? "프로토타입 데이터" : "OpenAptInfo"}</span>
         </div>
         <div class="property-metrics two">
           ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
@@ -4259,14 +5213,13 @@ function renderPropertyDashboard() {
           ${propertyMetric("준공/사용승인", detail.approvalYear ? `${detail.approvalYear}년` : "확인 필요", `${formatNumber(detail.buildingAge)}년 경과`)}
           ${propertyMetric("세대/동수", `${formatNumber(detail.households)}세대`, `${formatNumber(detail.buildingCount)}개동`)}
           ${propertyMetric("전용면적", areaText, propertyDataNote(areaText !== "정보 없음", "국토부 매매·전월세 실거래가 API"))}
-          ${propertyMetric("주차대수", parkingCount ? `${formatNumber(parkingCount)}대` : "정보 없음", parkingCount ? parkingPerHousehold : "OpenAptInfo 제공 정보 없음")}
+          ${propertyMetric("주차대수", parkingCount ? `${formatNumber(parkingCount)}대` : "정보 없음", parkingCount ? parkingPerHousehold : "제공 정보 없음")}
         </div>
       </section>
 
       <section class="property-card">
         <div class="property-card-title">
           <h4>가격 정보</h4>
-          <span>${escapeHtml(priceSourceLabel)}</span>
         </div>
         <div class="property-metrics two">
           ${propertyMetric("최근 매매가", tradeLive ? formatMoney10k(price.recentSale10k) : "정보 없음", propertyDataNote(tradeLive, "국토부 매매 실거래가 API"))}
@@ -4326,21 +5279,18 @@ function renderJeonseRiskPanel() {
   const safeguard = detail.safeguard || {};
   nodes.jeonseRiskContent.innerHTML = `
     <div class="property-grid">
-      <section class="property-card wide">
+      <section class="property-card wide jeonse-risk-card">
         <div class="property-card-title">
           <h4>전세 위험 신호 점검</h4>
-          <span>법적 판정 아님</span>
         </div>
         ${renderGaptongVerdict(safeguard)}
-        <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
-        <ul class="risk-list">${renderRiskSignals(risk)}</ul>
-        <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
+        <p class="risk-summary">${escapeHtml(risk.disclaimer || "")}</p>
+        ${renderRiskSignalDetails(risk)}
       </section>
 
       <section class="property-card wide">
         <div class="property-card-title">
           <h4>계약 전 확인 체크리스트</h4>
-          <span>주의 요소 안내</span>
         </div>
         ${renderContractChecklist(risk)}
       </section>
@@ -4348,7 +5298,6 @@ function renderJeonseRiskPanel() {
       <section class="property-card wide">
         <div class="property-card-title">
           <h4>정보 사각지대</h4>
-          <span>가격 데이터에 없는 항목</span>
         </div>
         ${renderBlindSpots(safeguard)}
         <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
@@ -4360,7 +5309,6 @@ function renderJeonseRiskPanel() {
       <section class="property-card wide">
         <div class="property-card-title">
           <h4>대항력 확보 타임라인</h4>
-          <span>전입신고 익일 0시 공백</span>
         </div>
         ${renderTenancyTimeline(safeguard)}
         <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
@@ -4370,7 +5318,6 @@ function renderJeonseRiskPanel() {
       <section class="property-card wide">
         <div class="property-card-title">
           <h4>가까운 안전계약 컨설팅</h4>
-          <span>계약 전 전문가 검토</span>
         </div>
         ${renderSupportCenter(safeguard)}
       </section>
@@ -4410,6 +5357,10 @@ async function selectProperty(id) {
   } finally {
     if (requestId === state.property.requestId) {
       state.property.isLoading = false;
+      const selected = selectedMatchResult();
+      if (state.property.detail && selected?.id === id) {
+        loadRuleSummaryCarRoute(selected);
+      }
       renderApartmentLayer();
       openSelectedPropertyPopup();
       renderDetail();
@@ -4744,7 +5695,16 @@ function renderDetail() {
   }
 
   const selectedDetail = state.property.selectedId === selected.id ? state.property.detail : null;
-  const aiSummary = selectedDetail?.aiSummary || null;
+  const aiSummary = selectedDetail ? buildRuleBasedAiSummary(selected, selectedDetail) : null;
+  const aiSummaryPending = state.property.selectedId === selected.id && (
+    state.property.isLoading
+    || (state.ruleSummaryRoute.selectedId === selected.id && state.ruleSummaryRoute.isLoading)
+  );
+  const aiSummaryContent = aiSummaryPending
+    ? renderAiSummaryPendingCard()
+    : aiSummary
+      ? renderAiSummaryCard(aiSummary)
+      : renderAiSummaryEmptyCard();
   nodes.selectedBadge.textContent = selected.name;
   if (!matched) {
     nodes.detailContent.innerHTML = `
@@ -4757,7 +5717,7 @@ function renderDetail() {
           <p>조건을 입력하고 매칭하기를 누르면 통근, 주거비, 생활 SOC, 안전 점수가 표시됩니다.</p>
         </div>
       </section>
-      ${aiSummary ? renderAiSummaryCard(aiSummary) : renderAiSummaryPendingCard()}
+      ${aiSummaryContent}
       ${renderAgentCtaCard()}
     `;
     bindAgentCtaEvents();
@@ -4776,7 +5736,7 @@ function renderDetail() {
         ${scoreRow("안전", selected.adjusted.safety, scoreTips.safety)}
       </div>
     </section>
-    ${aiSummary ? renderAiSummaryCard(aiSummary) : renderAiSummaryPendingCard()}
+    ${aiSummaryContent}
     ${renderAgentCtaCard()}
   `;
   bindAgentCtaEvents();
@@ -4968,6 +5928,7 @@ function renderInfrastructurePanel() {
 function resetRouteState() {
   const transportMode = state.route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE;
   state.routeRequestId += 1;
+  state.ruleSummaryRouteRequestId += 1;
   state.route = {
     selectedId: null,
     isLoading: false,
@@ -4976,8 +5937,81 @@ function resetRouteState() {
     focusMap: false,
     transportMode
   };
+  state.ruleSummaryRoute = {
+    selectedId: null,
+    isLoading: false,
+    result: null,
+    error: ""
+  };
   if (state.map?.routeLayer) {
     state.map.routeLayer.clearLayers();
+  }
+}
+
+async function loadRuleSummaryCarRoute(selected) {
+  if (!selected?.id) return;
+  const current = state.ruleSummaryRoute;
+  if (current.selectedId === selected.id && (current.isLoading || current.result)) return;
+
+  const requestId = state.ruleSummaryRouteRequestId + 1;
+  state.ruleSummaryRouteRequestId = requestId;
+  const origin = representativeAddressFor(selected);
+  if (!origin) {
+    state.ruleSummaryRoute = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: null,
+      error: "아파트 주소를 확인할 수 없습니다."
+    };
+    return;
+  }
+
+  const destinationLocation = selectedDestinationLocation();
+  const destinationText = selected.destinationAddress || destinationAddressFor();
+  const params = new URLSearchParams({
+    origin,
+    provider: "tmap",
+    transportMode: "car",
+    destinationAddress: destinationLocation?.address || destinationText
+  });
+  const destination = destinationCoordinatesForRequest();
+  if (destination) {
+    params.set("destinationLat", destination.lat);
+    params.set("destinationLng", destination.lng);
+  }
+  if (state.destinationQuery.trim()) {
+    params.set("destinationQuery", state.destinationQuery.trim());
+  } else {
+    params.set("destination", state.destination);
+  }
+
+  state.ruleSummaryRoute = {
+    selectedId: selected.id,
+    isLoading: true,
+    result: null,
+    error: ""
+  };
+  renderDetail();
+
+  try {
+    const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
+    if (requestId !== state.ruleSummaryRouteRequestId) return;
+    state.ruleSummaryRoute = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: payload,
+      error: ""
+    };
+  } catch (error) {
+    if (requestId !== state.ruleSummaryRouteRequestId) return;
+    state.ruleSummaryRoute = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: null,
+      error: error.message || "자동차 경로를 불러오지 못했습니다."
+    };
+  } finally {
+    if (requestId === state.ruleSummaryRouteRequestId) renderDetail();
   }
 }
 
@@ -5308,6 +6342,7 @@ function applyPersonaDefaultWeights(persona) {
 
 function renderControls() {
   syncBudgetModeControls();
+  syncMapModeControls();
   if (nodes.budgetOutput && document.activeElement !== nodes.budgetOutput) {
     nodes.budgetOutput.value = displayBudgetValue(state.budget);
   }
@@ -5482,6 +6517,7 @@ function resetUserSettings() {
   state.detailPanelOpen = false;
   state.detailSubpanelTab = "matching";
   state.hasMatched = false;
+  state.mapMode = "normal";
   state.matchValidationMessage = "";
   state.isLoading = false;
   state.apartments.enabled = true;
@@ -5765,6 +6801,18 @@ function bindEvents() {
   });
 
   nodes.voiceWeightButton?.addEventListener("click", startVoiceWeightRecognition);
+
+  nodes.mapModeButtons?.forEach((button) => {
+    button.addEventListener("click", () => setMapMode(button.dataset.mapMode));
+  });
+
+  nodes.sunlightTimeInput?.addEventListener("input", (event) => {
+    setSunlightMinutes(event.target.value);
+  });
+
+  nodes.sunlightNowButton?.addEventListener("click", () => {
+    setSunlightMinutes(currentDayMinutes());
+  });
 
   nodes.toggleCards.addEventListener("click", () => {
     state.showAllCards = !state.showAllCards;

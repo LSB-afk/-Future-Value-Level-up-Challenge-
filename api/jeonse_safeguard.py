@@ -274,8 +274,8 @@ def nearest_center(apartment: dict) -> dict | None:
         **best,
         "distanceKm": round(distance, 1),
         "hours": CENTER_HOURS,
-        "service": "공인중개사(안전계약 컨설턴트)가 등기부등본·건축물대장을 함께 검토합니다. 예비 임차인도 계약 전에 이용할 수 있습니다.",
-        "note": "상담은 참고용이며 법적 책임을 부담하지 않습니다. 센터별 운영 요일이 다르니 유선 예약 후 방문하세요.",
+        "service": "공인중개사(안전계약 컨설턴트)가 등기부등본·건축물대장을 함께 검토합니다.",
+        "note": "상담은 참고용이며 법적 책임을 부담하지 않습니다.",
         "reserveUrl": "https://www.khug.or.kr/jeonse/web/s04/s040604.jsp",
     }
 
