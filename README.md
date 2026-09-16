@@ -41,6 +41,7 @@
 - `docs/product-roadmap.md`: 선정 후 구체화 단계 개발 순서
 - `docs/worklog.md`: 작업 일지, 다음 작업 우선순위, 이어서 작업용 프롬프트
 - `docs/verification.md`: 실행·브라우저·데이터 검증 로그
+- `docs/trustworthy-ai.md`: 신뢰성 AI 7개 자료 학습 요약, FitHome 평가 기준과 해외 확장 적용 계획
 - `docs/application-draft.md`: 참가신청서 및 기획서 작성 초안
 - `docs/github-latest-analysis.md`: 최신 GitHub 커밋 기준 구현 현황과 미완성 항목 분석
 - `docs/system-flow-summary.md`: 사용자 입력, 지도 추천, 상세 대시보드, 위험 점검, AI Agent 흐름 요약
