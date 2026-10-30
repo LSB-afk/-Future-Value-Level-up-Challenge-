@@ -697,6 +697,38 @@ def normalize_location_suggestion(location: dict) -> dict:
     }
 
 
+def local_apartment_name_suggestions(query: str, limit: int) -> list[dict]:
+    # ponytail: keyless stand-in for Kakao keyword search; substring scan over the local apartment list only.
+    compact_query = _scope_match_text(query)
+    apartment_dataset, _, _ = load_apartment_dataset()
+    suggestions: list[dict] = []
+    for apartment in apartment_dataset.get("apartments", []):
+        district = str(apartment.get("district") or "").strip()
+        dong = str(apartment.get("dong") or "").strip()
+        name = str(apartment.get("name") or "").strip()
+        if not (district and dong and name) or apartment.get("lat") is None or apartment.get("lng") is None:
+            continue
+        if compact_query not in _scope_match_text(district, dong, name):
+            continue
+        suggestions.append(
+            {
+                "type": "apartment",
+                "label": f"{dong} {name}",
+                "address": str(apartment.get("address") or f"서울시 {district} {dong}"),
+                "lat": apartment.get("lat"),
+                "lng": apartment.get("lng"),
+                "district": district,
+                "dong": dong,
+                "apartmentName": name,
+                "source": "local_apartment_name",
+                "selectable": True,
+            }
+        )
+        if len(suggestions) >= limit:
+            break
+    return suggestions
+
+
 def location_suggestions_response(raw: dict[str, list[str]]) -> dict:
     query = single_value(raw, "query").strip()
     try:
@@ -718,6 +750,8 @@ def location_suggestions_response(raw: dict[str, list[str]]) -> dict:
             suggestions.append(normalize_location_suggestion(location))
             if len(suggestions) >= limit:
                 break
+    if should_search_kakao and not suggestions:
+        suggestions = local_apartment_name_suggestions(query, limit)
 
     deduped: list[dict] = []
     seen: set[str] = set()
