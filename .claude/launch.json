@@ -13,6 +13,13 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8788", "-d", "site"],
       "port": 8788
+    },
+    {
+      "name": "moodoo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["api/movevalue_api.py", "--port", "5174"],
+      "port": 5174,
+      "autoPort": false
     }
   ]
 }

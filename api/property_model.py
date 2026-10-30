@@ -301,9 +301,9 @@ def build_risk(apartment: dict, market: dict) -> dict:
         {
             "label": "매매가 대비 전세가율",
             "value": f"{jeonse_ratio:.1f}%",
-            # HUG 깡통주택 기준선이 80%라 경고 임계값을 그 기준에 맞춘다.
+            # 깡통전세 실무 기준선이 80%라 경고 임계값을 그 기준에 맞춘다.
             "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
-            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. HUG 깡통주택 기준은 보증금+대출 80%입니다.",
+            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. 깡통전세 실무 기준은 보증금+대출 80%, HUG 보증 한도는 90%입니다.",
         },
         {
             "label": "공시가격 대비 보증금 비율",
@@ -449,48 +449,6 @@ def lifestyle_summary(area: dict) -> dict:
     }
 
 
-def ai_summary(apartment: dict, area: dict, market: dict, risk: dict) -> dict:
-    lifestyle = lifestyle_summary(area)
-    trade_records = market.get("molitTradeRecords") or []
-    rent_records = market.get("molitRentRecords") or []
-    trade_live = bool(trade_records)
-    jeonse_live = any(not number(record.get("monthlyRent10k")) for record in rent_records)
-    monthly_live = any(number(record.get("monthlyRent10k")) > 0 for record in rent_records)
-    strengths = [
-        f"병원 {lifestyle['counts']['hospital']}개, 학교 {lifestyle['counts']['school']}개, 공원 {lifestyle['counts']['park']}개가 생활 SOC 점수에 반영됐습니다.",
-    ]
-    if monthly_live:
-        strengths.insert(1, f"월세 실거래 기준은 {format_money_10k(market['monthlyRent10k'])}로 확인됐습니다.")
-    elif trade_live or jeonse_live:
-        strengths.insert(1, "일부 실거래 API가 확인되어 가격 정보는 확인된 항목만 표시됩니다.")
-    cautions = []
-    weaknesses = []
-    if trade_live and number(market.get("saleGapPercent")) > 8:
-        weaknesses.append(f"주변 평균 매매 추정가보다 {market['saleGapPercent']}% 높아 가격 협상 여지가 제한될 수 있습니다.")
-    if building_age(apartment) >= 25:
-        weaknesses.append("준공 후 25년 이상 경과해 수선비, 배관, 주차 편의 확인이 필요합니다.")
-    if not (trade_live or jeonse_live or monthly_live):
-        weaknesses.append("단지 단위 실거래 API 매칭 전까지 가격 정보는 정보 없음으로 표시됩니다.")
-    if not weaknesses:
-        weaknesses.append("단지 단위 실거래 API 매칭 전까지 가격 정보는 확인 가능한 항목만 표시합니다.")
-
-    if trade_live and number(market.get("saleGapPercent")) > 8:
-        recommendation = "입지와 생활 편의성은 장점이 있으나 가격 수준은 주변 후보와 함께 비교해보는 것이 좋습니다."
-    elif building_age(apartment) >= 25:
-        recommendation = "입지 조건은 무난하지만 준공연식이 오래된 만큼 관리 상태와 주차 편의를 함께 확인하는 것이 좋습니다."
-    else:
-        recommendation = "현재 공개 데이터 기준으로는 입지와 생활 편의성을 함께 검토할 수 있는 후보입니다."
-    headline_subject = "주거비·생활 SOC" if (trade_live or jeonse_live or monthly_live) else "생활 SOC"
-
-    return {
-        "headline": f"{topic(apartment.get('name'))} {lifestyle['livingAreaName']} 인근의 {headline_subject}를 함께 검토할 수 있는 아파트 후보입니다.",
-        "strengths": strengths,
-        "weaknesses": weaknesses,
-        "cautions": cautions,
-        "recommendation": recommendation,
-    }
-
-
 def build_property_preview(apartment: dict, destination: str = "gangnam") -> dict:
     area = nearest_living_area(apartment)
     market = estimate_market(apartment, area)
@@ -553,7 +511,6 @@ def build_property_detail(apartment: dict) -> dict:
         "safeguard": safeguard,
         "lifestyle": lifestyle,
         "socRadius": {"meters": 1600, "lat": apartment.get("lat"), "lng": apartment.get("lng")},
-        "aiSummary": ai_summary(apartment, area, market, risk),
         "dataStatus": {
             "buildingInfo": "실데이터: 서울시 OpenAptInfo",
             "rentalMarket": "실데이터 집계: 서울시 2025 인근 전월세 거래 중앙값",
@@ -626,7 +583,7 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
             answer = "현재 로딩된 단지 중에는 더 낮은 위험 점수 후보가 충분하지 않습니다. 서울 OpenAptInfo 키를 연결하면 전체 단지에서 대안을 찾을 수 있습니다."
     elif any(token in text for token in ["깡통", "근저당", "담보", "빚"]):
         answer = (
-            f"{topic(detail['name'])} HUG 깡통주택 기준({gaptong.get('thresholdPct', 80)}%) 대비 "
+            f"{topic(detail['name'])} 깡통전세 실무 기준({gaptong.get('thresholdPct', 80)}%) 대비 "
             f"'{gaptong.get('verdictLabel', '판정 불가')}'입니다. "
             f"{gaptong.get('detail', '')} "
             "등기부 을구의 채권최고액을 이 금액과 비교하면 바로 판단할 수 있습니다."

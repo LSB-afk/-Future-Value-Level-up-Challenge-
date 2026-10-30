@@ -10,6 +10,10 @@ const SIDEBAR_MAX_WIDTH = 620;
 const DEFAULT_ROUTE_TRANSPORT_MODE = "car";
 const KAKAO_SOC_RADIUS_METERS = 1000;
 const KAKAO_SAFETY_RADIUS_METERS = 1000;
+const MAP_MODES = ["normal", "sunlight"];
+const SUNLIGHT_3D_BUILDING_LIMIT = 140;
+const SUNLIGHT_3D_WORLD_SCALE = 12;
+const RULE_SUMMARY_COMMUTE_THRESHOLD_MINUTES = 45;
 const ROUTE_TRANSPORT_MODES = [
   { key: "car", label: "자동차", icon: "car-front" },
   { key: "transit", label: "대중교통", icon: "bus-front" },
@@ -38,8 +42,8 @@ const SOC_CATEGORY_DEFINITIONS = {
     targetCount: 4
   },
   leisure: {
-    label: "문화·체육",
-    aliases: ["leisure", "library", "culture", "sports", "gym"],
+    label: "여가",
+    aliases: ["leisure", "park", "trail", "sports", "gym"],
     targetCount: 3
   },
   welfare: {
@@ -67,10 +71,90 @@ const PERSONA_DEFAULT_WEIGHTS = {
   senior: { commute: 10, cost: 20, service: 35, safety: 35 }
 };
 const BUDGET_MODE_CONFIG = {
-  monthly: { label: "월 주거 예산", shortLabel: "월세", min: 0, max: 150, step: 1, defaultValue: 0, unit: "만원", displayScale: 1, displayStep: 1 },
+  monthly: { label: "월 주거 예산", shortLabel: "월세", min: 0, max: 400, step: 1, defaultValue: 0, unit: "만원", displayScale: 1, displayStep: 1 },
   jeonse: { label: "전세 예산", shortLabel: "전세", min: 0, max: 200000, step: 1000, defaultValue: 0, unit: "억", displayScale: 10000, displayStep: 0.1 },
   sale: { label: "매매 예산", shortLabel: "매매", min: 0, max: 400000, step: 1000, defaultValue: 0, unit: "억", displayScale: 10000, displayStep: 0.1 }
 };
+const WEIGHT_AXES = ["commute", "cost", "service", "safety"];
+const VOICE_WEIGHT_RULES = [
+  {
+    key: "commute",
+    label: "통근",
+    keywords: ["통근", "출퇴근", "출근", "퇴근", "직장", "회사", "교통", "대중교통", "지하철", "버스", "정류장", "역세권", "역 근처", "역 가까운", "회사 근처", "직장 근처", "이동", "가까운", "가까웠으면", "근처", "빠른", "빨리", "시간", "덜 걸리는", "안 막히는", "환승", "차로", "자동차"]
+  },
+  {
+    key: "cost",
+    label: "주거비",
+    keywords: ["예산", "월세", "전세", "매매", "보증금", "가격", "돈", "비용", "주거비", "관리비", "저렴", "저렴한", "저렴했으면", "저렴하면", "저렴한 곳", "싼", "싼 곳", "싼데", "싼곳", "싸", "싸게", "싸면", "싸고", "쌌", "쌌으면", "합리적", "가성비", "아끼", "아낄", "절약", "부담", "부담없는", "대출"]
+  },
+  {
+    key: "service",
+    label: "생활 SOC",
+    keywords: ["생활", "생활권", "인프라", "주변", "주변에", "많았으면", "많으면", "가까웠으면", "편의", "편의시설", "편의점", "마트", "상권", "카페", "병원", "의료", "약국", "학교", "교육", "학원", "어린이집", "유치원", "아이", "아기", "자녀", "공원", "산책", "운동", "복지", "문화", "시장"]
+  },
+  {
+    key: "safety",
+    label: "안전",
+    keywords: ["안전", "안전한", "안전했으면", "안심", "치안", "위험", "위험하지", "범죄", "cctv", "씨씨티비", "전세사기", "전세 사기", "깡통", "사기", "등기", "권리", "보증보험", "환경", "대기", "공기", "조용", "밤길", "밝은", "여성", "경찰", "파출소"]
+  }
+];
+const VOICE_PHRASE_RULES = [
+  { pattern: /가격.{0,8}(싸|쌌|저렴|낮|부담|가성비)|싸.{0,8}(좋|원|곳|집)|저렴.{0,8}(좋|원|곳|집)|예산.{0,8}(맞|안|내|초과|부담)/, weights: { cost: 5 } },
+  { pattern: /월세|전세|매매|보증금|관리비|주거비|대출/, weights: { cost: 3 } },
+  { pattern: /회사|직장|출근|퇴근|출퇴근|통근/, weights: { commute: 4 } },
+  { pattern: /역세권|지하철|버스|정류장|환승|대중교통|교통/, weights: { commute: 3, service: 1 } },
+  { pattern: /가까.{0,8}(회사|직장|역|지하철|버스|정류장|목적지)|회사.{0,8}가까|직장.{0,8}가까|역.{0,8}가까/, weights: { commute: 4 } },
+  { pattern: /편의점|마트|카페|상권|시장|병원|약국|학교|학원|어린이집|유치원|공원|산책|운동|복지|문화/, weights: { service: 4 } },
+  { pattern: /주변.{0,10}(많|편의|인프라|시설|마트|병원|학교|공원)|생활권|생활.{0,8}(편|좋)/, weights: { service: 4 } },
+  { pattern: /안전|안심|치안|밤길|범죄|cctv|씨씨티비|경찰|파출소|밝은/, weights: { safety: 4 } },
+  { pattern: /전세.{0,8}(사기|안전|위험)|깡통|등기|권리|보증보험|근저당|압류/, weights: { safety: 5, cost: 1 } },
+  { pattern: /조용|쾌적|공기|대기|환경|깨끗/, weights: { safety: 2, service: 2 } }
+];
+const VOICE_STT_CORRECTIONS = [
+  [/썼으면|썻으면|쓸면|섰으면|썻음|썼음/g, "쌌으면"],
+  [/가격이\s*(썼|썻|섰|쓸)/g, "가격이 쌌"],
+  [/싸\s*슴|싸슴|쌓|쌋/g, "쌌"],
+  [/편의\s*점|펴니점|편이점|편의전|편의 정/g, "편의점"],
+  [/마트가|마트는/g, "마트"],
+  [/병원이|병원은/g, "병원"],
+  [/공원이|공원은/g, "공원"],
+  [/시안|취안/g, "치안"],
+  [/씨씨\s*티비|시시티비|씨시티비|c\s*c\s*t\s*v/g, "cctv"],
+  [/전세\s*사끼|전세\s*사귀/g, "전세 사기"],
+  [/깡통\s*주택|깡통집/g, "깡통"],
+  [/총근|충근|통근이/g, "통근"],
+  [/출근이|퇴근이/g, "출근 퇴근"],
+  [/지하철이|지하철은/g, "지하철"],
+  [/버스가|버스는/g, "버스"],
+  [/정류장이|정류장은/g, "정류장"],
+  [/가까우면|가까우면은|가까우면좋|가까우면 좋/g, "가까웠으면 좋"],
+  [/많으면|많으면은|많으면좋|많으면 좋/g, "많았으면 좋"],
+  [/골구루|골고로|고루고루/g, "골고루"],
+  [/균형적|균형적인|균형잡힌|균형 잡힌|벨런스|밸런스/g, "균형"]
+];
+const VOICE_CONTEXT_RULES = [
+  { pattern: /혼자|1인|원룸|오피스텔|사회초년|대학생|취준|자취/, weights: { commute: 1, cost: 2, safety: 1 } },
+  { pattern: /신혼|부부|결혼|배우자|둘이/, weights: { cost: 1, service: 2, safety: 1 } },
+  { pattern: /가족|애들|아이|아기|자녀|초등|중등|고등|등하교|학군|학교/, weights: { service: 3, safety: 2 } },
+  { pattern: /부모님|어머니|아버지|어르신|노인|고령|병원|약국|의료/, weights: { service: 3, safety: 2, commute: 1 } },
+  { pattern: /야근|늦게|밤|새벽|혼자\s*귀가|퇴근이\s*늦|밤길/, weights: { safety: 3, commute: 2 } },
+  { pattern: /재택|집에\s*있는|동네|생활권|살기\s*좋|살기좋|쾌적|조용|깨끗/, weights: { service: 2, safety: 2 } },
+  { pattern: /차\s*없|뚜벅|대중교통|환승|역|정류장|버스|지하철/, weights: { commute: 3, service: 1 } },
+  { pattern: /차\s*있|운전|주차|자동차/, weights: { commute: 2, service: 1 } },
+  { pattern: /대출|돈이\s*없|여유가\s*없|아껴|부담|월급|가성비|최대한\s*싸|저렴|싼/, weights: { cost: 3 } },
+  { pattern: /전세|보증금|계약|등기|권리|깡통|사기|위험/, weights: { safety: 3, cost: 1 } },
+  { pattern: /공원|산책|운동|헬스|문화|카페|마트|시장|상권|편의/, weights: { service: 3 } },
+  { pattern: /추천|찾아|골라|보고\s*싶|좋은\s*곳|괜찮은\s*곳|살\s*곳|집|아파트/, weights: { commute: 1, cost: 1, service: 1, safety: 1 } }
+];
+const VOICE_PERSONA_FALLBACK_SCORES = {
+  single: { commute: 2, cost: 3, service: 1, safety: 2 },
+  newlywed: { commute: 2, cost: 2, service: 3, safety: 2 },
+  family: { commute: 1, cost: 2, service: 4, safety: 3 },
+  senior: { commute: 1, cost: 2, service: 4, safety: 4 }
+};
+const VOICE_LISTENING_MAX_MS = 18000;
+const VOICE_SILENCE_SETTLE_MS = 3000;
+let agentHintTimer = null;
 
 const state = {
   neighborhoods: [],
@@ -93,6 +177,7 @@ const state = {
   refreshTimer: null,
   requestId: 0,
   routeRequestId: 0,
+  ruleSummaryRouteRequestId: 0,
   map: null,
   locationSearch: {
     target: "main",
@@ -112,13 +197,14 @@ const state = {
     focusMap: false,
     transportMode: DEFAULT_ROUTE_TRANSPORT_MODE
   },
-  aiCommute: {
+  ruleSummaryRoute: {
     selectedId: null,
-    requestId: 0,
     isLoading: false,
     result: null,
     error: ""
   },
+  mapMode: "normal",
+  sunlightMinutes: currentDayMinutes(),
   apartments: {
     enabled: true,
     labelMode: "sale",
@@ -168,7 +254,10 @@ const state = {
     detail: null,
     error: "",
     requestId: 0,
-    trendMode: ""
+    agentQuestion: "이 아파트 전세 들어가도 괜찮아?",
+    agentAnswer: null,
+    agentLoading: false,
+    agentError: ""
   },
   agent: {
     open: false,
@@ -188,6 +277,15 @@ const state = {
     panelOpen: false,
     isLoading: false,
     error: ""
+  },
+  voiceWeights: {
+    recognition: null,
+    listening: false,
+    status: "",
+    transcript: "",
+    settleTimer: null,
+    maxTimer: null,
+    errorStatus: ""
   },
   showAllCards: false,
   evidenceRendered: false,
@@ -297,16 +395,16 @@ const areaAddressDefaults = {
 
 const scoreTips = {
   commute: "목적지까지의 대중교통 통근시간을 반영한 점수",
-  cost: "선택한 예산 기준 대비 단지 가격을 반영한 주거비 점수",
-  service: "의료·교통·생활편의·교육·문화·체육·복지시설을 가구 유형별 비중으로 합산한 생활 SOC 점수",
+  cost: "선택한 예산 기준 대비 추정 가격을 반영한 주거비 점수",
+  service: "의료·교통·생활편의·교육·여가복지·복지시설을 가구 유형별 비중으로 합산한 생활 SOC 점수",
   safety: "치안·환경 접근성과 단지 전세 위험 신호를 결합한 안전 점수"
 };
 
 const nodes = {
   main: document.querySelector("main"),
+  budgetLabel: document.querySelector("#budgetLabel"),
   budgetInput: document.querySelector("#budgetInput"),
   budgetOutput: document.querySelector("#budgetOutput"),
-  budgetLabel: document.querySelector("#budgetLabel"),
   budgetUnit: document.querySelector("#budgetUnit"),
   destinationInput: document.querySelector("#destinationInput"),
   destinationClearButton: document.querySelector("#destinationClearButton"),
@@ -320,6 +418,8 @@ const nodes = {
   costWeightOutput: document.querySelector("#costWeightOutput"),
   serviceWeightOutput: document.querySelector("#serviceWeightOutput"),
   safetyWeightOutput: document.querySelector("#safetyWeightOutput"),
+  voiceWeightButton: document.querySelector("#voiceWeightButton"),
+  voiceWeightStatus: document.querySelector("#voiceWeightStatus"),
   refreshButton: document.querySelector("#refreshButton"),
   bookmarkPanelButton: document.querySelector("#bookmarkPanelButton"),
   bookmarkCount: document.querySelector("#bookmarkCount"),
@@ -330,6 +430,14 @@ const nodes = {
   resultSummary: document.querySelector("#resultSummary"),
   sidebarResizeHandle: document.querySelector("#sidebarResizeHandle"),
   mapCanvas: document.querySelector("#mapCanvas"),
+  sunlight3dCanvas: document.querySelector("#sunlight3dCanvas"),
+  sunlight3dCompass: document.querySelector("#sunlight3dCompass"),
+  mapModeControl: document.querySelector(".map-mode-control"),
+  mapModeButtons: document.querySelectorAll("[data-map-mode]"),
+  sunlightTimeControl: document.querySelector("#sunlightTimeControl"),
+  sunlightNowButton: document.querySelector("#sunlightNowButton"),
+  sunlightTimeInput: document.querySelector("#sunlightTimeInput"),
+  sunlightTimeOutput: document.querySelector("#sunlightTimeOutput"),
   detailContent: document.querySelector("#detailContent"),
   routeContent: document.querySelector("#routeContent"),
   infrastructureContent: document.querySelector("#infrastructureContent"),
@@ -351,6 +459,34 @@ const nodes = {
   evidenceTableBody: document.querySelector("#evidenceTableBody"),
   navLinks: document.querySelectorAll(".app-nav .nav-link"),
   cardTemplate: document.querySelector("#cardTemplate")
+};
+
+const sunlight3d = {
+  initialized: false,
+  failed: false,
+  renderer: null,
+  scene: null,
+  camera: null,
+  cameraTarget: null,
+  sunLight: null,
+  hemisphereLight: null,
+  mapGround: null,
+  fallbackOverlayGroup: null,
+  mapTextureRequestId: 0,
+  mapCenterKey: "",
+  windowTexture: null,
+  windowFacades: [],
+  cityGroup: null,
+  buildingMeshes: [],
+  sceneSignature: "",
+  radius: 620,
+  theta: 0,
+  phi: Math.PI * 0.31,
+  dragging: false,
+  moved: false,
+  pointerX: 0,
+  pointerY: 0,
+  resizeObserver: null
 };
 
 function clamp(value, min = 0, max = 100) {
@@ -383,17 +519,7 @@ function setSidebarWidth(width, { persist = false } = {}) {
   }
   window.requestAnimationFrame(() => {
     state.map?.instance?.invalidateSize({ pan: false });
-  });
-}
-
-function invalidateMapLayout() {
-  const map = state.map?.instance;
-  if (!map) return;
-  window.requestAnimationFrame(() => {
-    map.invalidateSize({ pan: false });
-    window.requestAnimationFrame(() => {
-      map.invalidateSize({ pan: false });
-    });
+    resizeSunlight3dRenderer();
   });
 }
 
@@ -420,51 +546,6 @@ function formatMoney10k(value) {
   return `${formatNumber(amount)}만원`;
 }
 
-function budgetConfig(mode = state.budgetMode) {
-  return BUDGET_MODE_CONFIG[mode] || BUDGET_MODE_CONFIG.monthly;
-}
-
-function displayBudgetValue(value = state.budget, mode = state.budgetMode) {
-  const config = budgetConfig(mode);
-  const displayValue = Number(value || 0) / Number(config.displayScale || 1);
-  return Number.isInteger(displayValue) ? String(displayValue) : displayValue.toFixed(1);
-}
-
-function parseBudgetDisplayValue(value, mode = state.budgetMode) {
-  const config = budgetConfig(mode);
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return state.budget;
-  return numeric * Number(config.displayScale || 1);
-}
-
-function budgetTargetValue(item, mode = state.budgetMode) {
-  if (mode === "sale") return Math.round(Number(item.sale10k || item.pricePreview?.sale10k || 0));
-  if (mode === "jeonse") return Math.round(Number(item.jeonse10k || item.pricePreview?.jeonse10k || 0));
-  return Math.round(Number(item.rentMonthly10k || item.monthlyRent10k || item.pricePreview?.monthlyRent10k || 0));
-}
-
-function formatBudgetValue(value, mode = state.budgetMode) {
-  return mode === "monthly" ? `${formatNumber(value)}만원` : formatMoney10k(value);
-}
-
-function costScoreForBudget(targetValue, budgetValue, mode = state.budgetMode) {
-  const target = Number(targetValue || 0);
-  const budget = Number(budgetValue || 0);
-  if (!target) return 50;
-  if (!budget) return 0;
-  const usageRatio = target / budget;
-  if (usageRatio <= 1) {
-    return clamp(100 - Math.abs(1 - usageRatio) * 72);
-  }
-  return clamp(100 - (usageRatio - 1) * 600);
-}
-
-function greenAccessScoreFromDistance(distanceMeters) {
-  const distance = Number(distanceMeters);
-  if (!Number.isFinite(distance)) return 0;
-  return Math.round(clamp(100 - (distance / KAKAO_SAFETY_RADIUS_METERS) * 60, 40, 100));
-}
-
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -474,12 +555,351 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function speechRecognitionConstructor() {
+  return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+}
+
+function compactVoiceText(value) {
+  return String(value || "").toLowerCase().replace(/\s+/g, "");
+}
+
+function normalizeVoiceIntentText(value) {
+  let text = String(value || "").toLowerCase();
+  VOICE_STT_CORRECTIONS.forEach(([pattern, replacement]) => {
+    text = text.replace(pattern, replacement);
+  });
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function voiceIntentDisplayText(value) {
+  return normalizeVoiceIntentText(value) || String(value || "").trim();
+}
+
+function voiceStatusDisplayText(value) {
+  const text = String(value || "");
+  if (text.startsWith("인식:")) {
+    return `인식: ${voiceIntentDisplayText(text.slice(3))}`;
+  }
+  if (text.startsWith("듣는 중...")) {
+    return `듣는 중... ${voiceIntentDisplayText(text.slice(7))}`;
+  }
+  return text;
+}
+
+function isBalancedVoiceIntent(value) {
+  const text = normalizeVoiceIntentText(value);
+  const compactText = compactVoiceText(text);
+  return /골고루|균형|밸런스|전체적으로|고르게|무난|다\s*중요|모두\s*중요|전부\s*중요|비슷하게|반반/.test(text)
+    || /골고루|균형|밸런스|전체적으로|고르게|무난|다중요|모두중요|전부중요|비슷하게|반반/.test(compactText);
+}
+
+function directlyMentionedVoiceAxes(value) {
+  const text = normalizeVoiceIntentText(value);
+  const compactText = compactVoiceText(text);
+  const axisPatterns = {
+    commute: /통근|출퇴근|출근|퇴근|교통|역세권|지하철|버스|회사|직장/,
+    cost: /주거비|예산|가격|월세|전세|매매|보증금|관리비|가성비|저렴|싼|쌌/,
+    service: /생활\s*soc|생활soc|soc|생활권|인프라|편의|편의점|마트|병원|학교|공원|상권/,
+    safety: /안전|치안|cctv|씨씨티비|전세\s*사기|깡통|위험|밤길|보증보험/
+  };
+  return WEIGHT_AXES.filter((key) => (
+    axisPatterns[key].test(text) || axisPatterns[key].test(compactText)
+  ));
+}
+
+function directAxisWeights(transcript) {
+  const axes = directlyMentionedVoiceAxes(transcript);
+  if (axes.length < 2) return null;
+  const text = normalizeVoiceIntentText(transcript);
+  const compactText = compactVoiceText(text);
+  const hasDirectPriorityIntent = /높은|높게|중요|우선|찾고|원해|좋겠|맞춰|반영/.test(text)
+    || /높은|높게|중요|우선|찾고|원해|좋겠|맞춰|반영/.test(compactText);
+  if (!hasDirectPriorityIntent) return null;
+  const low = axes.length === 2 ? 15 : 10;
+  const remaining = 100 - low * (WEIGHT_AXES.length - axes.length);
+  const base = Math.floor(remaining / axes.length / 5) * 5;
+  const weights = Object.fromEntries(WEIGHT_AXES.map((key) => [key, axes.includes(key) ? base : low]));
+  let delta = 100 - WEIGHT_AXES.reduce((sum, key) => sum + weights[key], 0);
+  axes.forEach((key) => {
+    if (delta > 0) {
+      weights[key] += 5;
+      delta -= 5;
+    }
+  });
+  return weights;
+}
+
+function scoreVoiceWeights(transcript) {
+  const text = String(transcript || "").toLowerCase();
+  const normalizedText = normalizeVoiceIntentText(text);
+  const searchableText = `${text} ${normalizedText}`;
+  const compactText = compactVoiceText(searchableText);
+  const scores = Object.fromEntries(WEIGHT_AXES.map((key) => [key, 0]));
+
+  VOICE_WEIGHT_RULES.forEach((rule) => {
+    let matchedKeywords = 0;
+    rule.keywords.forEach((keyword) => {
+      const compactKeyword = compactVoiceText(keyword);
+      if (searchableText.includes(keyword) || compactText.includes(compactKeyword)) {
+        matchedKeywords += 1;
+      }
+    });
+    scores[rule.key] += Math.min(matchedKeywords, 3);
+  });
+
+  VOICE_PHRASE_RULES.forEach((rule) => {
+    if (!rule.pattern.test(searchableText) && !rule.pattern.test(compactText)) return;
+    Object.entries(rule.weights).forEach(([key, value]) => {
+      scores[key] += value;
+    });
+  });
+
+  VOICE_CONTEXT_RULES.forEach((rule) => {
+    if (!rule.pattern.test(searchableText) && !rule.pattern.test(compactText)) return;
+    Object.entries(rule.weights).forEach(([key, value]) => {
+      scores[key] += value;
+    });
+  });
+
+  if (/아이|자녀|초등|유치|학교|교육/.test(searchableText)) {
+    scores.service += 2;
+    scores.safety += 1;
+  }
+  if (/부모님|어르신|노인|병원|의료|복지/.test(searchableText)) {
+    scores.service += 2;
+    scores.safety += 1;
+  }
+  if (/전세\s*사기|깡통|보증금|위험/.test(searchableText)) {
+    scores.safety += 2;
+    scores.cost += 1;
+  }
+  if (/제일|가장|최우선|우선|중요|먼저|신경/.test(searchableText)) {
+    WEIGHT_AXES.forEach((key) => {
+      if (scores[key] > 0) scores[key] += 1;
+    });
+  }
+  if (/상관\s*없|괜찮|덜\s*중요|포기|낮춰|줄여/.test(searchableText)) {
+    if (/통근|출퇴근|회사|교통|역/.test(searchableText)) scores.commute = Math.max(0, scores.commute - 2);
+    if (/가격|예산|월세|전세|비용|돈/.test(searchableText)) scores.cost = Math.max(0, scores.cost - 2);
+    if (/생활|편의|병원|학교|마트|공원/.test(searchableText)) scores.service = Math.max(0, scores.service - 2);
+    if (/안전|치안|위험|환경|조용/.test(searchableText)) scores.safety = Math.max(0, scores.safety - 2);
+  }
+
+  WEIGHT_AXES.forEach((key) => {
+    scores[key] = Math.min(scores[key], 10);
+  });
+  return scores;
+}
+
+function fallbackVoiceScores(transcript) {
+  if (!String(transcript || "").trim()) return null;
+  return {
+    ...(VOICE_PERSONA_FALLBACK_SCORES[state.persona] || VOICE_PERSONA_FALLBACK_SCORES.single)
+  };
+}
+
+function roundedWeightsFromScores(scores) {
+  const totalScore = WEIGHT_AXES.reduce((sum, key) => sum + Number(scores[key] || 0), 0);
+  if (!totalScore) return null;
+
+  const weights = Object.fromEntries(WEIGHT_AXES.map((key) => {
+    const raw = 10 + (Number(scores[key] || 0) / totalScore) * 60;
+    return [key, clamp(Math.round(raw / 5) * 5, 0, 50)];
+  }));
+
+  let delta = 100 - WEIGHT_AXES.reduce((sum, key) => sum + weights[key], 0);
+  let guard = 0;
+  while (delta !== 0 && guard < 32) {
+    const candidates = [...WEIGHT_AXES].sort((a, b) => (
+      delta > 0
+        ? weights[a] - weights[b] || Number(scores[b] || 0) - Number(scores[a] || 0)
+        : weights[b] - weights[a] || Number(scores[a] || 0) - Number(scores[b] || 0)
+    ));
+    const key = candidates.find((axis) => delta > 0 ? weights[axis] <= 45 : weights[axis] >= 5);
+    if (!key) break;
+    weights[key] += delta > 0 ? 5 : -5;
+    delta += delta > 0 ? -5 : 5;
+    guard += 1;
+  }
+
+  return weights;
+}
+
+function voiceWeightSummary(weights) {
+  return VOICE_WEIGHT_RULES
+    .map((rule) => `${rule.label} ${weights[rule.key]}%`)
+    .join(" · ");
+}
+
+function applyVoiceWeights(transcript) {
+  if (isBalancedVoiceIntent(transcript)) {
+    state.weights = { commute: 25, cost: 25, service: 25, safety: 25 };
+    syncWeightInputs();
+    state.voiceWeights.status = `인식: ${voiceIntentDisplayText(transcript)}`;
+    scheduleRefresh(0);
+    return;
+  }
+
+  const directWeights = directAxisWeights(transcript);
+  if (directWeights) {
+    state.weights = directWeights;
+    syncWeightInputs();
+    state.voiceWeights.status = `인식: ${voiceIntentDisplayText(transcript)}`;
+    scheduleRefresh(0);
+    return;
+  }
+
+  let scores = scoreVoiceWeights(transcript);
+  let usedFallback = false;
+  if (!WEIGHT_AXES.some((key) => Number(scores[key] || 0) > 0)) {
+    scores = fallbackVoiceScores(transcript);
+    usedFallback = Boolean(scores);
+  }
+  const weights = roundedWeightsFromScores(scores);
+  if (!weights) {
+    const spoken = String(transcript || "").trim();
+    state.voiceWeights.status = spoken
+      ? `인식: ${spoken} → 기준을 찾지 못했습니다. 통근, 예산, 생활, 안전처럼 말해보세요.`
+      : "상황을 다시 말해주세요. 통근, 예산, 생활, 안전 중 중요한 기준을 반영합니다.";
+    renderControls();
+    return;
+  }
+
+  state.weights = weights;
+  syncWeightInputs();
+  state.voiceWeights.status = `인식: ${voiceIntentDisplayText(transcript)}`;
+  scheduleRefresh(0);
+}
+
+function clearVoiceWeightTimers() {
+  window.clearTimeout(state.voiceWeights.settleTimer);
+  window.clearTimeout(state.voiceWeights.maxTimer);
+  state.voiceWeights.settleTimer = null;
+  state.voiceWeights.maxTimer = null;
+}
+
+function stopVoiceWeightRecognition() {
+  clearVoiceWeightTimers();
+  try {
+    state.voiceWeights.recognition?.stop();
+  } catch {
+    // Some browsers throw when recognition has already stopped.
+  }
+}
+
+function queueVoiceWeightAutoStop() {
+  window.clearTimeout(state.voiceWeights.settleTimer);
+  state.voiceWeights.settleTimer = window.setTimeout(() => {
+    state.voiceWeights.status = "말한 내용을 정리하는 중...";
+    renderControls();
+    stopVoiceWeightRecognition();
+  }, VOICE_SILENCE_SETTLE_MS);
+}
+
+function startVoiceWeightRecognition() {
+  const Recognition = speechRecognitionConstructor();
+  if (!Recognition) {
+    state.voiceWeights.status = "이 브라우저는 음성 인식을 지원하지 않습니다. Chrome 또는 Edge에서 사용할 수 있습니다.";
+    renderControls();
+    return;
+  }
+
+  if (state.voiceWeights.listening) {
+    state.voiceWeights.status = "지금까지 말한 내용을 반영합니다.";
+    renderControls();
+    stopVoiceWeightRecognition();
+    return;
+  }
+
+  const recognition = new Recognition();
+  state.voiceWeights.recognition = recognition;
+  recognition.lang = "ko-KR";
+  recognition.interimResults = true;
+  recognition.continuous = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    clearVoiceWeightTimers();
+    state.voiceWeights.listening = true;
+    state.voiceWeights.transcript = "";
+    state.voiceWeights.errorStatus = "";
+    state.voiceWeights.status = "듣는 중... 어떤 집을 찾고 있는지 자연스럽게 말해주세요.";
+    state.voiceWeights.maxTimer = window.setTimeout(() => {
+      state.voiceWeights.status = "충분히 들었습니다. 말한 내용을 반영합니다.";
+      renderControls();
+      stopVoiceWeightRecognition();
+    }, VOICE_LISTENING_MAX_MS);
+    renderControls();
+  };
+  recognition.onerror = (event) => {
+    const messages = {
+      "not-allowed": "마이크 권한이 필요합니다.",
+      "no-speech": "음성을 인식하지 못했습니다.",
+      "audio-capture": "마이크를 찾을 수 없습니다."
+    };
+    state.voiceWeights.errorStatus = messages[event.error] || "음성 인식에 실패했습니다.";
+    state.voiceWeights.status = state.voiceWeights.errorStatus;
+    state.voiceWeights.listening = false;
+    clearVoiceWeightTimers();
+    renderControls();
+  };
+  recognition.onend = () => {
+    clearVoiceWeightTimers();
+    state.voiceWeights.listening = false;
+    const transcript = state.voiceWeights.transcript.trim();
+    if (transcript) {
+      applyVoiceWeights(transcript);
+    } else {
+      state.voiceWeights.status = state.voiceWeights.errorStatus || "음성을 인식하지 못했습니다.";
+      renderControls();
+    }
+  };
+  recognition.onresult = (event) => {
+    let finalText = "";
+    let interimText = "";
+    Array.from(event.results || []).forEach((result) => {
+      const text = Array.from(result || [])
+        .map((item) => item.transcript)
+        .join(" ")
+        .trim();
+      if (!text) return;
+      if (result.isFinal) {
+        finalText += `${text} `;
+      } else {
+        interimText += `${text} `;
+      }
+    });
+
+    const transcript = `${finalText}${interimText}`.replace(/\s+/g, " ").trim();
+    if (transcript) {
+      state.voiceWeights.transcript = transcript;
+      state.voiceWeights.status = `듣는 중... ${voiceIntentDisplayText(transcript)}`;
+      queueVoiceWeightAutoStop();
+      renderControls();
+    }
+  };
+
+  try {
+    recognition.start();
+  } catch {
+    state.voiceWeights.listening = false;
+    state.voiceWeights.status = "이미 음성 인식이 실행 중입니다.";
+    renderControls();
+  }
+}
+
 function formatDistance(value) {
   const meters = Math.round(Number(value || 0));
   if (meters >= 1000) {
     return `${(meters / 1000).toFixed(1)}km`;
   }
   return `${formatNumber(meters)}m`;
+}
+
+function greenAccessScoreFromDistance(distanceMeters) {
+  const distance = Number(distanceMeters);
+  if (!Number.isFinite(distance)) return 0;
+  return Math.round(clamp(100 - (distance / KAKAO_SAFETY_RADIUS_METERS) * 60, 40, 100));
 }
 
 function formatFare(value) {
@@ -787,19 +1207,6 @@ function locationSuggestionSubtitle(item = {}) {
   return item.roadAddress || item.hint || "";
 }
 
-function isResidentialDestinationSuggestion(item = {}) {
-  if (item.type === "apartment") return true;
-  const text = normalizeSearchText([
-    item.label,
-    item.address,
-    item.roadAddress,
-    item.category,
-    item.apartmentName
-  ].filter(Boolean).join(" "));
-  const residentialTokens = ["아파트", "주거시설", "공동주택", "연립", "다세대", "빌라"];
-  return residentialTokens.some((token) => text.includes(normalizeSearchText(token)));
-}
-
 function renderDestinationValidation(target = "main") {
   const { validation } = locationSearchNodes(target);
   if (!validation) return;
@@ -1000,9 +1407,7 @@ function requestLocationSuggestions(query, target = "main") {
     try {
       const payload = await fetchJson(`/api/location-suggestions?query=${encodeURIComponent(value)}&limit=30`);
       if (requestId !== state.locationSearch.requestId) return;
-      state.locationSearch.items = Array.isArray(payload.suggestions)
-        ? payload.suggestions.filter((item) => !isResidentialDestinationSuggestion(item))
-        : [];
+      state.locationSearch.items = Array.isArray(payload.suggestions) ? payload.suggestions : [];
       state.locationSearch.error = "";
     } catch (error) {
       if (requestId !== state.locationSearch.requestId) return;
@@ -1086,10 +1491,10 @@ function buildRecommendationQuery() {
   const destinationLocation = selectedDestinationLocation();
   const params = new URLSearchParams({
     budget: state.budget,
-    budgetMode: state.budgetMode,
     destination: state.destination,
     destinationQuery: state.destinationQuery.trim(),
     destinationAddress: destinationLocation?.address || state.destinationQuery.trim(),
+    budgetMode: state.budgetMode,
     persona: state.persona,
     commuteWeight: state.weights.commute,
     costWeight: state.weights.cost,
@@ -1227,7 +1632,13 @@ function scoreApartmentCandidate(apartment) {
   const deposit = Math.round(Number(area.deposit10k || 1000) * stableFactor(`${apartment.id}:deposit`, 0.85, 1.3));
   const jeonse = Number(pricePreview.jeonse10k) || Math.round(Number(area.jeonse10k || 26000) * marketFactor);
   const sale = Number(pricePreview.sale10k) || Math.round(jeonse / stableFactor(`${apartment.id}:ratio`, 0.55, 0.72));
-  const budgetTarget = budgetTargetValue({ rentMonthly10k: monthlyRent, jeonse10k: jeonse, sale10k: sale }, state.budgetMode);
+  const budgetTarget = budgetTargetValue({
+    rentMonthly10k: monthlyRent,
+    monthlyRent10k: monthlyRent,
+    jeonse10k: jeonse,
+    sale10k: sale,
+    pricePreview
+  }, state.budgetMode);
   const destination = currentDestinationCoordinates();
   const areaMinutes = Number(area.commuteMinutes?.[state.destination] || 60);
   const apartmentDistance = haversineKm(apartment.lat, apartment.lng, destination.lat, destination.lng);
@@ -1411,6 +1822,8 @@ function scheduleRefresh(delay = 140) {
   state.property.detail = null;
   state.property.error = "";
   state.property.isLoading = false;
+  state.property.agentAnswer = null;
+  state.property.agentError = "";
   state.property.requestId += 1;
   resetRouteState();
   if (state.map) {
@@ -1467,7 +1880,7 @@ function routeModeColor(step = {}) {
   if (key === "bus") return "#386DE8";
   if (key === "walk") return "#64748B";
   if (key === "rail") return "#6D5DFC";
-  return "#03C75A";
+  return "#14B8A6";
 }
 
 function routeModeIcon(mode = "") {
@@ -1681,6 +2094,7 @@ function initializeLeafletMap() {
     routeLayer: L.layerGroup().addTo(instance),
     destinationLayer: L.layerGroup().addTo(instance),
     infrastructureLayer: L.layerGroup().addTo(instance),
+    sunlightLayer: L.layerGroup().addTo(instance),
     markersById: {},
     propertyMarkersById: {},
     fitted: false,
@@ -1767,7 +2181,7 @@ function drawRouteLine(bounds) {
     radius: 7,
     color: "#ffffff",
     weight: 2,
-    fillColor: "#03C75A",
+    fillColor: "#14B8A6",
     fillOpacity: 1
   }).bindTooltip(route.origin.label || "출발지", { direction: "top" }).addTo(state.map.routeLayer);
 
@@ -1819,7 +2233,7 @@ const INFRASTRUCTURE_CATEGORY_META = {
   transport: { label: "교통", className: "transport", source: "soc" },
   convenience: { label: "생활편의", className: "convenience", source: "soc" },
   education: { label: "교육", className: "school", source: "soc" },
-  leisure: { label: "문화·체육", className: "leisure", source: "soc" },
+  leisure: { label: "여가", className: "park", source: "soc" },
   welfare: { label: "복지시설", className: "welfare", source: "soc" },
   hospital: { label: "병원", className: "medical", source: "soc" },
   school: { label: "학교", className: "school", source: "soc" },
@@ -1845,6 +2259,782 @@ function offsetLatLng(lat, lng, distanceMeters = 400, bearingDeg = 0) {
     Math.cos(angularDistance) - Math.sin(lat1) * Math.sin(lat2)
   );
   return [lat2 * 180 / Math.PI, lng2 * 180 / Math.PI];
+}
+
+function currentDayMinutes(date = new Date()) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function clampSunlightMinutes(minutes = currentDayMinutes()) {
+  return Math.round(clamp(Number(minutes) || 0, 0, 1439));
+}
+
+function formatSunlightTime(minutes = currentDayMinutes()) {
+  const clamped = clampSunlightMinutes(minutes);
+  const hour = Math.floor(clamped / 60);
+  const minute = clamped % 60;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function sunlightStateForMinutes(minutes = currentDayMinutes()) {
+  const clamped = clampSunlightMinutes(minutes);
+  const hour = clamped / 60;
+  const daylightRatio = clamp((hour - 6) / 12, 0, 1);
+  const sunBearing = 100 + daylightRatio * 160;
+  const shadowBearing = (sunBearing + 180) % 360;
+  const phase = hour < 10.5 ? "오전 햇빛" : hour < 14.5 ? "정오권 햇빛" : "오후 햇빛";
+  return {
+    hourLabel: formatSunlightTime(clamped),
+    hour,
+    daylight: hour >= 6 && hour <= 18,
+    altitude: hour >= 6 && hour <= 18 ? Math.max(5, Math.sin(daylightRatio * Math.PI) * 62) : 2,
+    phase,
+    sunBearing,
+    shadowBearing,
+    sunSide: sunBearing < 180 ? "동남향" : "서남향",
+    shadeSide: "북향"
+  };
+}
+
+function sunlight3dCenter() {
+  const selected = selectedDetailItem();
+  if (selected?.lat != null && selected?.lng != null) {
+    return { lat: Number(selected.lat), lng: Number(selected.lng) };
+  }
+  const center = state.map?.instance?.getCenter?.();
+  if (center?.lat != null && center?.lng != null) {
+    return { lat: Number(center.lat), lng: Number(center.lng) };
+  }
+  return { lat: SEOUL_CENTER[0], lng: SEOUL_CENTER[1] };
+}
+
+function sunlight3dCandidates(center) {
+  const source = state.results.length ? state.results : state.apartmentCandidates;
+  const candidates = source
+    .filter((item) => Number.isFinite(Number(item?.lat)) && Number.isFinite(Number(item?.lng)))
+    .map((item) => ({
+      item,
+      distance: Math.hypot(
+        (Number(item.lat) - center.lat) * 110540,
+        (Number(item.lng) - center.lng) * 111320 * Math.cos(center.lat * Math.PI / 180)
+      )
+    }))
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, state.results.length ? MATCH_RESULT_LIMIT : SUNLIGHT_3D_BUILDING_LIMIT)
+    .map((entry) => entry.item);
+
+  const selected = selectedDetailItem();
+  if (selected?.id && !candidates.some((item) => item.id === selected.id)) {
+    candidates.unshift(selected);
+  }
+  return candidates.slice(0, state.results.length ? MATCH_RESULT_LIMIT : SUNLIGHT_3D_BUILDING_LIMIT);
+}
+
+function sunlight3dSeed(value) {
+  let seed = 2166136261;
+  const text = String(value || "building");
+  for (let index = 0; index < text.length; index += 1) {
+    seed ^= text.charCodeAt(index);
+    seed = Math.imul(seed, 16777619);
+  }
+  return Math.abs(seed >>> 0);
+}
+
+function sunlight3dRandom(seed, offset = 0) {
+  const value = Math.sin((seed + offset * 1013) * 0.0001) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function sunlight3dEstimatedFloors(item) {
+  const households = Math.max(0, Number(item?.households || 0));
+  const buildings = Math.max(1, Number(item?.buildingCount || 1));
+  if (!households) return 10;
+  return Math.round(clamp(households / buildings / 4.2, 6, 36));
+}
+
+function updateSunlight3dCompass() {
+  if (!nodes.sunlight3dCompass || !sunlight3d.camera || !sunlight3d.cameraTarget || !window.THREE) return;
+  const THREE = window.THREE;
+  sunlight3d.camera.updateMatrixWorld();
+  const origin = sunlight3d.cameraTarget.clone().project(sunlight3d.camera);
+  const north = sunlight3d.cameraTarget.clone().add(new THREE.Vector3(0, 0, -120)).project(sunlight3d.camera);
+  const screenX = north.x - origin.x;
+  const screenY = -(north.y - origin.y);
+  const angle = Math.atan2(screenY, screenX) * 180 / Math.PI + 90;
+  nodes.sunlight3dCompass.querySelector("i")?.style.setProperty("transform", `translateY(-1px) rotate(${angle.toFixed(1)}deg)`);
+}
+
+function updateSunlight3dCamera() {
+  if (!sunlight3d.camera || !sunlight3d.cameraTarget) return;
+  const horizontal = Math.sin(sunlight3d.phi) * sunlight3d.radius;
+  sunlight3d.camera.position.set(
+    sunlight3d.cameraTarget.x + Math.sin(sunlight3d.theta) * horizontal,
+    sunlight3d.cameraTarget.y + Math.cos(sunlight3d.phi) * sunlight3d.radius,
+    sunlight3d.cameraTarget.z + Math.cos(sunlight3d.theta) * horizontal
+  );
+  sunlight3d.camera.lookAt(sunlight3d.cameraTarget);
+  updateSunlight3dCompass();
+}
+
+function resizeSunlight3dRenderer() {
+  if (!sunlight3d.renderer || !sunlight3d.camera || !nodes.sunlight3dCanvas || nodes.sunlight3dCanvas.hidden) return;
+  const width = Math.max(1, nodes.sunlight3dCanvas.clientWidth);
+  const height = Math.max(1, nodes.sunlight3dCanvas.clientHeight);
+  sunlight3d.renderer.setSize(width, height, false);
+  sunlight3d.camera.aspect = width / height;
+  sunlight3d.camera.updateProjectionMatrix();
+  sunlight3d.renderer.render(sunlight3d.scene, sunlight3d.camera);
+}
+
+function renderSunlight3dFrame() {
+  if (!sunlight3d.renderer || !sunlight3d.scene || !sunlight3d.camera) return;
+  sunlight3d.renderer.render(sunlight3d.scene, sunlight3d.camera);
+}
+
+function pickSunlight3dBuilding(event) {
+  if (sunlight3d.moved || !sunlight3d.renderer || !sunlight3d.camera || !sunlight3d.buildingMeshes.length) return;
+  const THREE = window.THREE;
+  const rect = sunlight3d.renderer.domElement.getBoundingClientRect();
+  const pointer = new THREE.Vector2(
+    ((event.clientX - rect.left) / rect.width) * 2 - 1,
+    -((event.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  const raycaster = new THREE.Raycaster();
+  raycaster.setFromCamera(pointer, sunlight3d.camera);
+  const hit = raycaster.intersectObjects(sunlight3d.buildingMeshes, false)[0];
+  const item = hit?.object?.userData?.apartment;
+  if (!item?.id) return;
+  if (state.results.some((result) => result.id === item.id)) {
+    selectApartmentMatch(item.id, { source: "map", openDetailPanel: true });
+  } else {
+    openApartmentFeatureDetail(item);
+  }
+}
+
+function addSunlight3dRoad(parent, width, depth, x, z, rotation = 0) {
+  const THREE = window.THREE;
+  const road = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshStandardMaterial({ color: 0xf4f5f2, roughness: 0.95, metalness: 0 })
+  );
+  road.rotation.x = -Math.PI / 2;
+  road.rotation.z = rotation;
+  road.position.set(x, 0.18, z);
+  road.receiveShadow = true;
+  parent.add(road);
+}
+
+function sunlight3dMercatorPixel(lat, lng, zoom) {
+  const worldSize = 256 * (2 ** zoom);
+  const clampedLat = clamp(Number(lat), -85.05112878, 85.05112878);
+  const sinLat = Math.sin(clampedLat * Math.PI / 180);
+  return {
+    x: (Number(lng) + 180) / 360 * worldSize,
+    y: (0.5 - Math.log((1 + sinLat) / (1 - sinLat)) / (4 * Math.PI)) * worldSize
+  };
+}
+
+function loadSunlight3dMapTile(url) {
+  return new Promise((resolve) => {
+    const tile = new Image();
+    tile.crossOrigin = "anonymous";
+    tile.decoding = "async";
+    tile.onload = () => resolve(tile);
+    tile.onerror = () => resolve(null);
+    tile.src = url;
+  });
+}
+
+async function updateSunlight3dMapTexture(center) {
+  if (!sunlight3d.mapGround || !sunlight3d.renderer || !window.THREE) return;
+  const zoom = 13;
+  const centerKey = `${zoom}:${center.lat.toFixed(3)}:${center.lng.toFixed(3)}`;
+  if (sunlight3d.mapCenterKey === centerKey && sunlight3d.mapGround.material.map) return;
+
+  sunlight3d.mapCenterKey = centerKey;
+  const requestId = ++sunlight3d.mapTextureRequestId;
+  sunlight3d.mapGround.material.map?.dispose?.();
+  sunlight3d.mapGround.material.map = null;
+  sunlight3d.mapGround.material.color.set(0xbfcfc5);
+  sunlight3d.mapGround.material.needsUpdate = true;
+  const canvasSize = 1024;
+  const tileSize = 256;
+  const tileCount = 2 ** zoom;
+  const centerPixel = sunlight3dMercatorPixel(center.lat, center.lng, zoom);
+  const topLeft = {
+    x: centerPixel.x - canvasSize / 2,
+    y: centerPixel.y - canvasSize / 2
+  };
+  const startX = Math.floor(topLeft.x / tileSize);
+  const endX = Math.floor((topLeft.x + canvasSize - 1) / tileSize);
+  const startY = Math.max(0, Math.floor(topLeft.y / tileSize));
+  const endY = Math.min(tileCount - 1, Math.floor((topLeft.y + canvasSize - 1) / tileSize));
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasSize;
+  canvas.height = canvasSize;
+  const context = canvas.getContext("2d");
+  context.fillStyle = "#dce5df";
+  context.fillRect(0, 0, canvasSize, canvasSize);
+
+  sunlight3d.fallbackOverlayGroup.visible = true;
+  const tileJobs = [];
+  for (let tileY = startY; tileY <= endY; tileY += 1) {
+    for (let tileX = startX; tileX <= endX; tileX += 1) {
+      const wrappedX = ((tileX % tileCount) + tileCount) % tileCount;
+      tileJobs.push((async () => {
+        const image = await loadSunlight3dMapTile(`https://tile.openstreetmap.org/${zoom}/${wrappedX}/${tileY}.png`);
+        if (!image) return false;
+        const drawX = Math.round(tileX * tileSize - topLeft.x);
+        const drawY = Math.round(tileY * tileSize - topLeft.y);
+        context.drawImage(image, drawX, drawY, tileSize, tileSize);
+        return true;
+      })());
+    }
+  }
+
+  const tileResults = await Promise.all(tileJobs);
+  if (requestId !== sunlight3d.mapTextureRequestId || !tileResults.some(Boolean)) return;
+
+  const THREE = window.THREE;
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.anisotropy = Math.min(8, sunlight3d.renderer.capabilities.getMaxAnisotropy());
+  texture.needsUpdate = true;
+  sunlight3d.mapGround.material.map?.dispose?.();
+  sunlight3d.mapGround.material.map = texture;
+  sunlight3d.mapGround.material.color.set(0xffffff);
+  sunlight3d.mapGround.material.roughness = 0.92;
+  sunlight3d.mapGround.material.needsUpdate = true;
+
+  const metersPerPixel = 156543.03392 * Math.cos(center.lat * Math.PI / 180) / (2 ** zoom);
+  const groundSize = canvasSize * metersPerPixel / SUNLIGHT_3D_WORLD_SCALE;
+  sunlight3d.mapGround.geometry.dispose();
+  sunlight3d.mapGround.geometry = new THREE.PlaneGeometry(groundSize, groundSize);
+  sunlight3d.fallbackOverlayGroup.visible = false;
+  renderSunlight3dFrame();
+}
+
+function initializeSunlight3d() {
+  if (sunlight3d.initialized) return true;
+  if (sunlight3d.failed || !nodes.sunlight3dCanvas) return false;
+  if (!window.THREE) return false;
+
+  try {
+    const THREE = window.THREE;
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.9;
+    renderer.domElement.setAttribute("aria-label", "3D 햇빛 분포 도시");
+    renderer.domElement.tabIndex = 0;
+    nodes.sunlight3dCanvas.append(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0xdbe8e5);
+    scene.fog = new THREE.Fog(0xdbe8e5, 620, 1180);
+
+    const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 3000);
+    const cameraTarget = new THREE.Vector3(0, 0, 0);
+    const hemisphereLight = new THREE.HemisphereLight(0xfff7d6, 0x64748b, 1.6);
+    scene.add(hemisphereLight);
+
+    const sunLight = new THREE.DirectionalLight(0xfff1b8, 3.2);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.camera.left = -560;
+    sunLight.shadow.camera.right = 560;
+    sunLight.shadow.camera.top = 560;
+    sunLight.shadow.camera.bottom = -560;
+    sunLight.shadow.camera.near = 1;
+    sunLight.shadow.camera.far = 1600;
+    sunLight.shadow.bias = -0.0005;
+    scene.add(sunLight);
+    scene.add(sunLight.target);
+
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(1120, 1120),
+      new THREE.MeshStandardMaterial({ color: 0xbfcfc5, roughness: 1, metalness: 0 })
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const fallbackOverlayGroup = new THREE.Group();
+    const river = new THREE.Mesh(
+      new THREE.PlaneGeometry(1200, 92),
+      new THREE.MeshStandardMaterial({ color: 0x82c8d2, roughness: 0.38, metalness: 0.06 })
+    );
+    river.rotation.x = -Math.PI / 2;
+    river.rotation.z = -0.08;
+    river.position.set(30, 0.25, 310);
+    river.receiveShadow = true;
+    fallbackOverlayGroup.add(river);
+
+    for (let offset = -420; offset <= 420; offset += 70) {
+      addSunlight3dRoad(fallbackOverlayGroup, 1040, offset % 140 === 0 ? 10 : 6, 0, offset, 0);
+      addSunlight3dRoad(fallbackOverlayGroup, 1040, offset % 140 === 0 ? 10 : 6, offset, 0, Math.PI / 2);
+    }
+    addSunlight3dRoad(fallbackOverlayGroup, 1120, 12, 0, 0, Math.PI * 0.19);
+    addSunlight3dRoad(fallbackOverlayGroup, 1120, 8, 0, -40, -Math.PI * 0.27);
+    scene.add(fallbackOverlayGroup);
+
+    sunlight3d.renderer = renderer;
+    sunlight3d.scene = scene;
+    sunlight3d.camera = camera;
+    sunlight3d.cameraTarget = cameraTarget;
+    sunlight3d.sunLight = sunLight;
+    sunlight3d.hemisphereLight = hemisphereLight;
+    sunlight3d.mapGround = ground;
+    sunlight3d.fallbackOverlayGroup = fallbackOverlayGroup;
+    sunlight3d.initialized = true;
+    updateSunlight3dCamera();
+
+    renderer.domElement.addEventListener("pointerdown", (event) => {
+      sunlight3d.dragging = true;
+      sunlight3d.moved = false;
+      sunlight3d.pointerX = event.clientX;
+      sunlight3d.pointerY = event.clientY;
+      renderer.domElement.setPointerCapture?.(event.pointerId);
+    });
+    renderer.domElement.addEventListener("pointermove", (event) => {
+      if (!sunlight3d.dragging) return;
+      const deltaX = event.clientX - sunlight3d.pointerX;
+      const deltaY = event.clientY - sunlight3d.pointerY;
+      if (Math.abs(deltaX) + Math.abs(deltaY) > 2) sunlight3d.moved = true;
+      sunlight3d.pointerX = event.clientX;
+      sunlight3d.pointerY = event.clientY;
+      sunlight3d.theta -= deltaX * 0.006;
+      sunlight3d.phi = clamp(sunlight3d.phi + deltaY * 0.005, 0.32, 1.42);
+      updateSunlight3dCamera();
+      renderSunlight3dFrame();
+    });
+    renderer.domElement.addEventListener("pointerup", (event) => {
+      const shouldPick = !sunlight3d.moved;
+      sunlight3d.dragging = false;
+      renderer.domElement.releasePointerCapture?.(event.pointerId);
+      if (shouldPick) pickSunlight3dBuilding(event);
+    });
+    renderer.domElement.addEventListener("pointercancel", () => {
+      sunlight3d.dragging = false;
+    });
+    renderer.domElement.addEventListener("wheel", (event) => {
+      event.preventDefault();
+      sunlight3d.radius = clamp(sunlight3d.radius * (event.deltaY > 0 ? 1.09 : 0.91), 180, 1050);
+      updateSunlight3dCamera();
+      renderSunlight3dFrame();
+    }, { passive: false });
+
+    if (window.ResizeObserver) {
+      sunlight3d.resizeObserver = new ResizeObserver(resizeSunlight3dRenderer);
+      sunlight3d.resizeObserver.observe(nodes.sunlight3dCanvas);
+    }
+    resizeSunlight3dRenderer();
+    return true;
+  } catch (error) {
+    sunlight3d.failed = true;
+    console.warn("3D sunlight view unavailable", error);
+    return false;
+  }
+}
+
+window.addEventListener("fithome-three-ready", () => {
+  if (state.mapMode === "sunlight") syncSunlight3dView({ rebuild: true });
+});
+
+function disposeSunlight3dCity() {
+  if (!sunlight3d.cityGroup || !sunlight3d.scene) return;
+  sunlight3d.cityGroup.traverse((object) => {
+    object.geometry?.dispose?.();
+    if (Array.isArray(object.material)) {
+      object.material.forEach((material) => {
+        if (material.map && material.map !== sunlight3d.windowTexture) material.map.dispose?.();
+        material.dispose?.();
+      });
+    } else {
+      if (object.material?.map && object.material.map !== sunlight3d.windowTexture) object.material.map.dispose?.();
+      object.material?.dispose?.();
+    }
+  });
+  sunlight3d.scene.remove(sunlight3d.cityGroup);
+  sunlight3d.cityGroup = null;
+  sunlight3d.buildingMeshes = [];
+  sunlight3d.windowFacades = [];
+}
+
+function createSunlight3dApartmentLabel(item, rank, isSelected, x, z, height) {
+  const THREE = window.THREE;
+  const prefix = rank ? `${rank}. ` : "";
+  let name = String(item?.name || "아파트");
+  const measureCanvas = document.createElement("canvas");
+  const measureContext = measureCanvas.getContext("2d");
+  measureContext.font = "800 36px sans-serif";
+  while (name.length > 4 && measureContext.measureText(`${prefix}${name}`).width > 570) {
+    name = `${name.slice(0, -2)}…`;
+  }
+  const labelText = `${prefix}${name}`;
+  const canvasWidth = Math.round(clamp(measureContext.measureText(labelText).width + 62, 220, 640));
+  const canvas = document.createElement("canvas");
+  canvas.width = canvasWidth;
+  canvas.height = 112;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = isSelected ? "rgba(250, 204, 21, 0.96)" : "rgba(15, 23, 42, 0.9)";
+  context.beginPath();
+  if (typeof context.roundRect === "function") {
+    context.roundRect(8, 8, canvas.width - 16, canvas.height - 16, 24);
+  } else {
+    context.rect(8, 8, canvas.width - 16, canvas.height - 16);
+  }
+  context.fill();
+  context.strokeStyle = isSelected ? "#ff8a00" : "rgba(255, 255, 255, 0.8)";
+  context.lineWidth = 5;
+  context.stroke();
+
+  context.fillStyle = isSelected ? "#111827" : "#ffffff";
+  context.font = "800 36px sans-serif";
+  context.textBaseline = "middle";
+  context.fillText(labelText, 30, canvas.height / 2 + 1);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.needsUpdate = true;
+  const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, depthWrite: false });
+  const label = new THREE.Sprite(material);
+  label.position.set(x, height + 18, z);
+  label.scale.set(clamp(canvasWidth * 0.1375, 34, 88), 15.4, 1);
+  label.renderOrder = 20;
+  label.userData.apartment = item;
+  return label;
+}
+
+function sunlight3dWindowTexture() {
+  if (sunlight3d.windowTexture) return sunlight3d.windowTexture;
+  const THREE = window.THREE;
+  const canvas = document.createElement("canvas");
+  canvas.width = 128;
+  canvas.height = 256;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "rgba(255, 255, 255, 0.96)";
+  const columns = 4;
+  const rows = 12;
+  const windowWidth = 19;
+  const windowHeight = 12;
+  const gapX = 9;
+  const gapY = 8;
+  const startX = (canvas.width - (columns * windowWidth + (columns - 1) * gapX)) / 2;
+  const startY = 10;
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      context.fillRect(
+        startX + column * (windowWidth + gapX),
+        startY + row * (windowHeight + gapY),
+        windowWidth,
+        windowHeight
+      );
+    }
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.magFilter = THREE.NearestFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  sunlight3d.windowTexture = texture;
+  return texture;
+}
+
+function addSunlight3dWindows(building, width, height, depth, rotation, isSelected) {
+  const THREE = window.THREE;
+  const rotationDegrees = rotation * 180 / Math.PI;
+  const facades = [
+    { width, x: 0, z: depth / 2 + 0.08, rotationY: 0, baseBearing: 180 },
+    { width, x: 0, z: -depth / 2 - 0.08, rotationY: Math.PI, baseBearing: 0 },
+    { width: depth, x: width / 2 + 0.08, z: 0, rotationY: Math.PI / 2, baseBearing: 90 },
+    { width: depth, x: -width / 2 - 0.08, z: 0, rotationY: -Math.PI / 2, baseBearing: 270 }
+  ];
+  facades.forEach((facade) => {
+    const material = new THREE.MeshBasicMaterial({
+      map: sunlight3dWindowTexture(),
+      color: isSelected ? 0xff8a00 : 0x64748b,
+      transparent: true,
+      opacity: 0.88,
+      depthWrite: false,
+      side: THREE.DoubleSide
+    });
+    const windows = new THREE.Mesh(
+      new THREE.PlaneGeometry(Math.max(3.5, facade.width * 0.78), Math.max(7, height * 0.82)),
+      material
+    );
+    windows.position.set(facade.x, 0, facade.z);
+    windows.rotation.y = facade.rotationY;
+    windows.renderOrder = 4;
+    building.add(windows);
+    sunlight3d.windowFacades.push({
+      material,
+      bearing: (facade.baseBearing - rotationDegrees + 360) % 360,
+      isSelected
+    });
+  });
+}
+
+function rebuildSunlight3dCity(center, candidates) {
+  const THREE = window.THREE;
+  disposeSunlight3dCity();
+  const group = new THREE.Group();
+  const metersPerLng = 111320 * Math.cos(center.lat * Math.PI / 180);
+  const resultIds = new Set(state.results.map((item) => item.id));
+  const materials = [0xb8c2c8, 0xc9c3b7, 0xaebcc1, 0xd1cec5].map((color) => new THREE.MeshStandardMaterial({
+    color,
+    roughness: 0.82,
+    metalness: 0.02
+  }));
+  const resultMaterial = new THREE.MeshStandardMaterial({ color: 0x16a394, roughness: 0.72, metalness: 0.02 });
+  const selectedMaterial = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.62, metalness: 0.03 });
+
+  candidates.forEach((item, itemIndex) => {
+    const baseX = (Number(item.lng) - center.lng) * metersPerLng / SUNLIGHT_3D_WORLD_SCALE;
+    const baseZ = -(Number(item.lat) - center.lat) * 110540 / SUNLIGHT_3D_WORLD_SCALE;
+    if (Math.abs(baseX) > 510 || Math.abs(baseZ) > 510) return;
+
+    const seed = sunlight3dSeed(item.id || item.name || itemIndex);
+    const sourceBuildingCount = Math.max(1, Number(item.buildingCount || 1));
+    const blockCount = Math.round(clamp(sourceBuildingCount, 1, state.results.length ? 4 : 2));
+    const floors = sunlight3dEstimatedFloors(item);
+    const isSelected = item.id === state.selectedId;
+    const material = isSelected
+      ? selectedMaterial
+      : resultIds.has(item.id)
+        ? resultMaterial
+        : materials[seed % materials.length];
+    let maxHeight = 0;
+
+    for (let blockIndex = 0; blockIndex < blockCount; blockIndex += 1) {
+      const angle = sunlight3dRandom(seed, blockIndex + 1) * Math.PI * 2;
+      const spread = blockCount === 1 ? 0 : 8 + sunlight3dRandom(seed, blockIndex + 3) * 12;
+      const width = 7 + sunlight3dRandom(seed, blockIndex + 5) * 7;
+      const depth = 7 + sunlight3dRandom(seed, blockIndex + 7) * 8;
+      const height = Math.max(9, floors * (1.25 + sunlight3dRandom(seed, blockIndex + 9) * 0.35));
+      maxHeight = Math.max(maxHeight, height);
+      const geometry = new THREE.BoxGeometry(width, height, depth);
+      const building = new THREE.Mesh(geometry, material);
+      building.position.set(baseX + Math.cos(angle) * spread, height / 2, baseZ + Math.sin(angle) * spread);
+      const buildingRotation = angle * 0.5;
+      building.rotation.y = buildingRotation;
+      building.castShadow = true;
+      building.receiveShadow = true;
+      building.userData.apartment = item;
+      addSunlight3dWindows(building, width, height, depth, buildingRotation, isSelected);
+      group.add(building);
+      sunlight3d.buildingMeshes.push(building);
+    }
+
+    const rank = state.results.findIndex((result) => result.id === item.id) + 1;
+    const label = createSunlight3dApartmentLabel(item, rank, isSelected, baseX, baseZ, maxHeight);
+    group.add(label);
+    sunlight3d.buildingMeshes.push(label);
+
+    if (isSelected) {
+      const marker = new THREE.Mesh(
+        new THREE.RingGeometry(16, 21, 48),
+        new THREE.MeshBasicMaterial({ color: 0xff8a00, side: THREE.DoubleSide, transparent: true, opacity: 0.94 })
+      );
+      marker.rotation.x = -Math.PI / 2;
+      marker.position.set(baseX, 0.55, baseZ);
+      group.add(marker);
+    }
+  });
+
+  sunlight3d.cityGroup = group;
+  sunlight3d.scene.add(group);
+  void updateSunlight3dMapTexture(center);
+}
+
+function updateSunlight3dLighting() {
+  if (!sunlight3d.initialized) return;
+  const THREE = window.THREE;
+  const sunlight = sunlightStateForMinutes(state.sunlightMinutes);
+  const altitude = sunlight.altitude * Math.PI / 180;
+  const bearing = sunlight.sunBearing * Math.PI / 180;
+  const sunDistance = 720;
+  sunlight3d.sunLight.position.set(
+    Math.sin(bearing) * Math.cos(altitude) * sunDistance,
+    Math.sin(altitude) * sunDistance,
+    -Math.cos(bearing) * Math.cos(altitude) * sunDistance
+  );
+  sunlight3d.sunLight.target.position.set(0, 0, 0);
+  sunlight3d.sunLight.target.updateMatrixWorld();
+
+  const daylightStrength = sunlight.daylight ? Math.max(0.18, Math.sin(altitude)) : 0;
+  sunlight3d.sunLight.intensity = sunlight.daylight ? 0.95 + daylightStrength * 2.2 : 0.04;
+  sunlight3d.hemisphereLight.intensity = sunlight.daylight ? 0.72 + daylightStrength * 0.62 : 0.22;
+  const skyColor = new THREE.Color(sunlight.daylight ? 0xdbe9e7 : 0x18202f);
+  sunlight3d.scene.background = skyColor;
+  sunlight3d.scene.fog.color.copy(skyColor);
+
+  const coolWindow = new THREE.Color(0x2563eb);
+  const warmWindow = new THREE.Color(0xffc928);
+  sunlight3d.windowFacades.forEach((facade) => {
+    const angleDifference = ((facade.bearing - sunlight.sunBearing + 540) % 360) - 180;
+    const exposure = sunlight.daylight ? Math.max(0, Math.cos(angleDifference * Math.PI / 180)) : 0;
+    facade.material.color.copy(coolWindow).lerp(warmWindow, exposure);
+    facade.material.opacity = sunlight.daylight ? 0.72 + exposure * 0.28 : 0.55;
+  });
+
+  renderSunlight3dFrame();
+}
+
+function syncSunlight3dView({ rebuild = false } = {}) {
+  const active = state.mapMode === "sunlight";
+  if (!nodes.sunlight3dCanvas || !nodes.mapCanvas) return;
+  if (!active) {
+    nodes.sunlight3dCanvas.hidden = true;
+    nodes.mapCanvas.classList.remove("is-hidden-for-3d");
+    window.setTimeout(() => state.map?.instance?.invalidateSize?.({ pan: false }), 0);
+    return;
+  }
+
+  dismissAgentHint();
+  nodes.sunlight3dCanvas.hidden = false;
+  nodes.mapCanvas.classList.add("is-hidden-for-3d");
+  if (!window.THREE && !sunlight3d.failed) {
+    nodes.sunlight3dCanvas.hidden = true;
+    nodes.mapCanvas.classList.remove("is-hidden-for-3d");
+    return;
+  }
+  if (!initializeSunlight3d()) {
+    nodes.sunlight3dCanvas.hidden = true;
+    nodes.mapCanvas.classList.remove("is-hidden-for-3d");
+    return;
+  }
+
+  const center = sunlight3dCenter();
+  const candidates = sunlight3dCandidates(center);
+  const signature = [
+    center.lat.toFixed(3),
+    center.lng.toFixed(3),
+    state.selectedId || "",
+    candidates.map((item) => item.id).join(",")
+  ].join("|");
+  if (rebuild || signature !== sunlight3d.sceneSignature) {
+    sunlight3d.sceneSignature = signature;
+    sunlight3d.radius = selectedDetailItem() ? 300 : 620;
+    updateSunlight3dCamera();
+    rebuildSunlight3dCity(center, candidates);
+  }
+  updateSunlight3dLighting();
+  window.requestAnimationFrame(resizeSunlight3dRenderer);
+}
+
+function renderSunlightOverlay(visibleResults = []) {
+  if (!state.map?.sunlightLayer || !window.L) return;
+  state.map.sunlightLayer.clearLayers();
+  const active = state.mapMode === "sunlight" && canUseMapModeControls();
+  nodes.mapCanvas?.classList.toggle("is-sunlight-map", active);
+  if (!active) return;
+
+  const sunlight = sunlightStateForMinutes(state.sunlightMinutes);
+  const candidates = (visibleResults.length ? visibleResults : state.results).slice(0, MATCH_RESULT_LIMIT);
+  const selected = candidates.find((item) => item.id === state.selectedId) || selectedMatchResult();
+  const targets = selected
+    ? [selected, ...candidates.filter((item) => item.id !== selected.id)].slice(0, MATCH_RESULT_LIMIT)
+    : candidates.slice(0, MATCH_RESULT_LIMIT);
+
+  targets.forEach((item, index) => {
+    if (item?.lat == null || item?.lng == null) return;
+    const lat = Number(item.lat);
+    const lng = Number(item.lng);
+    const isSelected = item.id === state.selectedId;
+    const distance = isSelected ? 210 : 150;
+    const shadeEnd = offsetLatLng(lat, lng, distance, sunlight.shadowBearing);
+    const shadeLeft = offsetLatLng(lat, lng, isSelected ? 42 : 30, sunlight.shadowBearing - 90);
+    const shadeRight = offsetLatLng(lat, lng, isSelected ? 42 : 30, sunlight.shadowBearing + 90);
+    const shadeTipLeft = offsetLatLng(shadeEnd[0], shadeEnd[1], isSelected ? 58 : 42, sunlight.shadowBearing - 90);
+    const shadeTipRight = offsetLatLng(shadeEnd[0], shadeEnd[1], isSelected ? 58 : 42, sunlight.shadowBearing + 90);
+
+    L.polygon([shadeLeft, shadeRight, shadeTipRight, shadeTipLeft], {
+      className: `sunlight-shadow-shape${isSelected ? " is-selected" : ""}`,
+      fillColor: "#334155",
+      stroke: false,
+      fillOpacity: isSelected ? 0.42 : 0.28,
+      interactive: false
+    }).addTo(state.map.sunlightLayer);
+
+    L.circle([lat, lng], {
+      radius: isSelected ? 75 : 52,
+      className: `sunlight-sun-zone${isSelected ? " is-selected" : ""}`,
+      fillColor: "#facc15",
+      stroke: false,
+      fillOpacity: isSelected ? 0.28 : 0.16,
+      interactive: false
+    }).addTo(state.map.sunlightLayer);
+
+  });
+
+  const sourcePoint = selected || targets[0];
+  if (sourcePoint?.lat != null && sourcePoint?.lng != null) {
+    const sunPoint = offsetLatLng(Number(sourcePoint.lat), Number(sourcePoint.lng), 260, sunlight.sunBearing);
+    L.polyline([[sourcePoint.lat, sourcePoint.lng], sunPoint], {
+      className: "sunlight-direction-line",
+      color: "#f59e0b",
+      weight: 3,
+      interactive: false
+    }).addTo(state.map.sunlightLayer);
+  }
+
+}
+
+function canUseMapModeControls() {
+  return Boolean(state.hasMatched && state.results.length);
+}
+
+function syncMapModeControls() {
+  const available = canUseMapModeControls();
+  if (!available && state.mapMode !== "normal") {
+    state.mapMode = "normal";
+    renderSunlightOverlay(mapResultsForCurrentView());
+    syncSunlight3dView();
+  }
+  if (nodes.mapModeControl) nodes.mapModeControl.hidden = !available;
+  nodes.mapModeButtons?.forEach((button) => {
+    const active = button.dataset.mapMode === state.mapMode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+    button.disabled = !available;
+  });
+  syncSunlightTimeControls();
+}
+
+function syncSunlightTimeControls() {
+  const visible = state.mapMode === "sunlight" && canUseMapModeControls();
+  if (nodes.sunlightTimeControl) nodes.sunlightTimeControl.hidden = !visible;
+  if (nodes.sunlightTimeInput) nodes.sunlightTimeInput.value = String(clampSunlightMinutes(state.sunlightMinutes));
+  if (nodes.sunlightTimeOutput) nodes.sunlightTimeOutput.textContent = formatSunlightTime(state.sunlightMinutes);
+}
+
+function setMapMode(mode) {
+  if (!MAP_MODES.includes(mode) || state.mapMode === mode) return;
+  if (mode === "sunlight" && !canUseMapModeControls()) return;
+  state.mapMode = mode;
+  if (mode === "sunlight") {
+    sunlight3d.theta = 0;
+    sunlight3d.phi = Math.PI * 0.31;
+    updateSunlight3dCamera();
+  }
+  syncMapModeControls();
+  renderSunlightOverlay(mapResultsForCurrentView());
+  syncSunlight3dView({ rebuild: mode === "sunlight" });
+}
+
+function setSunlightMinutes(minutes, { rerender = true } = {}) {
+  state.sunlightMinutes = clampSunlightMinutes(minutes);
+  syncSunlightTimeControls();
+  if (rerender) {
+    renderSunlightOverlay(mapResultsForCurrentView());
+    syncSunlight3dView();
+  }
 }
 
 function liveInfrastructureStateFor(selected) {
@@ -2169,9 +3359,11 @@ function infrastructureSamplesFor(selected, category) {
     if (liveAir) {
       return [{
         category: "air",
-        name: liveAir.nearest?.name || `${liveAir.station || "서울시"} 대기측정소`,
+        name: liveAir.nearest?.name || `${liveAir.station || districtNameForAir(selected)} 대기측정소`,
         description: airDescription(liveAir),
-        distanceMeters: 900
+        lat: liveAir.nearest?.lat,
+        lng: liveAir.nearest?.lng,
+        distanceMeters: liveAir.nearest?.distanceMeters ?? 900
       }];
     }
     return [{
@@ -2217,7 +3409,7 @@ function infrastructureIconSvg(category) {
     transport: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h12a2 2 0 0 1 2 2v9.5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z"/><path d="M7 8h10"/><path d="M8 17.5 6.5 20"/><path d="M16 17.5 17.5 20"/><circle cx="8" cy="14" r="1"/><circle cx="16" cy="14" r="1"/></svg>`,
     convenience: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9h14l-1 11H6L5 9Z"/><path d="M8 9a4 4 0 0 1 8 0"/><path d="M9 13h6"/></svg>`,
     park: `<svg class="park-tree-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="tree-trunk" d="M10 15h4v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-5Z"/><path class="tree-leaf" d="M12 3 5.8 9.2a1 1 0 0 0 .7 1.8H8l-3.2 3.2a1 1 0 0 0 .7 1.8h13a1 1 0 0 0 .7-1.8L16 11h1.5a1 1 0 0 0 .7-1.8L12 3Z"/></svg>`,
-    leisure: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16"/><path d="M6 20V9l6-4 6 4v11"/><path d="M9 20v-5h6v5"/><path d="M9 11h1"/><path d="M14 11h1"/></svg>`,
+    leisure: `<svg class="park-tree-icon" viewBox="0 0 24 24" aria-hidden="true"><path class="tree-trunk" d="M10 15h4v5a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-5Z"/><path class="tree-leaf" d="M12 3 5.8 9.2a1 1 0 0 0 .7 1.8H8l-3.2 3.2a1 1 0 0 0 .7 1.8h13a1 1 0 0 0 .7-1.8L16 11h1.5a1 1 0 0 0 .7-1.8L12 3Z"/></svg>`,
     welfare: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/><path d="M9 11h6"/></svg>`,
     police: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5.5 5.5v5.2c0 4.1 2.6 7.8 6.5 10.3 3.9-2.5 6.5-6.2 6.5-10.3V5.5L12 3Z"/><path d="M9 11.2h6"/><path d="M12 8.2v6"/></svg>`,
     cctv: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 9 10.5-3 1.5 5.2-10.5 3L4 9Z"/><path d="m14.8 8.5 4.2-1.2 1 3.5-4.2 1.2"/><path d="M9.5 14.5 8 20"/><path d="M6 20h6"/></svg>`,
@@ -2324,6 +3516,7 @@ function renderLeafletMap() {
   renderDestinationMarker(bounds);
   renderInfrastructureMarkers(bounds);
   drawRouteLine(bounds);
+  renderSunlightOverlay(visibleResults);
   if (bounds.length && !state.map.fitted) {
     const destinationLocation = selectedDestinationLocation();
     const routePanelFocused = isRouteSubpanelActive() && state.route.result;
@@ -2797,12 +3990,14 @@ function renderMap() {
   updateMapScaleUI();
   if (!state.neighborhoods.length) {
     nodes.mapCanvas.innerHTML = `<div class="map-empty">데이터 로딩 중</div>`;
+    syncSunlight3dView();
     return;
   }
 
   if (!renderLeafletMap()) {
     renderFallbackMap();
   }
+  syncSunlight3dView();
 }
 
 function renderMapSidebar() {
@@ -2822,7 +4017,7 @@ function renderDetailSubpanelState() {
   nodes.detailSubpanel.hidden = !open;
   nodes.detailSubpanel.setAttribute("aria-hidden", open ? "false" : "true");
 
-  const activeTab = ["matching", "apartment", "route", "infrastructure", "jeonseRisk"].includes(state.detailSubpanelTab)
+  const activeTab = ["matching", "apartment", "route", "infrastructure", "jeonseRisk", "listing"].includes(state.detailSubpanelTab)
     ? state.detailSubpanelTab
     : "matching";
   nodes.detailSubpanel.querySelectorAll("[data-subpanel-tab]").forEach((button) => {
@@ -2878,41 +4073,6 @@ function resetMapToSeoul() {
     duration: 0.65
   });
   state.map.fitted = true;
-}
-
-// 선택한 섹션은 재렌더링과 단지 전환에도 유지되도록 전역으로 들고 간다.
-let propertySectionActive = "basic";
-
-function renderPropertySections(sections) {
-  const active = sections.find((item) => item.key === propertySectionActive) || sections[0];
-  const badge = (item) =>
-    item.badge
-      ? `<span class="section-badge${item.badgeTone ? ` tone-${escapeHtml(item.badgeTone)}` : ""}">${escapeHtml(item.badge)}</span>`
-      : "";
-  return `
-    <div class="property-workspace">
-      <nav class="property-master" role="tablist" aria-label="아파트 정보 항목">
-        ${sections.map((item) => `
-          <button
-            type="button"
-            role="tab"
-            class="property-master-item${item.key === active.key ? " is-active" : ""}"
-            aria-selected="${item.key === active.key}"
-            data-property-section="${escapeHtml(item.key)}">
-            <span class="pm-title">${escapeHtml(item.title)}</span>
-            ${badge(item)}
-          </button>
-        `).join("")}
-      </nav>
-      <section class="property-detail-pane" role="tabpanel" aria-label="${escapeHtml(active.title)}">
-        <div class="property-pane-head">
-          <h4>${escapeHtml(active.title)}</h4>
-          ${badge(active)}
-        </div>
-        <div class="property-card-body">${active.body}</div>
-      </section>
-    </div>
-  `;
 }
 
 function propertyMetric(label, value, note = "") {
@@ -2973,16 +4133,6 @@ function pricePerPyeongText(record) {
   return `평당 ${formatMoney10k(amount10k / pyeong)}`;
 }
 
-function formatChartMoney10k(value) {
-  const amount = Number(value || 0);
-  if (!amount) return "0";
-  if (amount >= 10000) {
-    const eok = amount / 10000;
-    return `${Number.isInteger(eok) ? eok.toFixed(0) : eok.toFixed(1)}억`;
-  }
-  return `${formatNumber(Math.round(amount))}만`;
-}
-
 function statusText(status) {
   if (status === "high") return "집중 확인";
   if (status === "warning") return "주의";
@@ -2990,281 +4140,199 @@ function statusText(status) {
   return "양호";
 }
 
-function activeTrendMode() {
-  return state.property.trendMode || (state.budgetMode === "sale" ? "sale" : "rent");
-}
-
-function renderTrendChart(rows, detail = null) {
+function renderTrendChart(rows) {
   const liveRows = Array.isArray(rows) ? rows.filter((row) => row.sourceMode !== "trend_estimate") : [];
-  const indexedRows = liveRows.map((row, index) => ({ ...row, index }));
-  const saleData = indexedRows
-    .map((row) => ({ month: row.month || "", value: Number(row.sale10k || 0), volume: Number(row.saleVolume || 0), index: row.index }))
+  const saleData = liveRows
+    .map((row) => ({ month: row.month || "", value: Number(row.sale10k || 0), volume: Number(row.saleVolume || 0) }))
     .filter((row) => row.month && row.value > 0);
-  const jeonseData = indexedRows
-    .map((row) => ({ month: row.month || "", value: Number(row.jeonse10k || 0), volume: Number(row.jeonseVolume || 0), index: row.index }))
+  const jeonseData = liveRows
+    .map((row) => ({ month: row.month || "", value: Number(row.jeonse10k || 0), volume: Number(row.jeonseVolume || 0) }))
     .filter((row) => row.month && row.value > 0);
-  const monthlyData = indexedRows
-    .map((row) => ({ month: row.month || "", value: Number(row.monthlyRent10k || 0), volume: Number(row.monthlyRentVolume || 0), index: row.index }))
-    .filter((row) => row.month && row.value > 0);
-  const trendMode = activeTrendMode();
-  const rentTrendKind = jeonseData.length >= 2 ? "jeonse" : "monthly";
-  const primaryData = trendMode === "sale" ? saleData : (rentTrendKind === "jeonse" ? jeonseData : monthlyData);
-  const pointCount = primaryData.length;
+  const pointCount = saleData.length + jeonseData.length;
   if (liveRows.length < 2 || pointCount < 2) {
     return `<div class="chart-empty">실거래 기반 월별 추이 정보 없음</div>`;
   }
-  const values = primaryData.map((row) => row.value);
-  const min = Math.max(0, Math.min(...values) * 0.72);
-  const max = Math.max(...values) * 1.12;
-  const width = 440;
-  const height = 255;
-  const left = 46;
-  const right = 18;
+  const values = [...saleData, ...jeonseData].map((row) => row.value);
+  const min = Math.min(...values) * 0.96;
+  const max = Math.max(...values) * 1.04;
+  const width = 420;
+  const height = 170;
+  const left = 34;
+  const right = 14;
   const top = 18;
-  const bottom = 70;
-  const volumeTop = height - 44;
-  const volumeBottom = height - 18;
+  const bottom = 32;
   const usableWidth = width - left - right;
   const usableHeight = height - top - bottom;
   const y = (value) => top + usableHeight - ((Number(value) - min) / (max - min || 1)) * usableHeight;
   const x = (index) => left + (index / (liveRows.length - 1)) * usableWidth;
-  const recentAverage = primaryData.length ? primaryData[primaryData.length - 1].value : 0;
-  const summaryLabel = trendMode === "sale"
-    ? "최근 매매 월별 평균"
-    : rentTrendKind === "jeonse"
-      ? "최근 전세 월별 평균"
-      : "최근 월세 월별 평균";
-  const averageLine = primaryData.length ? primaryData.reduce((sum, row) => sum + row.value, 0) / primaryData.length : 0;
-  const highestPoint = primaryData.length ? primaryData.reduce((best, row) => (row.value > best.value ? row : best), primaryData[0]) : null;
-  const lowestPoint = primaryData.length ? primaryData.reduce((best, row) => (row.value < best.value ? row : best), primaryData[0]) : null;
-  const maxVolume = Math.max(...indexedRows.map((row) => Number(row.volume || 0)), 1);
-  const ticks = Array.from({ length: 5 }, (_, index) => min + ((max - min) / 4) * index).reverse();
-  const monthLabel = (month) => {
-    const value = String(month || "");
-    if (!value.includes(".")) return value;
-    const [year, monthPart] = value.split(".");
-    return `'${year.slice(-2)}.${monthPart}`;
-  };
-  const linePoints = primaryData.map((row) => `${x(row.index).toFixed(1)},${y(row.value).toFixed(1)}`).join(" ");
-  const primaryDots = primaryData.map((row) => `
-    <circle class="trend-primary-point" cx="${x(row.index).toFixed(1)}" cy="${y(row.value).toFixed(1)}" r="3.8">
-      <title>${escapeHtml(`${row.month} ${trendMode === "sale" ? "매매" : "전월세"} ${formatMoney10k(row.value)}${row.volume ? ` · ${row.volume}건` : ""}`)}</title>
+  const indexedRows = liveRows.map((row, index) => ({ ...row, index }));
+  const pointFor = (row) => `${x(row.index).toFixed(1)},${y(row.value).toFixed(1)}`;
+  const seriesRows = (field, volumeField) => indexedRows
+    .map((row) => ({
+      month: row.month || "",
+      value: Number(row[field] || 0),
+      volume: Number(row[volumeField] || 0),
+      index: row.index
+    }))
+    .filter((row) => row.month && row.value > 0);
+  const saleRows = seriesRows("sale10k", "saleVolume");
+  const jeonseRows = seriesRows("jeonse10k", "jeonseVolume");
+  const salePoints = saleRows.map(pointFor).join(" ");
+  const jeonsePoints = jeonseRows.map(pointFor).join(" ");
+  const pointSvg = (rows, className, label) => rows.map((row) => `
+    <circle class="${className}-point" cx="${x(row.index).toFixed(1)}" cy="${y(row.value).toFixed(1)}" r="3.2">
+      <title>${escapeHtml(`${row.month} ${label} ${formatMoney10k(row.value)}${row.volume ? ` · ${row.volume}건` : ""}`)}</title>
     </circle>
   `).join("");
-  const volumeBars = indexedRows.map((row) => {
-    const volume = Number(row.volume || 0);
-    const barHeight = Math.max(2, (volume / maxVolume) * (volumeBottom - volumeTop));
-    const barWidth = Math.max(3, Math.min(8, usableWidth / Math.max(18, liveRows.length * 2)));
-    return `
-      <rect class="volume-bar" x="${(x(row.index) - barWidth / 2).toFixed(1)}" y="${(volumeBottom - barHeight).toFixed(1)}" width="${barWidth.toFixed(1)}" height="${barHeight.toFixed(1)}" rx="1.5">
-        <title>${escapeHtml(`${row.month} 거래량 ${formatNumber(volume)}건`)}</title>
-      </rect>
-    `;
-  }).join("");
-  const latestX = primaryData.length ? x(primaryData[primaryData.length - 1].index) : 0;
-  const latestGuide = primaryData.length ? `
-    <rect class="trend-latest-zone" x="${latestX.toFixed(1)}" y="${top}" width="${Math.max(0, width - right - latestX).toFixed(1)}" height="${(volumeTop - top).toFixed(1)}" />
-    <line class="trend-latest-line" x1="${latestX.toFixed(1)}" y1="${top}" x2="${latestX.toFixed(1)}" y2="${volumeBottom}" />
-  ` : "";
-  const gridLines = ticks.map((tick) => `
-    <g>
-      <line class="trend-grid-line" x1="${left}" y1="${y(tick).toFixed(1)}" x2="${width - right}" y2="${y(tick).toFixed(1)}" />
-      <text class="trend-axis-label" x="${left - 8}" y="${(y(tick) + 4).toFixed(1)}" text-anchor="end">${escapeHtml(formatChartMoney10k(tick))}</text>
-    </g>
-  `).join("");
   const first = liveRows[0]?.month || "";
-  const middle = liveRows[Math.floor((liveRows.length - 1) / 2)]?.month || "";
   const last = liveRows[liveRows.length - 1]?.month || "";
-  const trendLabel = trendMode === "sale" ? "매매" : "전월세";
   return `
-    <div class="trend-panel">
-      <div class="trend-toolbar">
-        <div class="trend-market-tabs" aria-label="거래 유형">
-          <button class="${trendMode === "sale" ? "active" : ""}" type="button" data-trend-market="sale">매매</button>
-          <button class="${trendMode !== "sale" ? "active" : ""}" type="button" data-trend-market="rent">전월세</button>
-        </div>
-      </div>
-      <p class="trend-summary-label">${escapeHtml(summaryLabel)}</p>
-      <strong class="trend-summary-value">${escapeHtml(formatMoney10k(recentAverage))}</strong>
-      <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 거래 추이 그래프">
-        ${latestGuide}
-        ${gridLines}
-        ${averageLine ? `<line class="trend-average-line" x1="${left}" y1="${y(averageLine).toFixed(1)}" x2="${width - right}" y2="${y(averageLine).toFixed(1)}" />` : ""}
-        <polyline class="trend-primary-line" points="${linePoints}" />
-        ${primaryDots}
-        ${highestPoint ? `
-          <circle class="highest-sale-point" cx="${x(highestPoint.index).toFixed(1)}" cy="${y(highestPoint.value).toFixed(1)}" r="5" />
-          <text class="highest-sale-label" x="${x(highestPoint.index).toFixed(1)}" y="${(y(highestPoint.value) - 16).toFixed(1)}" text-anchor="middle">${escapeHtml(formatChartMoney10k(highestPoint.value))}</text>
-          <text class="highest-sale-label sub" x="${x(highestPoint.index).toFixed(1)}" y="${(y(highestPoint.value) - 4).toFixed(1)}" text-anchor="middle">최고</text>
-        ` : ""}
-        ${lowestPoint && highestPoint && lowestPoint !== highestPoint ? `
-          <circle class="lowest-jeonse-point" cx="${x(lowestPoint.index).toFixed(1)}" cy="${y(lowestPoint.value).toFixed(1)}" r="5" />
-          <text class="lowest-jeonse-label" x="${x(lowestPoint.index).toFixed(1)}" y="${(y(lowestPoint.value) + 16).toFixed(1)}" text-anchor="middle">${escapeHtml(formatChartMoney10k(lowestPoint.value))}</text>
-          <text class="lowest-jeonse-label sub" x="${x(lowestPoint.index).toFixed(1)}" y="${(y(lowestPoint.value) + 28).toFixed(1)}" text-anchor="middle">최저</text>
-        ` : ""}
-        <text class="volume-title" x="${left - 2}" y="${volumeTop - 7}" text-anchor="end">거래량</text>
-        ${volumeBars}
-        <text class="trend-axis-label" x="${left}" y="${height - 2}">${escapeHtml(monthLabel(first))}</text>
-        ${middle && middle !== first && middle !== last ? `<text class="trend-axis-label" x="${x(Math.floor((liveRows.length - 1) / 2)).toFixed(1)}" y="${height - 2}" text-anchor="middle">${escapeHtml(monthLabel(middle))}</text>` : ""}
-        <text class="trend-axis-label" x="${width - right}" y="${height - 2}" text-anchor="end">${escapeHtml(monthLabel(last))}</text>
-      </svg>
-      <div class="chart-legend">
-        <span><i class="chart-dot sale"></i>${escapeHtml(trendLabel)} 실거래</span>
-        <span><i class="chart-dot average"></i>평균선</span>
-        <span><i class="chart-dot jeonse"></i>최저가</span>
-      </div>
+    <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 거래 추이 그래프">
+      <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" />
+      <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" />
+      ${saleRows.length > 1 ? `<polyline class="sale-line" points="${salePoints}" />` : ""}
+      ${jeonseRows.length > 1 ? `<polyline class="jeonse-line" points="${jeonsePoints}" />` : ""}
+      ${pointSvg(saleRows, "sale", "매매")}
+      ${pointSvg(jeonseRows, "jeonse", "전세")}
+      <text x="${left}" y="${height - 10}">${escapeHtml(first)}</text>
+      <text x="${width - right}" y="${height - 10}" text-anchor="end">${escapeHtml(last)}</text>
+      <text x="${left}" y="12">${escapeHtml(formatMoney10k(max))}</text>
+      <text x="${width - right}" y="12" text-anchor="end">매매 / 전세</text>
+    </svg>
+    <div class="chart-legend">
+      <span><i class="chart-dot sale"></i>매매 실거래</span>
+      <span><i class="chart-dot jeonse"></i>전세 실거래</span>
     </div>
   `;
 }
 
-function aiSummaryPriceComparison(detail = null) {
-  const price = detail?.price || {};
-  const mode = state.budgetMode;
-  const modeLabel = budgetConfig(mode).shortLabel;
-  const liveStatus = price.liveStatus || {};
-  let actualValue = 0;
-  let hasPrice = false;
+function latestRecord(records, predicate) {
+  return (Array.isArray(records) ? records : [])
+    .filter(predicate)
+    .sort((a, b) => {
+      const left = `${a.dealYear || ""}${String(a.dealMonth || "").padStart(2, "0")}${String(a.dealDay || "").padStart(2, "0")}`;
+      const right = `${b.dealYear || ""}${String(b.dealMonth || "").padStart(2, "0")}${String(b.dealDay || "").padStart(2, "0")}`;
+      return right.localeCompare(left);
+    })[0] || null;
+}
 
-  if (mode === "monthly") {
-    hasPrice = liveTransactionRecords(price, (item) => Number(item.monthlyRent10k || 0) > 0).length > 0;
-    actualValue = Number(price.monthlyRent10k || 0);
-  } else if (mode === "jeonse") {
-    hasPrice = liveTransactionRecords(price, (item) => !Number(item.monthlyRent10k || 0)).length > 0;
-    actualValue = Number(price.recentJeonse10k || 0);
-  } else if (mode === "sale") {
-    const latestTrade = latestTradeRecord(price);
-    hasPrice = isLiveStatus(liveStatus.molitTrade) || Boolean(latestTrade);
-    actualValue = Number(price.recentSale10k || latestTrade?.amount10k || 0);
+function livePriceRecords(price = {}) {
+  const trade = price.molitLatestTradeRecord || latestRecord(
+    price.molitTradeRecords,
+    (item) => Number(item.amount10k || 0) > 0
+  );
+  const jeonse = price.molitLatestJeonseRecord || latestRecord(
+    price.molitRentRecords,
+    (item) => Number(item.deposit10k || 0) > 0 && !Number(item.monthlyRent10k || 0)
+  );
+  const monthly = price.molitLatestMonthlyRecord || latestRecord(
+    price.molitRentRecords,
+    (item) => Number(item.monthlyRent10k || 0) > 0
+  );
+  return { trade, jeonse, monthly };
+}
+
+function liveBudgetPrice(price = {}, mode = state.budgetMode) {
+  const liveStatus = price.liveStatus || {};
+  const records = livePriceRecords(price);
+  if (mode === "sale" && isLiveStatus(liveStatus.molitTrade) && records.trade) {
+    return { label: "매매 실거래가", value: Number(records.trade.amount10k || 0) };
+  }
+  if (mode === "jeonse" && isLiveStatus(liveStatus.molitRent) && records.jeonse) {
+    return { label: "전세 보증금", value: Number(records.jeonse.deposit10k || 0) };
+  }
+  if (mode === "monthly" && isLiveStatus(liveStatus.molitRent) && records.monthly) {
+    return { label: "월세", value: Number(records.monthly.monthlyRent10k || 0) };
+  }
+  return null;
+}
+
+function buildRuleBasedAiSummary(selected, detail) {
+  if (!selected || !detail) return null;
+  const strengths = [];
+  const neutral = [];
+  const cautions = [];
+  const route = state.ruleSummaryRoute.selectedId === selected.id
+    ? state.ruleSummaryRoute.result
+    : null;
+
+  if (
+    route?.provider === "tmap"
+    && route?.mode === "live_api"
+    && route?.transportMode === "car"
+  ) {
+    const minutes = Math.round(Number(route.summary?.totalMinutes || 0));
+    if (minutes > 0 && minutes <= RULE_SUMMARY_COMMUTE_THRESHOLD_MINUTES) {
+      strengths.push(`자차 기준 약 ${formatNumber(minutes)}분으로 이동이 편리합니다.`);
+    } else if (minutes > RULE_SUMMARY_COMMUTE_THRESHOLD_MINUTES) {
+      cautions.push(`자차 기준 약 ${formatNumber(minutes)}분이 소요되어 이동 부담이 있을 수 있습니다.`);
+    }
   }
 
+  const price = detail.price || {};
+  const actualPrice = liveBudgetPrice(price);
+  const budget = Number(state.budget || 0);
+  if (actualPrice?.value > 0 && budget > 0) {
+    const difference = Math.round(actualPrice.value - budget);
+    const priceText = formatBudgetValue(actualPrice.value, state.budgetMode);
+    const differenceText = formatBudgetValue(Math.abs(difference), state.budgetMode);
+    if (difference < 0) {
+      strengths.push(`${actualPrice.label}는 ${priceText}으로, 설정하신 예산보다 약 ${differenceText} 저렴합니다.`);
+    } else if (difference === 0) {
+      neutral.push(`${actualPrice.label}는 설정하신 예산과 비슷한 수준입니다.`);
+    } else {
+      cautions.push(`${actualPrice.label}는 ${priceText}으로, 설정하신 예산보다 약 ${differenceText} 높습니다.`);
+    }
+  }
+
+  const liveStatus = price.liveStatus || {};
+  const records = livePriceRecords(price);
+  if (
+    isLiveStatus(liveStatus.molitTrade)
+    && isLiveStatus(liveStatus.molitRent)
+    && records.trade
+    && records.jeonse
+  ) {
+    const sale = Number(records.trade.amount10k || 0);
+    const jeonse = Number(records.jeonse.deposit10k || 0);
+    if (sale > 0 && jeonse > 0) {
+      const ratio = (jeonse / sale) * 100;
+      if (ratio < 80) {
+        strengths.push(`전세가율은 ${formatPercent(ratio)}로, 깡통주택 위험 기준인 80%보다 낮습니다.`);
+      } else {
+        cautions.push(`전세가율은 ${formatPercent(ratio)}로, 깡통주택 위험 기준인 80% 이상입니다. 계약 전 추가 확인이 필요합니다.`);
+      }
+    }
+  }
+
+  if (!strengths.length && !neutral.length && !cautions.length) return null;
   return {
-    mode,
-    modeLabel,
-    hasPrice: Boolean(hasPrice && actualValue),
-    actualValue,
-    budgetValue: Number(state.budget || 0)
+    headline: `${detail.name || selected.name || "선택한 아파트"}의 확인된 API 데이터를 기준으로 정리했습니다.`,
+    strengths,
+    neutral,
+    cautions
   };
 }
 
-function aiSummaryPriceStrength(detail = null) {
-  const comparison = aiSummaryPriceComparison(detail);
-  const { mode, modeLabel, hasPrice, actualValue, budgetValue } = comparison;
-
-  if (!hasPrice) return `최신 아파트 ${modeLabel} 가격 정보를 불러오지 못하였습니다.`;
-  if (!budgetValue) return `최신 아파트 ${modeLabel} 가격 정보를 확인했습니다.`;
-
-  const diff = Math.abs(Math.round(actualValue - budgetValue));
-  const subject = `${modeLabel} 가격`;
-  const diffText = formatBudgetValue(diff, mode);
-  if (diff === 0) return `${subject}은 설정한 금액과 동일합니다.`;
-  if (actualValue < budgetValue) return `${subject}은 설정한 금액보다 약 ${diffText} 적습니다.`;
-  return "";
-}
-
-function aiSummaryLiveCarRoute(selected = null) {
-  const route = state.aiCommute.result || state.route.result;
-  const routeSelectedId = state.aiCommute.result ? state.aiCommute.selectedId : state.route.selectedId;
-  const isSelectedRoute = selected?.id && routeSelectedId === selected.id;
-  const isLiveCarRoute = isSelectedRoute
-    && route?.transportMode === "car"
-    && route?.provider === "tmap"
-    && route?.mode === "live_api"
-    && Number(route?.summary?.totalMinutes || 0) > 0;
-  return isLiveCarRoute ? route : null;
-}
-
-function aiSummaryCommuteStrength(selected = null) {
-  const route = aiSummaryLiveCarRoute(selected);
-  if (!route) return "최신 통근 정보를 불러오지 못하였습니다.";
-
-  const minutes = Number(route.summary.totalMinutes || 0);
-  if (minutes <= 20) return `자동차로 약 ${formatNumber(minutes)}분 소요되어 통근이 편리합니다.`;
-  if (minutes <= 60) return `자동차로 약 ${formatNumber(minutes)}분 소요됩니다.`;
-  return "최신 통근 정보를 확인했습니다.";
-}
-
-function aiSummaryStrengths(summary = {}, context = {}) {
-  const existing = (summary.strengths || [])
-    .filter((item) => !String(item).includes("지하철 접근성"))
-    .filter((item) => !String(item).includes("월세 기준은"))
-    .filter((item) => !String(item).includes("월세 실거래 기준은"));
-  return [
-    aiSummaryPriceStrength(context.detail),
-    aiSummaryCommuteStrength(context.selected),
-    ...existing
-  ].filter(Boolean).slice(0, 3);
-}
-
-function aiSummaryCautions(summary = {}, context = {}) {
-  const cautions = [];
-  const price = aiSummaryPriceComparison(context.detail);
-  if (price.hasPrice && price.budgetValue > 0 && price.actualValue > price.budgetValue) {
-    const diffText = formatBudgetValue(Math.round(price.actualValue - price.budgetValue), price.mode);
-    cautions.push(`${price.modeLabel} 가격은 설정한 금액보다 약 ${diffText} 많아 예산 초과입니다.`);
-  }
-
-  const route = aiSummaryLiveCarRoute(context.selected);
-  const commuteMinutes = Number(route?.summary?.totalMinutes || 0);
-  if (commuteMinutes > 60) {
-    cautions.push(`자동차로 약 ${formatNumber(commuteMinutes)}분 소요되어 통근시간이 긴 편입니다.`);
-  }
-
-  const gaptong = context.detail?.safeguard?.gaptong || {};
-  if (["danger", "warning"].includes(gaptong.verdictKey)) {
-    const label = gaptong.verdictLabel || "깡통주택 위험 신호";
-    cautions.push(`전세 위험 신호 점검에서 ${label}으로 확인되어 계약 전 추가 확인이 필요합니다.`);
-  }
-
-  if (cautions.length) return cautions.slice(0, 3);
-  return ["현재 확인된 주요 주의사항은 없습니다."];
-}
-
-function aiSummaryHeadline(context = {}) {
-  const selected = context.selected || {};
-  const name = selected.name || "선택한 아파트";
-  const scores = selected.adjusted || {};
-  if (!scores.cost && !scores.commute && !scores.service) {
-    return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성을 종합적으로 검토할 수 있는 후보입니다.`;
-  }
-  const criteria = [
-    { key: "cost", label: "가격", value: Number(scores.cost || 0) },
-    { key: "commute", label: "통근", value: Number(scores.commute || 0) },
-    { key: "service", label: "생활 편의성", value: Number(scores.service || 0) }
-  ];
-  const weak = criteria.filter((item) => item.value && item.value < 70);
-  const good = criteria.filter((item) => item.value >= 75);
-
-  if (good.length === criteria.length) {
-    return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성의 균형이 좋은 후보입니다.`;
-  }
-  if (weak.length >= 2) {
-    return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성 중 일부 조건이 다소 아쉬운 후보입니다.`;
-  }
-  if (weak.length === 1) {
-    return `${name}은 ${weak[0].label}에서 아쉬움이 있으나, 가격·통근·생활 편의성을 종합적으로 검토할 수 있는 후보입니다.`;
-  }
-  return `${name}은 공개 데이터 기준으로 가격·통근·생활 편의성을 종합적으로 검토할 수 있는 후보입니다.`;
-}
-
-function renderAiSummaryCard(summary = {}, context = {}) {
-  const headline = aiSummaryHeadline(context);
-  const strengths = aiSummaryStrengths(summary, context);
-  const cautions = aiSummaryCautions(summary, context);
+function renderAiSummaryCard(summary = {}) {
+  const sections = [
+    { label: "장점", items: summary.strengths || [] },
+    { label: "중립", items: summary.neutral || [] },
+    { label: "주의", items: summary.cautions || [] }
+  ].filter((section) => section.items.length);
   return `
     <section class="property-card ai-summary-card">
       <div class="property-card-title">
         <h4>AI 요약</h4>
       </div>
-      <p class="ai-headline">${escapeHtml(headline)}</p>
-      <div class="ai-summary-grid">
-        <div>
-          <strong>장점</strong>
-          <ul>${strengths.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
-        <div>
-          <strong>주의</strong>
-          <ul>${cautions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-        </div>
+      <p class="ai-headline">${escapeHtml(summary.headline || "확인된 API 데이터를 기준으로 정리했습니다.")}</p>
+      <div class="ai-summary-grid${sections.length === 3 ? " is-three" : ""}">
+        ${sections.map((section) => `
+          <div>
+            <strong>${escapeHtml(section.label)}</strong>
+            <ul>${section.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </div>
+        `).join("")}
       </div>
     </section>
   `;
@@ -3275,9 +4343,20 @@ function renderAiSummaryPendingCard() {
     <section class="property-card ai-summary-card ai-summary-card-pending">
       <div class="property-card-title">
         <h4>AI 요약</h4>
-        <span>AI 분석중</span>
+        <span>실데이터 확인 중</span>
       </div>
-      <p class="ai-headline">선택한 아파트의 주거 조건을 종합적으로 분석하고 있습니다.</p>
+      <p class="ai-headline">실거래 가격과 실제 자차 경로를 불러오고 있습니다.</p>
+    </section>
+  `;
+}
+
+function renderAiSummaryEmptyCard() {
+  return `
+    <section class="property-card ai-summary-card">
+      <div class="property-card-title">
+        <h4>AI 요약</h4>
+      </div>
+      <p class="ai-headline">실제 API에서 확인된 통근·가격 데이터가 없어 요약할 항목이 없습니다.</p>
     </section>
   `;
 }
@@ -3293,6 +4372,20 @@ function renderRiskSignals(risk) {
       <em>${escapeHtml(item.value)} · ${statusText(item.status)}</em>
     </li>
   `).join("");
+}
+
+function renderRiskSignalDetails(risk) {
+  const signals = Array.isArray(risk?.signals) ? risk.signals : [];
+  if (!signals.length) return "";
+  return `
+    <details class="risk-detail-toggle">
+      <summary>
+        <span class="risk-detail-open">세부 점검 보기 ▼</span>
+        <span class="risk-detail-close">세부 점검 접기 ▲</span>
+      </summary>
+      <ul class="risk-list">${renderRiskSignals(risk)}</ul>
+    </details>
+  `;
 }
 
 function renderContractChecklist(risk) {
@@ -3319,7 +4412,7 @@ function renderGaptongVerdict(safeguard) {
   return `
     <div class="gaptong-verdict tone-${escapeHtml(verdict.verdictKey || "unknown")}">
       <div class="gaptong-head">
-        <strong>깡통주택 자동 판정 · ${escapeHtml(verdict.verdictLabel || "")}</strong>
+        <strong>깡통주택 위험 요약</strong>
         <em>전세가율 ${formatPercent(verdict.ratioPct)} / 기준 ${formatPercent(verdict.thresholdPct)}</em>
       </div>
       <div class="gaptong-bar" role="img" aria-label="전세가율 ${formatPercent(verdict.ratioPct)}, 깡통주택 기준 ${formatPercent(verdict.thresholdPct)}">
@@ -3387,7 +4480,6 @@ function renderTenancyTimeline(safeguard) {
   const steps = Array.isArray(timeline?.steps) ? timeline.steps : [];
   if (!steps.length) return "";
   return `
-    <p class="timeline-summary">${escapeHtml(timeline.gapSummary || "")}</p>
     <ol class="tenancy-timeline">
       ${steps.map((step) => `
         <li class="tenancy-step risk-${escapeHtml(step.risk || "safe")}">
@@ -3429,15 +4521,9 @@ function renderSupportCenter(safeguard) {
         <strong>${escapeHtml(center.name)}</strong>
         <em>약 ${escapeHtml(String(center.distanceKm))}km</em>
       </div>
-      <p>${escapeHtml(center.service)}</p>
-      <div class="support-center-meta">
-        ${propertyMetric("운영 요일", center.days)}
-        ${propertyMetric("운영 시간", center.hours)}
-        ${propertyMetric("전화", center.phone)}
-        ${propertyMetric("주소", center.address)}
-      </div>
+      <p>공인중개사(안전계약 컨설턴트)가 등기부등본·건축물대장을 함께 검토합니다.</p>
+      <small class="property-note">상담은 참고용이며 법적 책임을 부담하지 않습니다.</small>
       <a class="support-center-link" href="${escapeHtml(center.reserveUrl)}" target="_blank" rel="noopener noreferrer">안전계약 컨설팅 예약</a>
-      <small class="property-note">${escapeHtml(center.note)}</small>
     </div>
   `;
 }
@@ -3447,7 +4533,6 @@ async function copyTextToClipboard(text) {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    // 클립보드 권한이 막힌 환경(비보안 컨텍스트, 일부 인앱 브라우저) 폴백.
     const area = document.createElement("textarea");
     area.value = text;
     area.setAttribute("readonly", "");
@@ -3484,11 +4569,11 @@ const AGENT_DEFAULT_FOLLOW_UPS = [
   "비슷한 가격대에 더 안전한 곳 있어?"
 ];
 
-// 상세 패널에서 고른 단지를 우선하고, 없으면 추천 1순위를 대화 대상으로 삼는다.
 function agentTarget() {
   const detail = state.property.detail;
   if (detail?.id) return { id: detail.id, name: detail.name };
   const selected = selectedDetailItem();
+  if (selected?.id) return { id: selected.id, name: selected.name };
   const top = state.results[0] || state.apartmentCandidates[0] || null;
   return top?.id ? { id: top.id, name: top.name } : null;
 }
@@ -3525,7 +4610,6 @@ const AGENT_TOOL_LABELS = {
   web_search: "공공기관 웹 검색"
 };
 
-// LLM이 어떤 데이터를 실제로 읽고 답했는지 보여준다.
 function renderAgentToolTrace(message) {
   const trace = Array.isArray(message.toolTrace) ? message.toolTrace : [];
   if (!trace.length) return "";
@@ -3533,7 +4617,6 @@ function renderAgentToolTrace(message) {
   return `<div class="agent-tooltrace">조회한 데이터: ${names.map((name) => escapeHtml(name)).join(" · ")}</div>`;
 }
 
-// 웹 검색을 썼다면 출처를 반드시 같이 보여준다. 근거 없는 수치는 이 서비스에서 가장 위험하다.
 function renderAgentSources(message) {
   const sources = Array.isArray(message.sources) ? message.sources : [];
   if (!sources.length) return "";
@@ -3576,15 +4659,6 @@ function renderAgentPanel() {
   const launcher = document.querySelector("#agentLauncher");
   if (!panel || !launcher) return;
 
-  if (state.bookmarks.panelOpen) {
-    panel.hidden = true;
-    launcher.hidden = true;
-    launcher.setAttribute("aria-expanded", "false");
-    launcher.classList.remove("is-active");
-    return;
-  }
-
-  launcher.hidden = false;
   panel.hidden = !state.agent.open;
   launcher.setAttribute("aria-expanded", String(state.agent.open));
   launcher.classList.toggle("is-active", state.agent.open);
@@ -3595,7 +4669,7 @@ function renderAgentPanel() {
   if (context) {
     const engine = state.agent.llmMode === true
       ? ` · ${state.agent.llmModel || "Claude"} 연동`
-      : state.agent.llmMode === false ? " · 규칙 기반" : "";
+      : "";
     context.textContent = (target
       ? `${target.name} 기준으로 답변합니다`
       : "매칭을 실행하거나 단지를 선택하면 그 단지 기준으로 답변합니다") + engine;
@@ -3627,6 +4701,7 @@ function renderAgentPanel() {
 }
 
 function openAgentPanel() {
+  dismissAgentHint();
   state.agent.open = true;
   renderAgentPanel();
   document.querySelector("#agentInput")?.focus();
@@ -3643,6 +4718,45 @@ function resetAgentConversation() {
   state.agent.followUps = [];
   state.agent.error = "";
   renderAgentPanel();
+}
+
+function dismissAgentHint() {
+  const launcher = document.querySelector("#agentLauncher");
+  document.querySelector(".agent-hint")?.remove();
+  if (agentHintTimer) {
+    window.clearTimeout(agentHintTimer);
+    agentHintTimer = null;
+  }
+  launcher?.classList.remove("is-hinting");
+  launcher?.classList.add("is-hinted");
+}
+
+function showAgentHint() {
+  const launcher = document.querySelector("#agentLauncher");
+  if (
+    !launcher
+    || state.agent.open
+    || state.bookmarks.panelOpen
+    || launcher.classList.contains("is-hinted")
+    || document.querySelector(".agent-hint")
+  ) return;
+
+  const hint = document.createElement("div");
+  hint.className = "agent-hint";
+  hint.innerHTML = `
+    <p><strong>AI Agent</strong><br>전세 안전성이나 계약 전 확인 서류를 질문할 수 있어요.</p>
+    <button class="agent-hint-close" type="button" aria-label="AI Agent 안내 닫기">×</button>
+  `;
+
+  const rect = launcher.getBoundingClientRect();
+  hint.style.top = `${Math.round(rect.bottom + 12)}px`;
+  hint.style.right = `${Math.max(18, Math.round(window.innerWidth - rect.right))}px`;
+  hint.style.setProperty("--tail-right", `${Math.round(rect.width / 2)}px`);
+
+  launcher.classList.add("is-hinting");
+  launcher.insertAdjacentElement("afterend", hint);
+  hint.querySelector(".agent-hint-close")?.addEventListener("click", dismissAgentHint);
+  agentHintTimer = window.setTimeout(dismissAgentHint, 6500);
 }
 
 async function sendAgentMessage(question) {
@@ -3675,7 +4789,6 @@ async function sendAgentMessage(question) {
   }
 }
 
-// Claude API 연동 여부는 세션당 한 번만 확인하고 캐시한다.
 async function agentLlmAvailable() {
   if (state.agent.llmMode !== null) return state.agent.llmMode;
   try {
@@ -3685,17 +4798,16 @@ async function agentLlmAvailable() {
     state.agent.llmModel = status.model || "";
   } catch {
     state.agent.llmMode = false;
-    state.agent.llmReason = "LLM 상태를 확인하지 못해 규칙 기반으로 답변합니다.";
+    state.agent.llmReason = "AI 상태를 확인하지 못해 기본 답변으로 안내합니다.";
   }
   return state.agent.llmMode;
 }
 
-// Claude에는 전체 대화 이력을 보낸다. 규칙 기반 답변도 assistant 턴으로 이어붙인다.
 function agentHistoryForLlm() {
   return state.agent.messages
     .map((message) => ({
       role: message.role === "user" ? "user" : "assistant",
-      content: message.role === "user" ? message.text : message.answer?.answer || message.text || "",
+      content: message.role === "user" ? message.text : message.answer?.answer || message.text || ""
     }))
     .filter((message) => message.content);
 }
@@ -3706,13 +4818,12 @@ async function sendAgentMessageViaLlm(target) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: agentHistoryForLlm(),
-      context: `사용자가 현재 보고 있는 단지: ${target.name} (id: ${target.id})`,
-    }),
+      context: `사용자가 현재 보고 있는 단지: ${target.name} (id: ${target.id})`
+    })
   });
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok || !payload.ok) {
-    // 키 만료나 일시 장애로 LLM이 죽어도 대화가 끊기지 않도록 규칙 기반으로 내려간다.
     state.agent.llmMode = false;
     state.agent.llmReason = payload.error || `LLM 응답 실패 (${response.status})`;
     await sendAgentMessageViaRules(target, state.agent.messages.at(-1)?.text || "");
@@ -3753,108 +4864,6 @@ function bindAgentThreadEvents() {
   });
 }
 
-const SUBPANEL_WIDTH_KEY = "movevalue-subpanel-width";
-const SUBPANEL_MIN_WIDTH = 420;
-
-// 사이드바와 지도가 각각 최소 폭을 유지하도록 상한을 화면에서 계산한다.
-function subpanelMaxWidth() {
-  const sidebar = document.querySelector(".mv-sidebar")?.getBoundingClientRect().width || 0;
-  return Math.max(SUBPANEL_MIN_WIDTH, window.innerWidth - sidebar - 260);
-}
-
-function applySubpanelWidth(width) {
-  const clamped = Math.round(Math.min(Math.max(width, SUBPANEL_MIN_WIDTH), subpanelMaxWidth()));
-  document.documentElement.style.setProperty("--subpanel-width", `${clamped}px`);
-  return clamped;
-}
-
-function resetSubpanelWidth() {
-  document.documentElement.style.removeProperty("--subpanel-width");
-  try {
-    window.localStorage.removeItem(SUBPANEL_WIDTH_KEY);
-  } catch {
-    /* 저장소를 못 쓰는 환경에서도 조절 자체는 동작해야 한다. */
-  }
-  refreshMapSize();
-}
-
-function refreshMapSize() {
-  window.setTimeout(() => state.map?.instance?.invalidateSize({ pan: false }), 0);
-}
-
-function restoreSubpanelWidth() {
-  let saved = null;
-  try {
-    saved = window.localStorage.getItem(SUBPANEL_WIDTH_KEY);
-  } catch {
-    saved = null;
-  }
-  const width = Number(saved);
-  if (Number.isFinite(width) && width > 0) applySubpanelWidth(width);
-}
-
-function bindSubpanelResizer() {
-  const handle = document.querySelector("#subpanelResizer");
-  const panel = document.querySelector("#detailSubpanel");
-  if (!handle || !panel) return;
-
-  let startX = 0;
-  let startWidth = 0;
-
-  const onMove = (event) => {
-    applySubpanelWidth(startWidth + (event.clientX - startX));
-    refreshMapSize();
-  };
-
-  const onUp = (event) => {
-    handle.releasePointerCapture?.(event.pointerId);
-    handle.classList.remove("is-dragging");
-    document.body.classList.remove("is-resizing-subpanel");
-    window.removeEventListener("pointermove", onMove);
-    window.removeEventListener("pointerup", onUp);
-    try {
-      window.localStorage.setItem(SUBPANEL_WIDTH_KEY, String(panel.getBoundingClientRect().width));
-    } catch {
-      /* 저장 실패는 무시하고 이번 세션 너비만 유지한다. */
-    }
-    refreshMapSize();
-  };
-
-  handle.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    startX = event.clientX;
-    startWidth = panel.getBoundingClientRect().width;
-    handle.setPointerCapture?.(event.pointerId);
-    handle.classList.add("is-dragging");
-    document.body.classList.add("is-resizing-subpanel");
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  });
-
-  handle.addEventListener("dblclick", resetSubpanelWidth);
-
-  handle.addEventListener("keydown", (event) => {
-    const step = event.shiftKey ? 80 : 24;
-    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      event.preventDefault();
-      const current = panel.getBoundingClientRect().width;
-      const next = applySubpanelWidth(current + (event.key === "ArrowRight" ? step : -step));
-      try {
-        window.localStorage.setItem(SUBPANEL_WIDTH_KEY, String(next));
-      } catch {
-        /* 저장 실패 무시 */
-      }
-      refreshMapSize();
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      resetSubpanelWidth();
-    }
-  });
-
-  // 창 크기 상한은 CSS clamp이 처리하므로 여기서는 지도 크기만 다시 잡아준다.
-  window.addEventListener("resize", refreshMapSize);
-}
-
 function bindAgentPanelEvents() {
   document.querySelector("#agentLauncher")?.addEventListener("click", () => {
     if (state.agent.open) closeAgentPanel();
@@ -3873,7 +4882,6 @@ function bindAgentPanelEvents() {
     submitAgentInput();
   });
   document.querySelector("#agentInput")?.addEventListener("keydown", (event) => {
-    // 한글 IME 조합 중 Enter는 글자 확정용이라 전송하면 안 된다.
     if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
     event.preventDefault();
     submitAgentInput();
@@ -3998,6 +5006,10 @@ function renderBookmarkPanel() {
   if (!nodes.bookmarkPanel) return;
   renderBookmarkHeader();
   nodes.bookmarkPanel.hidden = !state.bookmarks.panelOpen;
+  document.body.classList.toggle("bookmark-panel-open", state.bookmarks.panelOpen);
+  if (state.bookmarks.panelOpen) {
+    dismissAgentHint();
+  }
   if (!state.bookmarks.panelOpen) {
     nodes.bookmarkPanel.innerHTML = "";
     return;
@@ -4066,21 +5078,16 @@ async function toggleBookmark(id, detail = null) {
 
 function openBookmarkPanel() {
   state.bookmarks.panelOpen = true;
-  state.agent.open = false;
   state.detailPanelOpen = false;
   closePropertyDashboard();
   renderDetailSubpanelState();
   renderBookmarkPanel();
-  renderAgentPanel();
-  invalidateMapLayout();
   loadBookmarkDetails();
 }
 
 function closeBookmarkPanel() {
   state.bookmarks.panelOpen = false;
   renderBookmarkPanel();
-  renderAgentPanel();
-  invalidateMapLayout();
 }
 
 function closePropertyDashboard() {
@@ -4088,6 +5095,8 @@ function closePropertyDashboard() {
   state.property.detail = null;
   state.property.error = "";
   state.property.isLoading = false;
+  state.property.agentAnswer = null;
+  state.property.agentError = "";
   state.property.requestId += 1;
   renderApartmentLayer();
   renderPropertyDashboard();
@@ -4096,26 +5105,39 @@ function closePropertyDashboard() {
   renderAgentPanel();
 }
 
+async function askPropertyAgent(event) {
+  event?.preventDefault();
+  const detail = state.property.detail;
+  if (!detail) return;
+  const input = document.querySelector("#propertyAgentQuestion");
+  const question = input?.value?.trim() || state.property.agentQuestion;
+  state.property.agentQuestion = question;
+  state.property.agentLoading = true;
+  state.property.agentError = "";
+  renderPropertyDashboard();
+  try {
+    const params = new URLSearchParams({ id: detail.id, question });
+    const payload = await fetchJson(`/api/property-agent?${params.toString()}`);
+    state.property.agentAnswer = payload.agent || null;
+  } catch (error) {
+    state.property.agentError = `AI Agent 응답 실패: ${error.message}`;
+  } finally {
+    state.property.agentLoading = false;
+    renderPropertyDashboard();
+  }
+}
+
 function bindPropertyDashboardEvents() {
-  document.querySelectorAll("[data-trend-market]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.property.trendMode = button.dataset.trendMarket === "sale" ? "sale" : "rent";
-      renderPropertyDashboard();
-    });
-  });
   document.querySelectorAll(".clause-copy").forEach((button) => {
     button.addEventListener("click", () => handleClauseCopy(button));
   });
-  document.querySelector("#openAgentFromDashboard")?.addEventListener("click", openAgentPanel);
-  document.querySelectorAll("[data-property-section]").forEach((button) => {
-    button.addEventListener("click", () => {
-      propertySectionActive = button.dataset.propertySection;
-      renderPropertyDashboard();
-      // 좁은 화면에서는 목록 아래로 내용이 붙으므로 내용 위치로 옮겨준다.
-      if (window.matchMedia("(max-width: 860px)").matches) {
-        document.querySelector(".property-detail-pane")?.scrollIntoView({ block: "start" });
-      }
-    });
+  bindAgentCtaEvents();
+}
+
+function bindPropertyAgentEvents() {
+  document.querySelector("#propertyAgentForm")?.addEventListener("submit", askPropertyAgent);
+  document.querySelectorAll("[data-agent-property-id]").forEach((button) => {
+    button.addEventListener("click", () => selectProperty(button.dataset.agentPropertyId));
   });
 }
 
@@ -4134,98 +5156,6 @@ function renderAgentCtaCard() {
       <button id="openAgentFromDashboard" class="primary-button compact-button" type="button">AI Agent에게 물어보기</button>
     </section>
   `;
-}
-
-// codex 브랜치의 '전세 위험 점검' 전용 탭 렌더러. 마스터-디테일 대시보드와 같은
-// safeguard 렌더 함수들을 재사용해 한 탭에서 위험 항목만 모아 본다.
-function renderJeonseRiskPanel() {
-  if (!nodes.jeonseRiskContent) return;
-
-  if (state.property.isLoading) {
-    nodes.jeonseRiskContent.classList.add("has-property-detail");
-    nodes.jeonseRiskContent.innerHTML = `
-      <div class="property-empty">
-        <strong>전세 위험 정보를 불러오는 중입니다.</strong>
-        <span>전세가율, 보증금 비율, 계약 전 확인 항목을 계산합니다.</span>
-      </div>
-    `;
-    return;
-  }
-
-  if (state.property.error) {
-    nodes.jeonseRiskContent.classList.add("has-property-detail");
-    nodes.jeonseRiskContent.innerHTML = `<div class="property-empty is-error">${escapeHtml(state.property.error)}</div>`;
-    return;
-  }
-
-  const detail = state.property.detail;
-  if (!detail) {
-    nodes.jeonseRiskContent.classList.remove("has-property-detail");
-    nodes.jeonseRiskContent.innerHTML = `
-      <div class="property-empty">
-        <strong>추천 아파트를 선택하세요.</strong>
-        <span>선택한 단지의 전세 위험 신호와 계약 전 확인 항목을 볼 수 있습니다.</span>
-      </div>
-    `;
-    return;
-  }
-
-  nodes.jeonseRiskContent.classList.add("has-property-detail");
-  const risk = detail.risk || {};
-  const safeguard = detail.safeguard || {};
-  nodes.jeonseRiskContent.innerHTML = `
-    <div class="property-grid">
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>전세 위험 신호 점검</h4>
-          <span>법적 판정 아님</span>
-        </div>
-        ${renderGaptongVerdict(safeguard)}
-        <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
-        <ul class="risk-list">${renderRiskSignals(risk)}</ul>
-        <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>계약 전 확인 체크리스트</h4>
-          <span>주의 요소 안내</span>
-        </div>
-        ${renderContractChecklist(risk)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>정보 사각지대</h4>
-          <span>가격 데이터에 없는 항목</span>
-        </div>
-        ${renderBlindSpots(safeguard)}
-        <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
-        ${renderSelfServeChecks(safeguard)}
-        <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
-        ${renderConsentChecks(safeguard)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>대항력 확보 타임라인</h4>
-          <span>전입신고 익일 0시 공백</span>
-        </div>
-        ${renderTenancyTimeline(safeguard)}
-        <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
-        ${renderSpecialClauses(safeguard)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>가까운 안전계약 컨설팅</h4>
-          <span>계약 전 전문가 검토</span>
-        </div>
-        ${renderSupportCenter(safeguard)}
-      </section>
-    </div>
-  `;
-  bindPropertyDashboardEvents();
 }
 
 function renderPropertyDashboard() {
@@ -4262,144 +5192,136 @@ function renderPropertyDashboard() {
 
   nodes.propertyDashboard.classList.add("has-property-detail");
   const price = detail.price || {};
-  const risk = detail.risk || {};
-  const safeguard = detail.safeguard || {};
-  const summary = detail.aiSummary || {};
-  // 실거래 API가 붙기 전에는 estimate_market이 생활권 평균에 해시 배수를 곱한 추정치를
-  // 내려준다. 추정치를 실제 값처럼 보여주지 않도록, 항목별로 매칭된 실거래가 있을 때만
-  // 숫자를 띄우고 없으면 정보 없음으로 남긴다.
   const liveStatus = price.liveStatus || {};
   const tradeLive = isLiveStatus(liveStatus.molitTrade);
   const jeonseLive = liveTransactionRecords(price, (item) => !Number(item.monthlyRent10k || 0)).length > 0;
   const monthlyLive = liveTransactionRecords(price, (item) => Number(item.monthlyRent10k || 0) > 0).length > 0;
   const latestTrade = latestTradeRecord(price);
   const areaText = liveAreaOptionsText(detail);
+  const parkingCount = Number(detail.parkingCount || 0);
+  const households = Number(detail.households || 0);
+  const parkingPerHousehold = parkingCount && households ? `세대당 ${(parkingCount / households).toFixed(2)}대` : "세대당 정보 없음";
   nodes.propertyDashboard.innerHTML = `
     <div class="property-grid">
-      ${renderPropertySections([
-      {
-        key: "basic",
-        title: "기본 정보",
-        badge: detail.prototype ? "프로토타입 데이터" : "OpenAptInfo",
-        body: `
-          <div class="property-metrics two">
-            ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
-            ${propertyMetric("주택 유형", detail.housingType || "확인 필요")}
-            ${propertyMetric("준공/사용승인", detail.approvalYear ? `${detail.approvalYear}년` : "확인 필요", `${formatNumber(detail.buildingAge)}년 경과`)}
-            ${propertyMetric(
-              "세대/동수",
-              detail.households ? `${formatNumber(detail.households)}세대` : "미제공",
-              detail.buildingCount ? `${formatNumber(detail.buildingCount)}개동` : "건축물대장 확인 필요"
-            )}
-            ${propertyMetric("면적 옵션", areaText, propertyDataNote(areaText !== "정보 없음", "국토부 매매·전월세 실거래가 API"))}
-            ${propertyMetric("용도지역", detail.landUse || "연계 예정")}
-          </div>
-        `
-      },
-      {
-        key: "price",
-        title: "가격 정보",
-        badge: tradeLive && jeonseLive ? `전세가율 ${formatPercent(price.jeonseRatio)}` : "실거래 매칭 대기",
-        body: `
-          <div class="property-metrics two">
-            ${propertyMetric("최근 매매가", tradeLive ? formatMoney10k(price.recentSale10k) : "정보 없음", propertyDataNote(tradeLive, "국토부 매매 실거래가 API"))}
-            ${propertyMetric("최근 전세가", jeonseLive ? formatMoney10k(price.recentJeonse10k) : "정보 없음", propertyDataNote(jeonseLive, "국토부 전월세 실거래가 API"))}
-            ${propertyMetric("월세", monthlyLive ? `${formatMoney10k(price.monthlyDeposit10k)} / 월 ${formatMoney10k(price.monthlyRent10k)}` : "정보 없음", propertyDataNote(monthlyLive, "국토부 전월세 실거래가 API"))}
-            ${propertyMetric("평당 가격", latestTrade ? pricePerPyeongText(latestTrade) : "정보 없음", propertyDataNote(Boolean(latestTrade), "국토부 매매 실거래가·전용면적 기준"))}
-          </div>
-          <p class="property-note">${escapeHtml(price.sourceLabel || "공공 데이터 기반")}</p>
-        `
-      },
-      {
-        key: "trend",
-        title: "거래 추이",
-        badge: "최근 12개월",
-        body: renderTrendChart(detail.transactions, detail)
-      },
-      {
-        key: "risk",
-        title: "전세 위험 신호 점검",
-        badge: risk.level || "점검",
-        badgeTone: riskTone(risk.levelKey === "low" ? "ok" : risk.levelKey),
-        body: `
-          ${renderGaptongVerdict(safeguard)}
-          <p class="risk-summary">${escapeHtml(risk.summary || "")}</p>
-          <ul class="risk-list">${renderRiskSignals(risk)}</ul>
-          <p class="property-note">${escapeHtml(risk.disclaimer || "")}</p>
-        `
-      },
-      {
-        key: "checklist",
-        title: "계약 전 확인 체크리스트",
-        badge: `필수 ${(risk.contractChecklist || []).filter((item) => item.priority === "high").length}건`,
-        badgeTone: "warn",
-        body: renderContractChecklist(risk)
-      },
-      {
-        key: "blindspots",
-        title: "정보 사각지대",
-        badge: `${(safeguard.blindSpots || []).length}건`,
-        body: `
-          ${renderBlindSpots(safeguard)}
-          <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
-          ${renderSelfServeChecks(safeguard)}
-          <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
-          ${renderConsentChecks(safeguard)}
-        `
-      },
-      {
-        key: "tenancy",
-        title: "대항력 확보 타임라인",
-        badge: `특약 ${(safeguard.timeline?.clauses || []).length}종`,
-        body: `
-          ${renderTenancyTimeline(safeguard)}
-          <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
-          ${renderSpecialClauses(safeguard)}
-        `
-      },
-      {
-        key: "center",
-        title: "가까운 안전계약 컨설팅",
-        badge: safeguard.center ? `약 ${safeguard.center.distanceKm}km` : "계약 전 전문가 검토",
-        body: renderSupportCenter(safeguard)
-      },
-      {
-        key: "summary",
-        title: "AI 요약",
-        badge: "가격·통근·입지 근거",
-        body: `
-          <p class="ai-headline">${escapeHtml(summary.headline || "선택한 단지의 가격·통근·생활권 데이터를 종합합니다.")}</p>
-          <div class="ai-summary-grid">
-            <div>
-              <strong>장점</strong>
-              <ul>${(summary.strengths || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-            </div>
-            <div>
-              <strong>주의</strong>
-              <ul>${([...(summary.weaknesses || []), ...(summary.cautions || [])]).slice(0, 4).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
-            </div>
-          </div>
-          <p class="recommendation-text">${escapeHtml(summary.recommendation || "계약 전 등기부와 보증보험 가능 여부를 별도로 확인해야 합니다.")}</p>
-        `
-      }
-    ])}
-
-      <section class="property-card wide agent-cta">
+      <section class="property-card">
         <div class="property-card-title">
-          <h4>대항력 확보 타임라인</h4>
-          <span>전입신고 익일 0시 공백</span>
+          <h4>기본 정보</h4>
         </div>
-        <p class="property-note">전세 안전성, 깡통 여부, 확인 서류를 대화로 물어볼 수 있습니다.</p>
-        <button id="openAgentFromDashboard" class="primary-button compact-button" type="button">AI Agent에게 물어보기</button>
+        <div class="property-metrics two">
+          ${propertyMetric("건물 유형", detail.buildingType || "공동주택")}
+          ${propertyMetric("주택 유형", detail.housingType || "확인 필요")}
+          ${propertyMetric("준공/사용승인", detail.approvalYear ? `${detail.approvalYear}년` : "확인 필요", `${formatNumber(detail.buildingAge)}년 경과`)}
+          ${propertyMetric("세대/동수", `${formatNumber(detail.households)}세대`, `${formatNumber(detail.buildingCount)}개동`)}
+          ${propertyMetric("전용면적", areaText, propertyDataNote(areaText !== "정보 없음", "국토부 매매·전월세 실거래가 API"))}
+          ${propertyMetric("주차대수", parkingCount ? `${formatNumber(parkingCount)}대` : "정보 없음", parkingCount ? parkingPerHousehold : "제공 정보 없음")}
+        </div>
+      </section>
+
+      <section class="property-card">
+        <div class="property-card-title">
+          <h4>가격 정보</h4>
+        </div>
+        <div class="property-metrics two">
+          ${propertyMetric("최근 매매가", tradeLive ? formatMoney10k(price.recentSale10k) : "정보 없음", propertyDataNote(tradeLive, "국토부 매매 실거래가 API"))}
+          ${propertyMetric("최근 전세가", jeonseLive ? formatMoney10k(price.recentJeonse10k) : "정보 없음", propertyDataNote(jeonseLive, "국토부 전월세 실거래가 API"))}
+          ${propertyMetric("월세", monthlyLive ? `${formatMoney10k(price.monthlyDeposit10k)} / 월 ${formatMoney10k(price.monthlyRent10k)}` : "정보 없음", propertyDataNote(monthlyLive, "국토부 전월세 실거래가 API"))}
+          ${propertyMetric("평당 가격", latestTrade ? pricePerPyeongText(latestTrade) : "정보 없음", propertyDataNote(Boolean(latestTrade), "국토부 매매 실거래가·전용면적 기준"))}
+        </div>
       </section>
 
       <section class="property-card wide">
         <div class="property-card-title">
-          <h4>가까운 안전계약 컨설팅</h4>
-          <span>계약 전 전문가 검토</span>
+          <h4>거래 추이</h4>
+          <span>최근 12개월</span>
         </div>
-        ${renderSupportCenter(safeguard)}
+        ${renderTrendChart(detail.transactions)}
       </section>
+
+    </div>
+  `;
+  bindPropertyDashboardEvents();
+}
+
+function renderListingsPanel() {
+  const container = document.getElementById("listingContent");
+  if (!container) return;
+  window.FitHomeListings?.render(container, {
+    detail: state.property.detail,
+    isLoading: state.property.isLoading,
+    error: state.property.error,
+  });
+}
+
+function renderJeonseRiskPanel() {
+  renderListingsPanel();
+  if (!nodes.jeonseRiskContent) return;
+
+  if (state.property.isLoading) {
+    nodes.jeonseRiskContent.classList.add("has-property-detail");
+    nodes.jeonseRiskContent.innerHTML = `
+      <div class="property-empty">
+        <strong>전세 위험 정보를 불러오는 중입니다.</strong>
+        <span>전세가율, 보증금 비율, 계약 전 확인 항목을 계산합니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  if (state.property.error) {
+    nodes.jeonseRiskContent.classList.add("has-property-detail");
+    nodes.jeonseRiskContent.innerHTML = `<div class="property-empty is-error">${escapeHtml(state.property.error)}</div>`;
+    return;
+  }
+
+  const detail = state.property.detail;
+  if (!detail) {
+    nodes.jeonseRiskContent.classList.remove("has-property-detail");
+    nodes.jeonseRiskContent.innerHTML = `
+      <div class="property-empty">
+        <strong>추천 아파트를 선택하세요.</strong>
+        <span>선택한 단지의 전세 위험 신호와 계약 전 확인 항목을 볼 수 있습니다.</span>
+      </div>
+    `;
+    return;
+  }
+
+  nodes.jeonseRiskContent.classList.add("has-property-detail");
+  const risk = detail.risk || {};
+  const safeguard = detail.safeguard || {};
+  const section = (title, body, open = false) => `
+      <details class="property-card wide fh-fold" ${open ? "open" : ""}>
+        <summary>${title}</summary>
+        <div class="fh-fold-body">${body}</div>
+      </details>`;
+  nodes.jeonseRiskContent.innerHTML = `
+    <div class="property-grid">
+      <section class="property-card wide jeonse-risk-card">
+        <div class="property-card-title">
+          <h4>전세 위험 신호 점검</h4>
+        </div>
+        ${renderGaptongVerdict(safeguard)}
+        <div class="fh-report-cta">
+          <div>
+            <strong>상세 판정 리포트</strong>
+            <span>등기부 값을 넣으면 실제 LTV로 안심·주의·위험을 판정하고, 확인 요청과 특약까지 정리해 드려요.</span>
+          </div>
+          <button type="button" class="fh-report-cta-button" data-open-report="${escapeHtml(detail.id)}">리포트 보기</button>
+        </div>
+        <p class="risk-summary">${escapeHtml(risk.disclaimer || "")}</p>
+        ${renderRiskSignalDetails(risk)}
+      </section>
+      ${section("계약 전 확인 체크리스트", renderContractChecklist(risk))}
+      ${section("정보 사각지대", `
+        ${renderBlindSpots(safeguard)}
+        <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
+        ${renderSelfServeChecks(safeguard)}
+        <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
+        ${renderConsentChecks(safeguard)}`)}
+      ${section("대항력 확보 타임라인과 특약", `
+        ${renderTenancyTimeline(safeguard)}
+        <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
+        ${renderSpecialClauses(safeguard)}`)}
+      ${section("가까운 안전계약 컨설팅", renderSupportCenter(safeguard))}
     </div>
   `;
   bindPropertyDashboardEvents();
@@ -4413,7 +5335,8 @@ async function selectProperty(id) {
   state.property.detail = null;
   state.property.isLoading = true;
   state.property.error = "";
-  state.property.trendMode = "";
+  state.property.agentAnswer = null;
+  state.property.agentError = "";
   state.property.requestId += 1;
   const requestId = state.property.requestId;
   renderApartmentLayer();
@@ -4425,6 +5348,9 @@ async function selectProperty(id) {
     const payload = await fetchJson(`/api/property-detail?id=${encodeURIComponent(id)}`);
     if (requestId !== state.property.requestId) return;
     state.property.detail = payload.detail || null;
+    if (state.property.detail) {
+      state.property.agentQuestion = `${state.property.detail.name} 전세 들어가도 괜찮아?`;
+    }
   } catch (error) {
     if (requestId !== state.property.requestId) return;
     state.property.detail = null;
@@ -4432,6 +5358,10 @@ async function selectProperty(id) {
   } finally {
     if (requestId === state.property.requestId) {
       state.property.isLoading = false;
+      const selected = selectedMatchResult();
+      if (state.property.detail && selected?.id === id) {
+        loadRuleSummaryCarRoute(selected);
+      }
       renderApartmentLayer();
       openSelectedPropertyPopup();
       renderDetail();
@@ -4559,39 +5489,6 @@ function scoreRow(label, value, tip) {
   `;
 }
 
-function adjustedScoresForDetail(selected = {}, detail = null) {
-  const adjusted = { ...(selected.adjusted || {}) };
-  const price = aiSummaryPriceComparison(detail);
-  if (price.hasPrice) {
-    adjusted.cost = Math.round(costScoreForBudget(price.actualValue, price.budgetValue, price.mode));
-  }
-
-  const route = aiSummaryLiveCarRoute(selected);
-  const routeMinutes = Number(route?.summary?.totalMinutes || 0);
-  if (routeMinutes > 0) {
-    adjusted.commute = Math.round(clamp(105 - routeMinutes * 1.18));
-  }
-
-  const lifestyle = detail?.lifestyle || {};
-  const serviceScore = Number(lifestyle.serviceScore || 0);
-  if (serviceScore > 0) {
-    adjusted.service = Math.round(clamp(serviceScore));
-  }
-
-  const safetyScore = Number(lifestyle.safetyScore || 0);
-  const carbonScore = Number(lifestyle.carbonScore || 0);
-  const riskScore = Number(detail?.risk?.score ?? detail?.price?.riskScore ?? selected.pricePreview?.riskScore ?? 0);
-  if (safetyScore > 0 || carbonScore > 0 || riskScore > 0) {
-    const environmentScore = safetyScore && carbonScore
-      ? safetyScore * 0.58 + carbonScore * 0.42
-      : safetyScore || carbonScore || Number(selected.safetyScore || 70);
-    const propertySafety = 100 - riskScore;
-    adjusted.safety = Math.round(clamp(environmentScore * 0.85 + propertySafety * 0.15));
-  }
-
-  return adjusted;
-}
-
 function transportModeLabel(mode = DEFAULT_ROUTE_TRANSPORT_MODE) {
   return ROUTE_TRANSPORT_MODES.find((item) => item.key === mode)?.label || "자동차";
 }
@@ -4661,7 +5558,7 @@ function shouldCondenseRouteSteps(route = {}) {
 function renderRouteEndpointSteps(route) {
   return `
     <ol class="route-steps">
-      <li style="--route-color:#03C75A">
+      <li style="--route-color:#14B8A6">
         <span class="route-mode">S</span>
         <strong>출발지</strong>
         <span>${escapeHtml(route.origin?.label || "출발지")}</span>
@@ -4799,9 +5696,16 @@ function renderDetail() {
   }
 
   const selectedDetail = state.property.selectedId === selected.id ? state.property.detail : null;
-  const aiSummary = selectedDetail?.aiSummary || null;
-  const adjustedScores = { ...(selected.adjusted || {}) };
-  const selectedForSummary = { ...selected, adjusted: adjustedScores };
+  const aiSummary = selectedDetail ? buildRuleBasedAiSummary(selected, selectedDetail) : null;
+  const aiSummaryPending = state.property.selectedId === selected.id && (
+    state.property.isLoading
+    || (state.ruleSummaryRoute.selectedId === selected.id && state.ruleSummaryRoute.isLoading)
+  );
+  const aiSummaryContent = aiSummaryPending
+    ? renderAiSummaryPendingCard()
+    : aiSummary
+      ? renderAiSummaryCard(aiSummary)
+      : renderAiSummaryEmptyCard();
   nodes.selectedBadge.textContent = selected.name;
   if (!matched) {
     nodes.detailContent.innerHTML = `
@@ -4814,7 +5718,7 @@ function renderDetail() {
           <p>조건을 입력하고 매칭하기를 누르면 통근, 주거비, 생활 SOC, 안전 점수가 표시됩니다.</p>
         </div>
       </section>
-      ${selectedDetail?.aiSummary ? renderAiSummaryCard(selectedDetail.aiSummary, { selected: selectedForSummary, detail: selectedDetail }) : renderAiSummaryPendingCard()}
+      ${aiSummaryContent}
       ${renderAgentCtaCard()}
     `;
     bindAgentCtaEvents();
@@ -4827,16 +5731,15 @@ function renderDetail() {
         <p class="detail-address">${escapeHtml(selected.address || `${selected.district || ""} ${selected.dong || ""}`.trim())}</p>
       </div>
       <div class="score-list" aria-label="항목별 점수">
-        ${scoreRow("통근", adjustedScores.commute, scoreTips.commute)}
-        ${scoreRow("주거비", adjustedScores.cost, scoreTips.cost)}
-        ${scoreRow("생활 SOC", adjustedScores.service, scoreTips.service)}
-        ${scoreRow("안전", adjustedScores.safety, scoreTips.safety)}
+        ${scoreRow("통근", selected.adjusted.commute, scoreTips.commute)}
+        ${scoreRow("주거비", selected.adjusted.cost, scoreTips.cost)}
+        ${scoreRow("생활 SOC", selected.adjusted.service, scoreTips.service)}
+        ${scoreRow("안전", selected.adjusted.safety, scoreTips.safety)}
       </div>
     </section>
-    ${aiSummary ? renderAiSummaryCard(aiSummary, { selected: selectedForSummary, detail: selectedDetail }) : renderAiSummaryPendingCard()}
+    ${aiSummaryContent}
     ${renderAgentCtaCard()}
   `;
-  ensureAiSummaryCommuteRoute(selected);
   bindAgentCtaEvents();
 }
 
@@ -4859,12 +5762,11 @@ function renderRoutePanel() {
 function infrastructureItem(label, value, nearest = null, category = "") {
   const name = nearest?.name || "정보 없음";
   const distance = nearest?.distanceMeters != null ? formatDistance(nearest.distanceMeters) : "";
-  const description = nearest?.description || `${name}${distance ? ` · ${distance}` : ""}`;
   return `
     <button class="infrastructure-item${state.infrastructureFocus.category === category ? " is-active" : ""}" type="button" data-infrastructure-category="${escapeHtml(category)}">
       <span>${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
-      <small>${escapeHtml(description)}</small>
+      <small>${escapeHtml(name)}${distance ? ` · ${escapeHtml(distance)}` : ""}</small>
     </button>
   `;
 }
@@ -5027,14 +5929,7 @@ function renderInfrastructurePanel() {
 function resetRouteState() {
   const transportMode = state.route.transportMode || DEFAULT_ROUTE_TRANSPORT_MODE;
   state.routeRequestId += 1;
-  state.aiCommute.requestId += 1;
-  state.aiCommute = {
-    selectedId: null,
-    requestId: state.aiCommute.requestId,
-    isLoading: false,
-    result: null,
-    error: ""
-  };
+  state.ruleSummaryRouteRequestId += 1;
   state.route = {
     selectedId: null,
     isLoading: false,
@@ -5043,46 +5938,82 @@ function resetRouteState() {
     focusMap: false,
     transportMode
   };
+  state.ruleSummaryRoute = {
+    selectedId: null,
+    isLoading: false,
+    result: null,
+    error: ""
+  };
   if (state.map?.routeLayer) {
     state.map.routeLayer.clearLayers();
   }
 }
 
-async function ensureAiSummaryCommuteRoute(selected) {
-  if (!selected?.id || state.aiCommute.selectedId === selected.id || state.aiCommute.isLoading) return;
+async function loadRuleSummaryCarRoute(selected) {
+  if (!selected?.id) return;
+  const current = state.ruleSummaryRoute;
+  if (current.selectedId === selected.id && (current.isLoading || current.result)) return;
 
+  const requestId = state.ruleSummaryRouteRequestId + 1;
+  state.ruleSummaryRouteRequestId = requestId;
   const origin = representativeAddressFor(selected);
-  const destinationLocation = selectedDestinationLocation();
-  const destinationAddress = destinationLocation?.address || state.destinationQuery.trim() || destinationAddressFor();
-  const destination = destinationCoordinatesForRequest();
-  if (!origin || !destinationAddress || !destination) {
-    state.aiCommute = { selectedId: selected.id, requestId: state.aiCommute.requestId + 1, isLoading: false, result: null, error: "통근 좌표 없음" };
+  if (!origin) {
+    state.ruleSummaryRoute = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: null,
+      error: "아파트 주소를 확인할 수 없습니다."
+    };
     return;
   }
 
-  const requestId = state.aiCommute.requestId + 1;
-  state.aiCommute = { selectedId: selected.id, requestId, isLoading: true, result: null, error: "" };
+  const destinationLocation = selectedDestinationLocation();
+  const destinationText = selected.destinationAddress || destinationAddressFor();
   const params = new URLSearchParams({
     origin,
     provider: "tmap",
     transportMode: "car",
-    destinationAddress,
-    destinationLat: destination.lat,
-    destinationLng: destination.lng
+    destinationAddress: destinationLocation?.address || destinationText
   });
+  const destination = destinationCoordinatesForRequest();
+  if (destination) {
+    params.set("destinationLat", destination.lat);
+    params.set("destinationLng", destination.lng);
+  }
   if (state.destinationQuery.trim()) {
     params.set("destinationQuery", state.destinationQuery.trim());
+  } else {
+    params.set("destination", state.destination);
   }
+
+  state.ruleSummaryRoute = {
+    selectedId: selected.id,
+    isLoading: true,
+    result: null,
+    error: ""
+  };
+  renderDetail();
 
   try {
     const payload = await fetchJson(`/api/commute-route?${params.toString()}`);
-    if (requestId !== state.aiCommute.requestId) return;
-    state.aiCommute = { selectedId: selected.id, requestId, isLoading: false, result: payload, error: "" };
+    if (requestId !== state.ruleSummaryRouteRequestId) return;
+    state.ruleSummaryRoute = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: payload,
+      error: ""
+    };
   } catch (error) {
-    if (requestId !== state.aiCommute.requestId) return;
-    state.aiCommute = { selectedId: selected.id, requestId, isLoading: false, result: null, error: error.message };
+    if (requestId !== state.ruleSummaryRouteRequestId) return;
+    state.ruleSummaryRoute = {
+      selectedId: selected.id,
+      isLoading: false,
+      result: null,
+      error: error.message || "자동차 경로를 불러오지 못했습니다."
+    };
+  } finally {
+    if (requestId === state.ruleSummaryRouteRequestId) renderDetail();
   }
-  renderDetail();
 }
 
 async function calculateCommuteRoute(selected, options = {}) {
@@ -5319,6 +6250,46 @@ function normalizeBudgetValue(value) {
   return clamp(Math.round(numeric / step) * step, min, max);
 }
 
+function budgetConfig(mode = state.budgetMode) {
+  return BUDGET_MODE_CONFIG[mode] || BUDGET_MODE_CONFIG.monthly;
+}
+
+function displayBudgetValue(value = state.budget, mode = state.budgetMode) {
+  const config = budgetConfig(mode);
+  const displayValue = Number(value || 0) / Number(config.displayScale || 1);
+  return Number.isInteger(displayValue) ? String(displayValue) : displayValue.toFixed(1);
+}
+
+function parseBudgetDisplayValue(value, mode = state.budgetMode) {
+  const config = budgetConfig(mode);
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return state.budget;
+  return numeric * Number(config.displayScale || 1);
+}
+
+function budgetTargetValue(item = {}, mode = state.budgetMode) {
+  const pricePreview = item.pricePreview || {};
+  if (mode === "sale") return Math.round(Number(item.sale10k || pricePreview.sale10k || 0));
+  if (mode === "jeonse") return Math.round(Number(item.jeonse10k || pricePreview.jeonse10k || 0));
+  return Math.round(Number(item.rentMonthly10k || item.monthlyRent10k || pricePreview.monthlyRent10k || 0));
+}
+
+function formatBudgetValue(value, mode = state.budgetMode) {
+  return mode === "monthly" ? `${formatNumber(value)}만원` : formatMoney10k(value);
+}
+
+function costScoreForBudget(targetValue, budgetValue, mode = state.budgetMode) {
+  const target = Number(targetValue || 0);
+  const budget = Number(budgetValue || 0);
+  if (!target) return 50;
+  if (!budget) return 0;
+  const usageRatio = target / budget;
+  if (usageRatio <= 1) {
+    return clamp(100 - Math.abs(1 - usageRatio) * 72);
+  }
+  return clamp(100 - (usageRatio - 1) * 600);
+}
+
 function syncBudgetModeControls() {
   const config = budgetConfig();
   if (nodes.budgetLabel) nodes.budgetLabel.textContent = config.label;
@@ -5372,6 +6343,7 @@ function applyPersonaDefaultWeights(persona) {
 
 function renderControls() {
   syncBudgetModeControls();
+  syncMapModeControls();
   if (nodes.budgetOutput && document.activeElement !== nodes.budgetOutput) {
     nodes.budgetOutput.value = displayBudgetValue(state.budget);
   }
@@ -5379,6 +6351,19 @@ function renderControls() {
   nodes.costWeightOutput.textContent = `${state.weights.cost}%`;
   nodes.serviceWeightOutput.textContent = `${state.weights.service}%`;
   nodes.safetyWeightOutput.textContent = `${state.weights.safety}%`;
+  if (nodes.voiceWeightButton) {
+    const supported = Boolean(speechRecognitionConstructor());
+    nodes.voiceWeightButton.disabled = false;
+    nodes.voiceWeightButton.setAttribute("aria-disabled", supported ? "false" : "true");
+    nodes.voiceWeightButton.classList.toggle("is-listening", state.voiceWeights.listening);
+    nodes.voiceWeightButton.setAttribute("aria-pressed", state.voiceWeights.listening ? "true" : "false");
+    nodes.voiceWeightButton.title = supported ? "상황 말하기" : "음성 인식 미지원";
+    nodes.voiceWeightButton.onclick = startVoiceWeightRecognition;
+  }
+  if (nodes.voiceWeightStatus) {
+    nodes.voiceWeightStatus.hidden = !state.voiceWeights.status;
+    nodes.voiceWeightStatus.textContent = voiceStatusDisplayText(state.voiceWeights.status);
+  }
   if (nodes.candidateCount) {
     nodes.candidateCount.textContent = state.apiMeta?.totalCandidates || state.apartmentCandidates.length;
   }
@@ -5430,7 +6415,8 @@ function selectApartmentMatch(id, options = {}) {
     state.property.detail = null;
     state.property.error = "";
     state.property.isLoading = false;
-    state.property.trendMode = state.budgetMode === "sale" ? "sale" : "rent";
+    state.property.agentAnswer = null;
+    state.property.agentError = "";
     state.property.requestId += 1;
   }
   state.selectedId = id;
@@ -5459,7 +6445,7 @@ function setActiveNav(sectionId) {
 }
 
 function activateSection(sectionId, options = {}) {
-  const target = document.getElementById(sectionId) ? sectionId : "recommend";
+  const target = document.getElementById(sectionId) ? sectionId : "home";
   state.activeSection = target;
   document.body.classList.toggle("is-map-view", target === "map");
   document.querySelectorAll("main > .anchor-target").forEach((section) => {
@@ -5471,7 +6457,7 @@ function activateSection(sectionId, options = {}) {
     window.history.pushState(null, "", `#${target}`);
   }
 
-  if (target === "map" && state.map?.instance) {
+  if ((target === "map" || target === "recommend") && state.map?.instance) {
     window.setTimeout(() => {
       state.map.instance.invalidateSize();
       if (state.apartments.enabled) {
@@ -5479,6 +6465,10 @@ function activateSection(sectionId, options = {}) {
       }
       focusSelectedMarker();
     }, 80);
+  }
+
+  if (target === "recommend") {
+    window.setTimeout(showAgentHint, 260);
   }
 }
 
@@ -5491,12 +6481,30 @@ function initNavigation() {
   });
 
   window.addEventListener("hashchange", () => {
-    activateSection(window.location.hash.replace("#", "") || "recommend");
+    activateSection(window.location.hash.replace("#", "") || "home");
   });
-  activateSection(window.location.hash.replace("#", "") || "recommend");
+  activateSection(window.location.hash.replace("#", "") || "home");
+}
+
+function openRecommendFromHome({ agent = false } = {}) {
+  activateSection("recommend", { updateHash: true });
+  window.setTimeout(() => {
+    state.map?.instance?.invalidateSize({ pan: false });
+    if (agent) {
+      openAgentPanel();
+      return;
+    }
+    nodes.destinationInput?.focus();
+  }, 100);
 }
 
 function resetUserSettings() {
+  clearVoiceWeightTimers();
+  try {
+    state.voiceWeights.recognition?.abort?.();
+  } catch {
+    // Ignore cleanup failures while resetting UI state.
+  }
   state.budget = 0;
   state.budgetMode = "monthly";
   state.destination = "gangnam";
@@ -5510,6 +6518,7 @@ function resetUserSettings() {
   state.detailPanelOpen = false;
   state.detailSubpanelTab = "matching";
   state.hasMatched = false;
+  state.mapMode = "normal";
   state.matchValidationMessage = "";
   state.isLoading = false;
   state.apartments.enabled = true;
@@ -5524,11 +6533,16 @@ function resetUserSettings() {
   state.locationSearch.items = [];
   state.locationSearch.error = "";
   state.locationSearch.isLoading = false;
+  state.voiceWeights.status = "";
+  state.voiceWeights.listening = false;
+  state.voiceWeights.transcript = "";
+  state.voiceWeights.errorStatus = "";
 
-  syncBudgetModeControls();
   nodes.budgetInput.value = state.budget;
   nodes.budgetOutput.value = displayBudgetValue(state.budget);
   nodes.destinationInput.value = state.destinationQuery;
+  document.querySelector("input[name='budgetMode'][value='monthly']").checked = true;
+  syncBudgetModeControls();
   document.querySelector("input[name='persona'][value='single']").checked = true;
   syncWeightInputs();
   if (nodes.apartmentLayerToggle) nodes.apartmentLayerToggle.checked = true;
@@ -5614,17 +6628,80 @@ function bindSidebarResize() {
   });
 }
 
+function initHomeShowcaseCarousel() {
+  document.querySelectorAll("[data-showcase-carousel]").forEach((carousel) => {
+    const slides = Array.from(carousel.querySelectorAll(".home-showcase-slide"));
+    const captions = Array.from(carousel.querySelectorAll(".home-showcase-caption-item"));
+    if (slides.length < 2) return;
+    let carouselTimer = null;
+    const dots = document.createElement("div");
+    dots.className = "home-showcase-dots";
+    dots.setAttribute("aria-label", "화면 미리보기 선택");
+
+    const dotButtons = slides.map((slide, index) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "home-showcase-dot";
+      button.setAttribute("aria-label", `${slide.alt || "미리보기"} 보기`);
+      button.addEventListener("click", () => {
+        activeIndex = index;
+        setActiveShowcaseItem(activeIndex);
+        restartCarouselTimer();
+      });
+      dots.append(button);
+      return button;
+    });
+
+    carousel.append(dots);
+
+    const setActiveShowcaseItem = (index) => {
+      slides.forEach((slide, slideIndex) => {
+        const isActive = slideIndex === index;
+        slide.classList.toggle("is-active", isActive);
+        slide.setAttribute("aria-hidden", isActive ? "false" : "true");
+      });
+
+      captions.forEach((caption, captionIndex) => {
+        caption.classList.toggle("is-active", captionIndex === index);
+      });
+
+      dotButtons.forEach((button, buttonIndex) => {
+        const isActive = buttonIndex === index;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-current", isActive ? "true" : "false");
+      });
+    };
+
+    const restartCarouselTimer = () => {
+      if (carouselTimer) {
+        window.clearInterval(carouselTimer);
+      }
+      carouselTimer = window.setInterval(() => {
+        activeIndex = (activeIndex + 1) % slides.length;
+        setActiveShowcaseItem(activeIndex);
+      }, 5000);
+    };
+
+    let activeIndex = Math.max(0, slides.findIndex((slide) => slide.classList.contains("is-active")));
+    setActiveShowcaseItem(activeIndex);
+    restartCarouselTimer();
+  });
+}
+
 function bindEvents() {
   bindSidebarResize();
+  initHomeShowcaseCarousel();
+
+  document.querySelectorAll("[data-start-recommend]").forEach((button) => {
+    button.addEventListener("click", () => openRecommendFromHome());
+  });
+
+  document.querySelectorAll("[data-start-agent]").forEach((button) => {
+    button.addEventListener("click", () => openRecommendFromHome({ agent: true }));
+  });
 
   nodes.budgetInput.addEventListener("input", (event) => {
     setBudget(event.target.value);
-  });
-
-  document.querySelectorAll('input[name="budgetMode"]').forEach((input) => {
-    input.addEventListener("change", (event) => {
-      setBudgetMode(event.target.value);
-    });
   });
 
   nodes.budgetOutput.addEventListener("input", (event) => {
@@ -5692,11 +6769,20 @@ function bindEvents() {
 
   bindLocationSuggestionList("main");
 
+  document.querySelectorAll("input[name='budgetMode']").forEach((radio) => {
+    radio.addEventListener("change", (event) => {
+      if (event.target.checked) {
+        setBudgetMode(event.target.value, { refresh: true });
+      }
+    });
+  });
+
   document.querySelectorAll("input[name='persona']").forEach((radio) => {
     radio.addEventListener("change", (event) => {
       if (event.target.checked) {
         state.persona = event.target.value;
         applyPersonaDefaultWeights(state.persona);
+        state.voiceWeights.status = "";
         scheduleRefresh(0);
       }
     });
@@ -5710,8 +6796,23 @@ function bindEvents() {
   ].forEach(([inputId, key]) => {
     nodes[inputId].addEventListener("input", (event) => {
       state.weights[key] = Number(event.target.value);
+      state.voiceWeights.status = "";
       scheduleRefresh();
     });
+  });
+
+  nodes.voiceWeightButton?.addEventListener("click", startVoiceWeightRecognition);
+
+  nodes.mapModeButtons?.forEach((button) => {
+    button.addEventListener("click", () => setMapMode(button.dataset.mapMode));
+  });
+
+  nodes.sunlightTimeInput?.addEventListener("input", (event) => {
+    setSunlightMinutes(event.target.value);
+  });
+
+  nodes.sunlightNowButton?.addEventListener("click", () => {
+    setSunlightMinutes(currentDayMinutes());
   });
 
   nodes.toggleCards.addEventListener("click", () => {
@@ -5752,8 +6853,6 @@ function bindEvents() {
       return;
     }
 
-    // 예산 0으로 매칭하면 cost_score_for_budget이 전 단지에 0점을 주므로 총점이
-    // 89점대에서 55점대로 눌린 채 순위만 나온다. 결과를 내주는 대신 입력을 요구한다.
     if (!Number(state.budget)) {
       state.hasMatched = false;
       state.matchValidationMessage = `${budgetConfig().label}을 입력해주세요.`;
@@ -5775,6 +6874,8 @@ function bindEvents() {
     state.property.detail = null;
     state.property.error = "";
     state.property.isLoading = false;
+    state.property.agentAnswer = null;
+    state.property.agentError = "";
     state.property.requestId += 1;
     resetRouteState();
     refreshRecommendations();
@@ -5848,16 +6949,15 @@ function bindEvents() {
 async function init() {
   loadBookmarksFromStorage();
   restoreSidebarWidth();
-  restoreSubpanelWidth();
   bindEvents();
-  bindSubpanelResizer();
   bindAgentPanelEvents();
   initNavigation();
   render();
-  renderAgentPanel();
+  window.lucide?.createIcons();
   await loadAreas();
   await loadApartmentCandidates();
   render();
+  window.lucide?.createIcons();
 }
 
 init().catch((error) => {

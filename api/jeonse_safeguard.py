@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import math
 
-# HUG 깡통주택 정의: (보증금 + 대출) 합계가 집값의 80%를 넘는 주택.
+# 깡통전세 실무 기준: (보증금 + 대출) 합계가 집값의 80%를 넘는 주택. 법정 기준은 아니며 HUG 전세보증 가입 한도는 90%다.
 GAPTONG_THRESHOLD_PCT = 80.0
 
 # 전국 전세피해 및 예방지원센터. 주소/전화/운영요일은 HUG 공고 기준이고,
@@ -159,7 +159,7 @@ def _money(value_10k: float) -> str:
 
 
 def gaptong_verdict(market: dict) -> dict:
-    """전세가율을 HUG 80% 기준과 대조해 '근저당 얼마까지 안전한가'로 바꾼다."""
+    """전세가율을 실무 80% 기준과 대조해 '근저당 얼마까지 안전한가'로 바꾼다."""
     sale = float(market.get("recentSale10k") or 0)
     jeonse = float(market.get("recentJeonse10k") or 0)
     ratio = (jeonse / sale * 100) if sale else 0.0
@@ -173,7 +173,7 @@ def gaptong_verdict(market: dict) -> dict:
         key, label = "danger", "깡통주택 기준 초과"
         detail = (
             f"근저당이 0원이어도 보증금만으로 집값의 {ratio:.1f}%를 차지해 "
-            f"HUG 깡통주택 기준({GAPTONG_THRESHOLD_PCT:.0f}%)을 이미 넘습니다."
+            f"깡통전세 실무 기준({GAPTONG_THRESHOLD_PCT:.0f}%)을 이미 넘습니다."
         )
     elif headroom_pct < 10:
         key, label = "warning", "여력 거의 없음"
@@ -197,7 +197,7 @@ def gaptong_verdict(market: dict) -> dict:
         "verdictKey": key,
         "verdictLabel": label,
         "detail": detail,
-        "basis": "HUG 기준: (보증금 + 대출) 합계가 집값의 80%를 넘으면 깡통주택",
+        "basis": "실무 기준: (보증금 + 대출)이 집값의 80%를 넘으면 깡통전세로 봅니다(법정 기준 아님). HUG 전세보증 가입 한도는 90%입니다.",
     }
 
 
@@ -340,8 +340,8 @@ def nearest_center(apartment: dict) -> dict | None:
         **best,
         "distanceKm": round(distance, 1),
         "hours": CENTER_HOURS,
-        "service": "공인중개사(안전계약 컨설턴트)가 등기부등본·건축물대장을 함께 검토합니다. 예비 임차인도 계약 전에 이용할 수 있습니다.",
-        "note": "상담은 참고용이며 법적 책임을 부담하지 않습니다. 센터별 운영 요일이 다르니 유선 예약 후 방문하세요.",
+        "service": "공인중개사(안전계약 컨설턴트)가 등기부등본·건축물대장을 함께 검토합니다.",
+        "note": "상담은 참고용이며 법적 책임을 부담하지 않습니다.",
         "reserveUrl": "https://www.khug.or.kr/jeonse/web/s04/s040604.jsp",
     }
 

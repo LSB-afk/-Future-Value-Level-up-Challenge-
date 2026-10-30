@@ -19,6 +19,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
+from jeonse_verdict import evaluate as evaluate_jeonse
+from property_feedback import add_feedback, list_feedback
 from kakao_safety_adapters import kakao_safety_response, kakao_safety_status
 from kakao_soc_adapters import kakao_soc_response, kakao_soc_status
 from property_adapters import property_agent_response, property_detail_response
@@ -689,6 +691,38 @@ def is_residential_destination_suggestion(item: dict) -> bool:
     )
 
 
+def local_apartment_name_suggestions(query: str, limit: int) -> list[dict]:
+    # ponytail: keyless stand-in for Kakao keyword search; substring scan over the local apartment list only.
+    compact_query = _scope_match_text(query)
+    apartment_dataset, _, _ = load_apartment_dataset()
+    suggestions: list[dict] = []
+    for apartment in apartment_dataset.get("apartments", []):
+        district = str(apartment.get("district") or "").strip()
+        dong = str(apartment.get("dong") or "").strip()
+        name = str(apartment.get("name") or "").strip()
+        if not (district and dong and name) or apartment.get("lat") is None or apartment.get("lng") is None:
+            continue
+        if compact_query not in _scope_match_text(district, dong, name):
+            continue
+        suggestions.append(
+            {
+                "type": "apartment",
+                "label": f"{dong} {name}",
+                "address": str(apartment.get("address") or f"서울시 {district} {dong}"),
+                "lat": apartment.get("lat"),
+                "lng": apartment.get("lng"),
+                "district": district,
+                "dong": dong,
+                "apartmentName": name,
+                "source": "local_apartment_name",
+                "selectable": True,
+            }
+        )
+        if len(suggestions) >= limit:
+            break
+    return suggestions
+
+
 def location_suggestions_response(raw: dict[str, list[str]]) -> dict:
     query = single_value(raw, "query").strip()
     try:
@@ -713,11 +747,14 @@ def location_suggestions_response(raw: dict[str, list[str]]) -> dict:
             suggestions.append(suggestion)
             if len(suggestions) >= limit:
                 break
+    if should_search_kakao and not suggestions:
+        suggestions = local_apartment_name_suggestions(query, limit)
 
     deduped: list[dict] = []
     seen: set[str] = set()
     for item in suggestions:
-        if is_residential_destination_suggestion(item):
+        # 키 없이 쓰는 단지명 검색 결과는 주거지라도 남긴다. 카카오 장소 검색이 없을 때 고를 수 있는 유일한 후보다.
+        if is_residential_destination_suggestion(item) and item.get("source") != "local_apartment_name":
             continue
         key = compact_location_text(f"{item.get('label')}|{item.get('address')}|{item.get('lat')}|{item.get('lng')}")
         if key in seen:
@@ -1125,8 +1162,35 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > 1_000_000:
+            raise ValueError("요청 본문 크기가 올바르지 않습니다.")
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JSON 객체가 필요합니다.")
+        return payload
+
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path in {"/api/jeonse-verdict", "/api/property-feedback"}:
+            try:
+                payload = self.read_json_body()
+                if parsed.path == "/api/jeonse-verdict":
+                    key = str(payload.get("key") or "")
+                    payload["feedbackCount"] = len(list_feedback(key)) if key else 0
+                    self.send_json(HTTPStatus.OK, evaluate_jeonse(payload))
+                else:
+                    item = add_feedback(
+                        str(payload.get("key") or ""),
+                        str(payload.get("category") or ""),
+                        str(payload.get("text") or ""),
+                        str(payload.get("role") or ""),
+                    )
+                    self.send_json(HTTPStatus.OK, {"ok": True, "item": item})
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
         if parsed.path != "/api/agent-chat":
             self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"unknown path: {parsed.path}"})
             return
@@ -1171,6 +1235,10 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
 
         try:
+            if path == "/api/property-feedback":
+                key = single_value(parse_qs(parsed.query), "key")
+                self.send_json(HTTPStatus.OK, {"ok": True, "items": list_feedback(key)})
+                return
             if path == "/api/health":
                 dataset = load_dataset()
                 self.send_json(
