@@ -133,7 +133,7 @@ h4 {
   overflow: hidden;
   color: inherit;
   font-size: 24px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -141,7 +141,7 @@ h4 {
 
 .home-fixed-cta button {
   border: 0;
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -166,7 +166,7 @@ h4 {
   margin: 0 0 12px;
   color: var(--naver-strong);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .home-hero h1 {
@@ -182,7 +182,7 @@ h4 {
   margin: 18px auto 0;
   color: #475569;
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.7;
 }
 
@@ -200,7 +200,7 @@ h4 {
   background: rgba(255, 255, 255, 0.78);
   color: #475569;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .home-visual {
@@ -305,7 +305,7 @@ h4 {
   background: var(--naver-soft);
   color: var(--naver-strong);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .home-feature-grid article strong {
@@ -317,7 +317,7 @@ h4 {
   margin: 0;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.65;
 }
 
@@ -345,7 +345,7 @@ h4 {
   margin: 0;
   color: #94a3b8;
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .home-showcase-copy h2 {
@@ -373,7 +373,7 @@ h4 {
   margin: 0;
   color: #334155;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.55;
   opacity: 0;
   transition: opacity 0.32s ease;
@@ -465,7 +465,7 @@ h4 {
 .home-fixed-cta span {
   color: #0f172a;
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -567,7 +567,7 @@ h4 {
   background: var(--naver);
   color: #fff;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .brand-mark svg {
@@ -597,7 +597,7 @@ h4 {
   margin-top: 2px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .header-actions {
@@ -617,7 +617,7 @@ h4 {
   background: var(--naver-soft);
   color: var(--naver-strong);
   font-size: 18px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
   cursor: pointer;
@@ -701,7 +701,7 @@ h4 {
   margin: 0 0 4px;
   color: var(--naver-strong);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   letter-spacing: 0;
 }
 
@@ -725,7 +725,7 @@ h4 {
   background: #f8fafc;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .condition-metrics strong {
@@ -743,7 +743,7 @@ h4 {
   border-radius: 8px;
   background: #fff;
   color: var(--naver-strong);
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -768,7 +768,7 @@ h4 {
 legend {
   color: var(--muted);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -776,7 +776,7 @@ legend {
 .budget-input-wrap {
   color: var(--naver-strong);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -806,7 +806,7 @@ legend {
   background: transparent;
   color: var(--naver-strong);
   font: inherit;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 20px;
   text-align: right;
   outline: 0;
@@ -901,7 +901,7 @@ input[type="text"] {
   background: #e5e7eb;
   color: #64748b;
   font-size: 0;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   cursor: pointer;
 }
@@ -928,7 +928,7 @@ input[type="text"] {
 
 .destination-validation.is-error {
   color: #dc2626;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .location-suggestions {
@@ -1000,7 +1000,7 @@ input[type="text"] {
 
 .location-suggestion.is-scope strong {
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .location-suggestion-accent {
@@ -1133,7 +1133,7 @@ input[type="range"]::-moz-range-thumb {
   background: #fff;
   color: var(--ink);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1212,7 +1212,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--naver-soft);
   color: var(--naver-strong);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.45;
 }
 
@@ -1244,7 +1244,7 @@ input[type="range"]::-moz-range-thumb {
   background: #fff;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1322,7 +1322,7 @@ input[type="range"]::-moz-range-thumb {
   background: var(--naver-soft);
   color: var(--naver-strong);
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .card-main {
@@ -1369,7 +1369,7 @@ input[type="range"]::-moz-range-thumb {
 .card-main .card-meta {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .ghost-button,
@@ -1381,7 +1381,7 @@ input[type="range"]::-moz-range-thumb {
   border-radius: 8px;
   background: #fff;
   color: var(--naver-strong);
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -1429,7 +1429,7 @@ input[type="range"]::-moz-range-thumb {
 
 .empty-state.is-error {
   color: #dc2626;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .mv-subpanel {
@@ -1486,7 +1486,7 @@ input[type="range"]::-moz-range-thumb {
   overflow: hidden;
   color: var(--ink);
   font-size: 22px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1496,7 +1496,7 @@ input[type="range"]::-moz-range-thumb {
   overflow: hidden;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1524,7 +1524,7 @@ input[type="range"]::-moz-range-thumb {
   background: transparent;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   letter-spacing: 0;
   cursor: pointer;
   white-space: nowrap;
@@ -1582,7 +1582,7 @@ input[type="range"]::-moz-range-thumb {
 .subpanel-section-title span {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 details.sidebar-section {
@@ -1606,7 +1606,7 @@ details > summary::-webkit-details-marker {
 
 details > summary span {
   font-size: 15px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .selected-chip {
@@ -1619,7 +1619,7 @@ details > summary span {
   background: #f1f5f9;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1672,20 +1672,20 @@ details > summary span {
 .infrastructure-category-title {
   color: var(--ink);
   font-size: 15px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .infrastructure-note {
   margin: -4px 0 0;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .infrastructure-item span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
 }
 .infrastructure-item small {
   color: var(--muted);
@@ -1733,7 +1733,7 @@ details > summary span {
   background: #fff;
   color: var(--naver);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
   transform: rotate(-45deg);
 }
@@ -1851,7 +1851,7 @@ details > summary span {
   display: block;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .metric strong,
@@ -1900,7 +1900,7 @@ details > summary span {
 .match-summary-heading span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .match-highlight-grid,
@@ -1923,7 +1923,7 @@ details > summary span {
   display: block;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .match-highlight strong,
@@ -2089,7 +2089,7 @@ details > summary span {
   color: var(--muted);
   font: inherit;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   letter-spacing: 0;
   cursor: pointer;
   white-space: nowrap;
@@ -2154,7 +2154,7 @@ details > summary span {
   background: transparent;
   color: var(--naver-strong);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -2206,7 +2206,7 @@ details > summary span {
   color: #fff;
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.18);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .route-steps strong {
@@ -2313,7 +2313,7 @@ details > summary span {
   position: absolute;
   top: 3px;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -2451,7 +2451,7 @@ details > summary span {
   display: block;
   padding: 0 3px 5px;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
   white-space: nowrap;
 }
@@ -2491,7 +2491,7 @@ details > summary span {
   background: #eef2f7;
   color: #475569;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -2577,13 +2577,13 @@ details > summary span {
 
 .sunlight-time-readout span {
   font-size: 9px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .sunlight-time-readout strong {
   color: #111827;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .sunlight-shadow-shape {
@@ -2694,7 +2694,7 @@ details > summary span {
   max-height: 36px;
   overflow: hidden;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.2;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -2719,7 +2719,7 @@ details > summary span {
 .apt-cluster strong {
   font-size: clamp(12px, calc(var(--cluster-size, 54px) * 0.3), 18px);
   line-height: 1;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .district-cluster {
@@ -2742,7 +2742,7 @@ details > summary span {
   background: rgba(59, 130, 246, 0.88);
   color: #fff;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -2758,7 +2758,7 @@ details > summary span {
   background: #eff6ff;
   color: #1d4ed8;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -2825,7 +2825,7 @@ details > summary span {
 .property-marker-tooltip span {
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.3;
   white-space: nowrap;
 }
@@ -2841,7 +2841,7 @@ details > summary span {
   color: #fff;
   box-shadow: 0 5px 14px rgba(15, 23, 42, 0.25);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .route-destination-pin-wrapper {
@@ -2910,7 +2910,7 @@ details > summary span {
   border-top: 4px dashed var(--bus);
   color: var(--bus);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   text-align: center;
 }
 
@@ -3056,7 +3056,7 @@ body.bookmark-panel-open .agent-hint {
   width: 112px;
   background: #f8fafc;
   color: var(--muted);
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .bookmark-compare-table thead th:first-child {
@@ -3072,7 +3072,7 @@ body.bookmark-panel-open .agent-hint {
   background: transparent;
   color: var(--ink);
   font-size: 14px;
-  font-weight: 900;
+  font-weight: 600;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3195,7 +3195,7 @@ body.bookmark-panel-open .agent-hint {
 .property-card-title span {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .property-metrics.two,
@@ -3220,7 +3220,7 @@ body.bookmark-panel-open .agent-hint {
   background: #f8fafc;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -3323,7 +3323,7 @@ body.bookmark-panel-open .agent-hint {
   background: var(--naver-soft);
   color: var(--naver-strong);
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
   list-style: none;
 }
@@ -3358,7 +3358,7 @@ body.bookmark-panel-open .agent-hint {
   color: var(--ink);
   font-style: normal;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   text-align: right;
 }
 
@@ -3494,7 +3494,7 @@ body.bookmark-panel-open .agent-hint {
   background: #fff;
   color: var(--naver-strong);
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 600;
   cursor: pointer;
   box-shadow: var(--shadow-strong);
   transition: transform 0.15s ease, background 0.15s ease, color 0.15s ease;
@@ -3537,7 +3537,7 @@ body.bookmark-panel-open .agent-hint {
   background: #fff;
   color: #0f172a;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1.45;
   word-break: keep-all;
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
@@ -3707,7 +3707,7 @@ body.bookmark-panel-open .agent-hint {
   border-bottom-right-radius: 4px;
   background: var(--naver);
   color: #fff;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .agent-msg.is-agent {
@@ -3733,7 +3733,7 @@ body.bookmark-panel-open .agent-hint {
   display: block;
   margin-bottom: 4px;
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--naver-strong);
 }
 
@@ -3752,7 +3752,7 @@ body.bookmark-panel-open .agent-hint {
   background: var(--naver-soft);
   color: var(--naver-strong);
   font-size: 10px;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.5;
 }
 
@@ -3766,7 +3766,7 @@ body.bookmark-panel-open .agent-hint {
 }
 
 .agent-sources > span {
-  font-weight: 900;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -3786,7 +3786,7 @@ body.bookmark-panel-open .agent-hint {
 
 .agent-basis summary {
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--naver-strong);
   cursor: pointer;
 }
@@ -3812,7 +3812,7 @@ body.bookmark-panel-open .agent-hint {
   background: #fff;
   color: var(--muted);
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -3862,7 +3862,7 @@ body.bookmark-panel-open .agent-hint {
 .safeguard-subtitle {
   margin: 16px 0 8px;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--ink);
 }
 
@@ -3905,7 +3905,7 @@ body.bookmark-panel-open .agent-hint {
   flex: 0 0 auto;
   font-style: normal;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--muted);
 }
 
@@ -4016,7 +4016,7 @@ body.bookmark-panel-open .agent-hint {
   background: var(--naver);
   color: #fff;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   text-decoration: none;
 }
 
@@ -4036,7 +4036,7 @@ body.bookmark-panel-open .agent-hint {
 .consent-refused em {
   margin-right: 4px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: 600;
   color: #b98a00;
 }
 
@@ -4076,7 +4076,7 @@ body.bookmark-panel-open .agent-hint {
 .tenancy-day {
   flex: 0 0 92px;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--ink);
 }
 
@@ -4121,7 +4121,7 @@ body.bookmark-panel-open .agent-hint {
   background: #fff;
   color: var(--ink);
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   cursor: pointer;
 }
 
@@ -4146,7 +4146,7 @@ body.bookmark-panel-open .agent-hint {
   flex: 0 0 auto;
   font-style: normal;
   font-size: 11px;
-  font-weight: 900;
+  font-weight: 600;
   color: var(--naver-strong);
 }
 
@@ -4390,4 +4390,24 @@ body.bookmark-panel-open .agent-hint {
   .sidebar-brand {
     padding-right: 12px;
   }
+}
+
+
+/* 글꼴 통일: 전 화면 Pretendard, 굵기는 600까지만 쓴다 */
+strong,
+b,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+th {
+  font-weight: 600;
+}
+
+.leaflet-container,
+.leaflet-popup-content,
+.leaflet-tooltip {
+  font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }

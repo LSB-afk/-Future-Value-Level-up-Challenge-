@@ -4017,7 +4017,7 @@ function renderDetailSubpanelState() {
   nodes.detailSubpanel.hidden = !open;
   nodes.detailSubpanel.setAttribute("aria-hidden", open ? "false" : "true");
 
-  const activeTab = ["matching", "apartment", "route", "infrastructure", "jeonseRisk"].includes(state.detailSubpanelTab)
+  const activeTab = ["matching", "apartment", "route", "infrastructure", "jeonseRisk", "listing"].includes(state.detailSubpanelTab)
     ? state.detailSubpanelTab
     : "matching";
   nodes.detailSubpanel.querySelectorAll("[data-subpanel-tab]").forEach((button) => {
@@ -5242,7 +5242,18 @@ function renderPropertyDashboard() {
   bindPropertyDashboardEvents();
 }
 
+function renderListingsPanel() {
+  const container = document.getElementById("listingContent");
+  if (!container) return;
+  window.FitHomeListings?.render(container, {
+    detail: state.property.detail,
+    isLoading: state.property.isLoading,
+    error: state.property.error,
+  });
+}
+
 function renderJeonseRiskPanel() {
+  renderListingsPanel();
   if (!nodes.jeonseRiskContent) return;
 
   if (state.property.isLoading) {
@@ -5277,6 +5288,11 @@ function renderJeonseRiskPanel() {
   nodes.jeonseRiskContent.classList.add("has-property-detail");
   const risk = detail.risk || {};
   const safeguard = detail.safeguard || {};
+  const section = (title, body, open = false) => `
+      <details class="property-card wide fh-fold" ${open ? "open" : ""}>
+        <summary>${title}</summary>
+        <div class="fh-fold-body">${body}</div>
+      </details>`;
   nodes.jeonseRiskContent.innerHTML = `
     <div class="property-grid">
       <section class="property-card wide jeonse-risk-card">
@@ -5284,43 +5300,28 @@ function renderJeonseRiskPanel() {
           <h4>전세 위험 신호 점검</h4>
         </div>
         ${renderGaptongVerdict(safeguard)}
+        <div class="fh-report-cta">
+          <div>
+            <strong>상세 판정 리포트</strong>
+            <span>등기부 값을 넣으면 실제 LTV로 안심·주의·위험을 판정하고, 확인 요청과 특약까지 정리해 드려요.</span>
+          </div>
+          <button type="button" class="fh-report-cta-button" data-open-report="${escapeHtml(detail.id)}">리포트 보기</button>
+        </div>
         <p class="risk-summary">${escapeHtml(risk.disclaimer || "")}</p>
         ${renderRiskSignalDetails(risk)}
       </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>계약 전 확인 체크리스트</h4>
-        </div>
-        ${renderContractChecklist(risk)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>정보 사각지대</h4>
-        </div>
+      ${section("계약 전 확인 체크리스트", renderContractChecklist(risk))}
+      ${section("정보 사각지대", `
         ${renderBlindSpots(safeguard)}
         <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
         ${renderSelfServeChecks(safeguard)}
         <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
-        ${renderConsentChecks(safeguard)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>대항력 확보 타임라인</h4>
-        </div>
+        ${renderConsentChecks(safeguard)}`)}
+      ${section("대항력 확보 타임라인과 특약", `
         ${renderTenancyTimeline(safeguard)}
         <h5 class="safeguard-subtitle">공백을 막는 특약 문구</h5>
-        ${renderSpecialClauses(safeguard)}
-      </section>
-
-      <section class="property-card wide">
-        <div class="property-card-title">
-          <h4>가까운 안전계약 컨설팅</h4>
-        </div>
-        ${renderSupportCenter(safeguard)}
-      </section>
+        ${renderSpecialClauses(safeguard)}`)}
+      ${section("가까운 안전계약 컨설팅", renderSupportCenter(safeguard))}
     </div>
   `;
   bindPropertyDashboardEvents();

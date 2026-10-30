@@ -29,6 +29,8 @@ REGISTRY_FRESH_DAYS = 30
 HOUSING_LABELS = {"apartment": "아파트", "villa": "빌라·다세대", "multi": "다가구", "officetel": "오피스텔"}
 SOURCE_LABELS = {
     "inspected": "핏홈 점검",
+    "trade": "실거래",
+    "public": "공공데이터",
     "registry": "등기부",
     "input": "입력값",
     "estimate": "추정",

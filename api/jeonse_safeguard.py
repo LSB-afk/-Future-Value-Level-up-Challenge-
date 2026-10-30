@@ -149,7 +149,7 @@ def gaptong_verdict(market: dict) -> dict:
         key, label = "danger", "깡통주택 기준 초과"
         detail = (
             f"근저당이 0원이어도 보증금만으로 집값의 {ratio:.1f}%를 차지해 "
-            f"HUG 깡통주택 기준({GAPTONG_THRESHOLD_PCT:.0f}%)을 넘습니다."
+            f"깡통전세 실무 기준({GAPTONG_THRESHOLD_PCT:.0f}%)을 넘습니다."
         )
     elif headroom_pct < 10:
         key, label = "warning", "여력 거의 없음"
@@ -170,7 +170,7 @@ def gaptong_verdict(market: dict) -> dict:
         "verdictKey": key,
         "verdictLabel": label,
         "detail": detail,
-        "basis": "HUG 기준: (보증금 + 대출) 합계가 집값의 80%를 넘으면 깡통주택",
+        "basis": "실무 기준: (보증금 + 대출)이 집값의 80%를 넘으면 깡통전세로 봅니다(법정 기준 아님). HUG 전세보증 가입 한도는 90%입니다.",
     }
 
 

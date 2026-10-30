@@ -1230,9 +1230,6 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
 
         try:
-            if path == "/api/jeonse-demo-cases":
-                self.send_json(HTTPStatus.OK, json.loads((ROOT / "data" / "jeonse_demo_cases.json").read_text(encoding="utf-8")))
-                return
             if path == "/api/property-feedback":
                 key = single_value(parse_qs(parsed.query), "key")
                 self.send_json(HTTPStatus.OK, {"ok": True, "items": list_feedback(key)})

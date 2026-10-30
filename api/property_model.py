@@ -302,7 +302,7 @@ def build_risk(apartment: dict, market: dict) -> dict:
             "label": "매매가 대비 전세가율",
             "value": f"{jeonse_ratio:.1f}%",
             "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
-            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. HUG 깡통주택 기준은 보증금+대출 80%입니다.",
+            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. 깡통전세 실무 기준은 보증금+대출 80%, HUG 보증 한도는 90%입니다.",
         },
         {
             "label": "공시가격 대비 보증금 비율",
@@ -582,7 +582,7 @@ def property_agent_answer(question: str, detail: dict, candidates: list[dict]) -
             answer = "현재 로딩된 단지 중에는 더 낮은 위험 점수 후보가 충분하지 않습니다. 서울 OpenAptInfo 키를 연결하면 전체 단지에서 대안을 찾을 수 있습니다."
     elif any(token in text for token in ["깡통", "근저당", "담보", "빚"]):
         answer = (
-            f"{topic(detail['name'])} HUG 깡통주택 기준({gaptong.get('thresholdPct', 80)}%) 대비 "
+            f"{topic(detail['name'])} 깡통전세 실무 기준({gaptong.get('thresholdPct', 80)}%) 대비 "
             f"'{gaptong.get('verdictLabel', '판정 불가')}'입니다. "
             f"{gaptong.get('detail', '')} "
             "등기부 을구의 채권최고액을 이 금액과 비교해 보세요."
