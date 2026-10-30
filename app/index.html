@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="FitHome - 데이터 기반 아파트 매칭 서비스">
-    <title>FitHome 아파트 매칭</title>
+    <meta name="description" content="FitHome - 계약 전 전세 안심 판정 서비스">
+    <title>FitHome 전세 안심 판정</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='24' height='24' rx='7' fill='%2314B8A6'/%3E%3Cpath d='M9 11h4.4l2.6 6.3L18.6 11H23v10h-3v-5.7L17.6 21h-3.2L12 15.3V21H9z' fill='white'/%3E%3C/svg%3E">
     <link
       rel="stylesheet"
@@ -13,6 +13,7 @@
       crossorigin="">
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
     <link rel="stylesheet" href="./styles.css?v=timeline-clean-1">
+    <link rel="stylesheet" href="./verdict.css?v=verdict-3">
   </head>
   <body>
     <main>
@@ -28,10 +29,14 @@
 
         <section class="home-hero" aria-label="FitHome 소개">
           <div class="home-hero-copy">
-            <h1>출퇴근, 예산, 안전까지<br>내 조건에 맞는 집만 골라보세요</h1>
+            <h1>이 집 전세,<br>계약해도 될까요?</h1>
             <p>
-              원하는 조건을 입력하면 조건에 맞는 집을 바로 추천해드립니다.
+              집값 대비 빚, 신탁·압류 같은 권리 문제, 집주인 정보를 한 장의 리포트로 판정해 드립니다.
             </p>
+            <div class="home-hero-actions">
+              <button type="button" class="home-hero-primary" data-start-verdict="form">안심 판정 시작</button>
+              <button type="button" class="home-hero-secondary" data-start-verdict="demo-danger">예시 리포트 보기</button>
+            </div>
           </div>
 
           <div class="home-visual" aria-label="지도 기반 매칭 예시">
@@ -43,49 +48,49 @@
 
         <section class="home-section home-category-section" aria-label="추천 탐색 기준">
           <div class="home-section-head">
-            <h2>어떤 기준으로 찾고 있나요?</h2>
+            <h2>계약 전에 이런 것을 확인해요</h2>
           </div>
           <div class="home-category-grid">
-            <div class="home-category-card">출퇴근이 편한 집</div>
-            <div class="home-category-card">예산에 맞는 집</div>
-            <div class="home-category-card">생활 인프라가 좋은 집</div>
-            <div class="home-category-card">전세 사기 없는 집</div>
-            <div class="home-category-card">가족이 살기 좋은 집</div>
-            <div class="home-category-card">조용하고 쾌적한 집</div>
+            <div class="home-category-card">집값 대비 빚 비율 (LTV)</div>
+            <div class="home-category-card">신탁·압류·경매 기록</div>
+            <div class="home-category-card">앞 세입자 보증금 (다가구)</div>
+            <div class="home-category-card">집주인 세금 체납</div>
+            <div class="home-category-card">최근 바뀐 집주인</div>
+            <div class="home-category-card">전세보증보험 가입 가능 여부</div>
           </div>
         </section>
 
         <section class="home-section home-feature-section" aria-label="FitHome 주요 기능">
           <div class="home-section-head centered">
-            <h2>FitHome이 제공하는 스마트한 주거 솔루션</h2>
+            <h2>FitHome이 계약까지 함께 확인합니다</h2>
           </div>
           <div class="home-feature-grid">
             <article>
               <span>01</span>
-              <strong>내 조건 기반 매칭</strong>
-              <p>예산부터 출퇴근 목적지, 우선순위까지 나에게 꼭 맞춘 최적의 단지를 추천해 드립니다.</p>
+              <strong>전세 위험 등급</strong>
+              <p>중고차 무사고 인증처럼, 집값 대비 빚과 권리 기록을 기준과 비교해 안심·주의·위험으로 판정합니다.</p>
             </article>
             <article>
               <span>02</span>
-              <strong>지도 위 후보 비교</strong>
-              <p>추천 단지의 정확한 위치와 이동 경로, 인근 생활권을 한눈에 비교할 수 있습니다.</p>
+              <strong>권리 진단과 등기 이력</strong>
+              <p>신탁·압류·임차권등기, 소유자 변경과 근저당 기록을 항목별 근거와 함께 보여줍니다.</p>
             </article>
             <article>
               <span>03</span>
-              <strong>생활 SOC 확인</strong>
-              <p>의료·교육·교통 등 일상에 꼭 필요한 주변 인프라와 시설 접근성을 꼼꼼하게 분석합니다.</p>
+              <strong>확인 요청과 단계별 재확인</strong>
+              <p>집주인 동의가 필요한 서류는 요청문으로 받아내고, 거절·무응답도 위험 신호로 반영합니다.</p>
             </article>
             <article>
               <span>04</span>
-              <strong>전세 위험 신호 확인</strong>
-              <p>시세와 권리관계를 철저히 분석하여 안전한 계약을 위한 핵심 체크 포인트를 짚어줍니다.</p>
+              <strong>안심 단지 찾기</strong>
+              <p>예산·출퇴근·생활 인프라 조건으로 후보 단지를 비교하고, 그중 안심 판정을 통과한 집을 고릅니다.</p>
             </article>
           </div>
         </section>
 
         <section class="home-showcase-section" aria-label="조건 입력 화면 미리보기">
           <div class="home-showcase-copy">
-            <p>조건 입력</p>
+            <p>안심 단지 찾기 · 조건 입력</p>
             <h2>필요한 조건만 고르면<br>맞는 집을 바로 비교할 수 있어요.</h2>
           </div>
           <div class="home-showcase-carousel" data-showcase-carousel>
@@ -102,7 +107,7 @@
 
         <section class="home-showcase-section home-result-showcase" aria-label="매칭 결과 화면 미리보기">
           <div class="home-showcase-copy">
-            <p>결과 확인</p>
+            <p>안심 단지 찾기 · 결과 확인</p>
             <h2>추천된 집의 정보를<br>화면별로 자세히 확인할 수 있어요.</h2>
           </div>
           <div class="home-showcase-carousel" data-showcase-carousel>
@@ -123,9 +128,12 @@
           </div>
         </section>
 
-        <div class="home-fixed-cta" aria-label="매칭 시작">
-          <span>원하는 조건을 입력하고 맞는 집을 추천받아보세요.</span>
-          <button type="button" data-start-recommend>내 조건으로 매칭하기</button>
+        <div class="home-fixed-cta" aria-label="판정 시작">
+          <span>계약서에 도장 찍기 전, 이 집 전세 위험부터 확인하세요.</span>
+          <div class="home-fixed-cta-actions">
+            <button type="button" class="is-ghost" data-start-recommend>안심 단지 찾기</button>
+            <button type="button" data-start-verdict="form">안심 판정 시작</button>
+          </div>
         </div>
       </section>
 
@@ -367,6 +375,20 @@
           <aside id="bookmarkPanel" class="bookmark-panel" aria-label="즐겨찾기 아파트 비교" aria-live="polite" hidden></aside>
         </section>
       </section>
+      <section id="verdict" class="verdict-screen anchor-target" aria-label="전세 안심 판정">
+        <header class="verdict-topbar">
+          <div class="home-brand" data-verdict-nav="#home" role="link" tabindex="0">
+            <svg class="home-brand-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path d="M3.8 10.2 12 3.5l8.2 6.7v9.4a1 1 0 0 1-1 1h-5.1v-6.2H9.9v6.2H4.8a1 1 0 0 1-1-1z" fill="currentColor"></path>
+            </svg>
+            <strong>FitHome</strong>
+          </div>
+          <h1>전세 안심 판정</h1>
+          <span class="spacer"></span>
+          <button type="button" class="verdict-link-button" data-verdict-nav="#recommend">안심 단지 찾기</button>
+        </header>
+        <div class="verdict-wrap" id="verdictRoot" aria-live="polite"></div>
+      </section>
     </main>
 
     <template id="cardTemplate">
@@ -390,5 +412,6 @@
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <script type="module" src="./three-bootstrap.js?v=sunlight-3d-8"></script>
     <script src="./app.js?v=live-rule-summary-1"></script>
+    <script src="./verdict.js?v=verdict-2"></script>
   </body>
 </html>

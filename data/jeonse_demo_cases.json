@@ -1,0 +1,62 @@
+{
+  "notice": "시연용 예시 매물입니다. 실제 매물·실제 소유자 정보가 아니며, 완성형 리포트가 어떻게 보이는지 보여주기 위해 만든 값입니다.",
+  "cases": [
+    {
+      "key": "demo-safe",
+      "isDemo": true,
+      "title": "예시 A · 아파트",
+      "summary": "핏홈 점검 완료 · 근저당이 작은 아파트",
+      "property": {"label": "서울 마포구 ○○아파트 84㎡ 7층", "address": "서울 마포구 ○○동 ○○아파트", "housingType": "apartment"},
+      "deposit10k": 42000,
+      "price": {"basis": "market", "value10k": 90000, "official10k": 63000, "source": "inspected"},
+      "registry": {"source": "inspected", "issuedAt": "2026-10-28", "mortgageMax10k": 12000, "trust": "no", "seizure": "no", "auction": "no", "leaseRegistration": "no", "ownerMatches": "yes", "lastOwnershipChange": "2019-05-02"},
+      "landlord": {"source": "inspected", "taxArrears": "no", "guaranteeEligible": "yes"},
+      "building": {"source": "inspected", "use": "residential", "violation": "no"},
+      "requests": {},
+      "inspection": {"status": "done", "by": "핏홈 점검팀 (시연용)", "date": "2026-10-28", "note": "등기부 열람·현장 방문·임대인 서류 대조 완료"},
+      "history": [
+        {"date": "2014-03-10", "kind": "ownership", "title": "소유권 보존", "detail": "신축 후 최초 등기"},
+        {"date": "2019-05-02", "kind": "ownership", "title": "소유권 이전 (매매)", "detail": "현재 소유자"},
+        {"date": "2019-05-02", "kind": "mortgage", "title": "근저당 설정", "detail": "채권최고액 1억 2,000만원 · 은행"},
+        {"date": "2026-10-28", "kind": "inspection", "title": "핏홈 점검 완료", "detail": "등기부·현장·서류 대조"}
+      ]
+    },
+    {
+      "key": "demo-caution",
+      "isDemo": true,
+      "title": "예시 B · 빌라",
+      "summary": "최근 소유자 변경 · 서류 응답 없음",
+      "property": {"label": "서울 강서구 화곡동 ○○빌라 2층", "address": "서울 강서구 화곡동 ○○빌라", "housingType": "villa"},
+      "deposit10k": 16000,
+      "price": {"basis": "official", "official10k": 15000, "source": "input"},
+      "registry": {"source": "registry", "issuedAt": "2026-10-20", "mortgageMax10k": 0, "trust": "no", "seizure": "no", "auction": "no", "leaseRegistration": "no", "ownerMatches": "yes", "lastOwnershipChange": "2026-09-12"},
+      "landlord": {"source": "input", "taxArrears": "unknown", "guaranteeEligible": "unknown"},
+      "building": {"source": "input", "use": "residential", "violation": "unknown"},
+      "requests": {"taxCert": "noResponse", "guarantee": "requested"},
+      "inspection": {"status": "none"},
+      "history": [
+        {"date": "2021-06-15", "kind": "ownership", "title": "소유권 보존", "detail": "신축 후 최초 등기"},
+        {"date": "2026-09-12", "kind": "ownership", "title": "소유권 이전 (매매)", "detail": "계약 48일 전 소유자 변경"}
+      ]
+    },
+    {
+      "key": "demo-danger",
+      "isDemo": true,
+      "title": "예시 C · 다가구",
+      "summary": "선순위 보증금 과다 · 앞 세입자 임차권등기",
+      "property": {"label": "인천 미추홀구 ○○다가구 3층", "address": "인천 미추홀구 ○○동 ○○주택", "housingType": "multi"},
+      "deposit10k": 9000,
+      "price": {"basis": "official", "official10k": 40000, "source": "input"},
+      "registry": {"source": "registry", "issuedAt": "2026-10-25", "mortgageMax10k": 12000, "trust": "no", "seizure": "no", "auction": "no", "leaseRegistration": "yes", "ownerMatches": "yes", "lastOwnershipChange": "2022-08-03"},
+      "landlord": {"source": "request", "priorDeposits10k": 38000, "taxArrears": "unknown", "guaranteeEligible": "no"},
+      "building": {"source": "input", "use": "residential", "violation": "no"},
+      "requests": {"fixedDate": "received", "moveIn": "received", "taxCert": "refused"},
+      "inspection": {"status": "none"},
+      "history": [
+        {"date": "2022-08-03", "kind": "ownership", "title": "소유권 이전 (매매)", "detail": "현재 소유자"},
+        {"date": "2022-08-03", "kind": "mortgage", "title": "근저당 설정", "detail": "채권최고액 1억 2,000만원"},
+        {"date": "2025-12-11", "kind": "leaseRegistration", "title": "임차권등기", "detail": "101호 세입자 · 보증금 미반환"}
+      ]
+    }
+  ]
+}

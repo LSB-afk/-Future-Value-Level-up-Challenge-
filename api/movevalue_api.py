@@ -19,6 +19,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
+from jeonse_verdict import evaluate as evaluate_jeonse
+from property_feedback import add_feedback, list_feedback
 from kakao_safety_adapters import kakao_safety_response, kakao_safety_status
 from kakao_soc_adapters import kakao_soc_response, kakao_soc_status
 from property_adapters import property_agent_response, property_detail_response
@@ -1156,8 +1158,35 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
+    def read_json_body(self) -> dict:
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0 or length > 1_000_000:
+            raise ValueError("요청 본문 크기가 올바르지 않습니다.")
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("JSON 객체가 필요합니다.")
+        return payload
+
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path in {"/api/jeonse-verdict", "/api/property-feedback"}:
+            try:
+                payload = self.read_json_body()
+                if parsed.path == "/api/jeonse-verdict":
+                    key = str(payload.get("key") or "")
+                    payload["feedbackCount"] = len(list_feedback(key)) if key else 0
+                    self.send_json(HTTPStatus.OK, evaluate_jeonse(payload))
+                else:
+                    item = add_feedback(
+                        str(payload.get("key") or ""),
+                        str(payload.get("category") or ""),
+                        str(payload.get("text") or ""),
+                        str(payload.get("role") or ""),
+                    )
+                    self.send_json(HTTPStatus.OK, {"ok": True, "item": item})
+            except (ValueError, json.JSONDecodeError) as exc:
+                self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            return
         if parsed.path != "/api/agent-chat":
             self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"unknown path: {parsed.path}"})
             return
@@ -1201,6 +1230,13 @@ class Handler(BaseHTTPRequestHandler):
         path = parsed.path
 
         try:
+            if path == "/api/jeonse-demo-cases":
+                self.send_json(HTTPStatus.OK, json.loads((ROOT / "data" / "jeonse_demo_cases.json").read_text(encoding="utf-8")))
+                return
+            if path == "/api/property-feedback":
+                key = single_value(parse_qs(parsed.query), "key")
+                self.send_json(HTTPStatus.OK, {"ok": True, "items": list_feedback(key)})
+                return
             if path == "/api/health":
                 dataset = load_dataset()
                 self.send_json(
