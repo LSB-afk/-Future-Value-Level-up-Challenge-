@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+from jeonse_guide import aftercare, deposit_guide, documents, guarantees, market_gap_check, repayment
+
 LINES = [
     {"pct": 70, "label": "주의 시작", "basis": "실무 권고"},
     {"pct": 80, "label": "깡통전세 경계", "basis": "실무 기준(법정 기준 아님)"},
@@ -243,6 +245,11 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         checks.append(_check("ratio", "hug126", "공시가격 대비 보증금", "보증금이 공시가격의 126% 이하일 것 (HUG 보증 기준)",
                              "공시가격 미입력", "unknown", "none"))
 
+    gap_result, gap_value = market_gap_check(inp, deposit)
+    checks.append(_check("ratio", "marketGap", "시세 대비 보증금", "보증금이 주변 전세 시세보다 10% 넘게 비싸지 않을 것",
+                         gap_value, gap_result, ((inp.get("market") or {}).get("source") or "none") if gap_result != "unknown" else "none",
+                         "시세보다 비싼 전세는 집값이 떨어지면 바로 깡통전세가 됩니다." if gap_result == "caution" else ""))
+
     # 임대인
     prior = _num(landlord.get("priorDeposits10k"))
     if housing == "multi":
@@ -445,6 +452,7 @@ def evaluate(inp: dict, today: date | None = None) -> dict:
 
     events = sorted(inp.get("history") or [], key=lambda e: e.get("date", ""), reverse=True)
     prop = inp.get("property") or {}
+    requests = build_requests(inp, by_id)
     return {
         "ok": True,
         "key": inp.get("key"),
@@ -460,11 +468,16 @@ def evaluate(inp: dict, today: date | None = None) -> dict:
         "checks": checks,
         "counts": counts,
         "rights": [c for c in checks if c["area"] == "rights"],
-        "requests": build_requests(inp, by_id),
+        "requests": requests,
         "stages": build_stages(by_id, ltv),
         "clauses": build_clauses(inp, by_id, ltv),
         "history": events,
         "historySummary": history_summary(events),
+        "depositGuide": deposit_guide(inp, ltv),
+        "repayment": repayment(inp, ltv),
+        "documents": documents(by_id, requests),
+        "guarantees": guarantees(inp, ltv, by_id),
+        "aftercare": aftercare(inp),
         "inspection": inp.get("inspection") or {"status": "none"},
         "notice": "판정은 법적 판정이 아니며 입력값과 공개 정보에 근거합니다. 특약 문구는 참고용이므로 계약 전 전문가 검토를 권장합니다.",
     }
@@ -481,6 +494,7 @@ if __name__ == "__main__":
                      "lastOwnershipChange": "2019-05-02"},
         "landlord": {"taxArrears": "no", "guaranteeEligible": "yes"},
         "building": {"use": "residential", "violation": "no"},
+        "market": {"jeonse10k": 41000, "source": "trade"},
     }
     r = evaluate(clean, today)
     assert r["grade"] == "safe", r["reasons"]
@@ -510,6 +524,9 @@ if __name__ == "__main__":
     r = evaluate(villa, today)  # 2억 / (1.5억 × 140%) = 95.2% → 위험, 공시가 126% 초과 → 주의 항목 포함
     assert r["grade"] == "danger" and r["ltv"]["price10k"] == 21000
     assert any(c["id"] == "hug126" and c["result"] == "caution" for c in r["checks"])
+
+    pricey = {**clean, "deposit10k": 47000}  # 시세 4.1억보다 14.6% 비쌈
+    assert any(c["id"] == "marketGap" and c["result"] == "caution" for c in evaluate(pricey, today)["checks"])
 
     multi = {**clean, "property": {"housingType": "multi"}}
     r = evaluate(multi, today)
