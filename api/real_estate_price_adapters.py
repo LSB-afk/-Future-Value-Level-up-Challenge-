@@ -10,6 +10,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import statistics
+import threading
+import time
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -234,17 +237,17 @@ def record_address_matches(apartment: dict[str, Any], record: dict[str, Any]) ->
     road_number = (str(record.get("roadMainNo") or ""), str(record.get("roadSubNo") or "0"))
     jibun = str(record.get("jibun") or "")
 
+    # 도로명이 같아도 번호가 비었거나 다르면 같은 단지라고 볼 근거가 없다. 같은 길에 단지가 여럿 있다.
     normalized_address = normalize_address(apartment_address)
-    if road_name and normalize_address(road_name) in normalized_address:
-        apartment_road_number = extract_address_numbers(apartment_address)
-        if same_number_pair(apartment_road_number, road_number):
-            return True
-        if not road_number[0]:
+    if road_name and road_number[0] and normalize_address(road_name) in normalized_address:
+        if same_number_pair(extract_address_numbers(apartment_address), road_number):
             return True
 
-    if jibun:
-        apartment_number = extract_address_numbers(apartment_address)
-        if same_number_pair(apartment_number, extract_address_numbers(jibun)):
+    # 지번은 단지의 지번과만 비교한다. 단지 주소는 도로명이라, 도로명 번호(신반포로15길 "1")를
+    # 지번("1")과 비교하면 옆 단지(래미안원베일리 반포동 1)를 끌어온다. 2026-11-08 실측 버그.
+    apartment_jibun = str(apartment.get("jibun") or "")
+    if jibun and apartment_jibun:
+        if same_number_pair(extract_address_numbers(apartment_jibun), extract_address_numbers(jibun)):
             return True
 
     return False
@@ -304,6 +307,7 @@ def parse_trade_item(item: ET.Element) -> dict[str, Any]:
         "dealYear": text_of(item, "dealYear", "년"),
         "dealMonth": text_of(item, "dealMonth", "월"),
         "dealDay": text_of(item, "dealDay", "일"),
+        **lot_fields(item),
         "sourceMode": "molit_trade_api",
     }
 
@@ -324,8 +328,105 @@ def parse_rent_item(item: ET.Element) -> dict[str, Any]:
         "dealYear": text_of(item, "dealYear", "년"),
         "dealMonth": text_of(item, "dealMonth", "월"),
         "dealDay": text_of(item, "dealDay", "일"),
+        **lot_fields(item),
         "sourceMode": "molit_rent_api",
     }
+
+
+def lot_fields(item: ET.Element) -> dict[str, str]:
+    """건축물대장 조회에 쓸 시군구·법정동 코드와 본번·부번. 매매 API에만 있고 전월세에는 비어 있을 수 있다."""
+    return {
+        "sggCd": text_of(item, "sggCd"),
+        "umdCd": text_of(item, "umdCd"),
+        "bonbun": text_of(item, "bonbun"),
+        "bubun": text_of(item, "bubun"),
+        "aptSeq": text_of(item, "aptSeq"),
+    }
+
+
+# 한 구(LAWD)의 한 달치 거래는 단지마다 다시 받을 이유가 없다. 상세 화면 한 번에 24번(12개월 × 매매·전월세)
+# 호출하던 것을, 같은 구 안에서는 처음 한 번만 받는다. 실거래 신고는 한 달 단위로 쌓이므로 6시간이면 충분히 새롭다.
+MONTH_CACHE_SECONDS = 6 * 3600
+_MONTH_CACHE: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
+_MONTH_LOCK = threading.Lock()
+
+
+def month_items(endpoint: str, service_key: str, lawd_code: str, deal_ym: str, parser) -> tuple[list[dict[str, Any]], str]:
+    """한 구·한 달의 전체 거래(매칭 전). 성공한 응답만 캐시한다."""
+    key = (endpoint, lawd_code, deal_ym)
+    with _MONTH_LOCK:
+        hit = _MONTH_CACHE.get(key)
+    if hit and time.time() - hit[0] < MONTH_CACHE_SECONDS:
+        return hit[1], ""
+    params = {"serviceKey": service_key, "LAWD_CD": lawd_code, "DEAL_YMD": deal_ym, "pageNo": "1", "numOfRows": "1000"}
+    try:
+        root = request_xml(endpoint, params)
+    except Exception as exc:  # noqa: BLE001 - live adapter must not break prototype.
+        return [], str(exc)
+    error = response_error(root)
+    if error:
+        return [], error
+    items = [parsed for parsed in (parser(item) for item in root.findall(".//item"))
+             if parsed.get("amount10k") or parsed.get("deposit10k")]
+    with _MONTH_LOCK:
+        _MONTH_CACHE[key] = (time.time(), items)
+    return items, ""
+
+
+def district_items(endpoint: str, service_key: str, lawd_code: str, parser, months: int = 12) -> list[dict[str, Any]]:
+    """같은 구의 최근 거래 전체(캐시에서). 주변 시세 비교에 쓴다."""
+    rows: list[dict[str, Any]] = []
+    for deal_ym in recent_deal_months(months):
+        items, _ = month_items(endpoint, service_key, lawd_code, deal_ym, parser)
+        rows.extend(items)
+    return rows
+
+
+def _record_key(record: dict[str, Any]) -> tuple[str, str, str]:
+    return (record.get("dealYear", ""), record.get("dealMonth", "").zfill(2), record.get("dealDay", "").zfill(2))
+
+
+def select_complex(apartment: dict[str, Any], trade: list[dict[str, Any]], rent: list[dict[str, Any]]) -> tuple[list, list, dict]:
+    """매칭된 기록에 이름이 다른 단지가 섞였으면 단지명과 가장 가까운 묶음 하나만 남긴다.
+
+    이름 포함 규칙은 "잠원신화"↔"신화"처럼 국토부 표기가 짧은 경우를 살리지만, "옥수삼성임대"↔"옥수"처럼
+    다른 단지도 끌어온다. 묶음 = (정규화한 단지명, 지번 본번). 이름이 가장 비슷한 묶음, 같으면 기록이 많은 묶음.
+    """
+    target = normalize_name(apartment.get("name", ""))
+    groups: dict[tuple[str, str], int] = {}
+    for record in [*trade, *rent]:
+        key = (normalize_name(record.get("name", "")), extract_address_numbers(record.get("jibun", ""))[0])
+        groups[key] = groups.get(key, 0) + 1
+    if len(groups) <= 1:
+        return trade, rent, {"groups": len(groups)}
+
+    def score(item: tuple[tuple[str, str], int]) -> tuple[bool, float, int]:
+        # 단지명을 통째로 품은 이름("옥수삼성임대111동" ⊃ "옥수삼성임대")이 짧은 이름("옥수삼성")보다 우선한다.
+        (name, _), count = item
+        return bool(target) and target in name, SequenceMatcher(None, target, name).ratio(), count
+
+    (best_name, best_lot), _ = max(groups.items(), key=score)
+
+    def keep(record: dict[str, Any]) -> bool:
+        name = normalize_name(record.get("name", ""))
+        lot = extract_address_numbers(record.get("jibun", ""))[0]
+        return name == best_name and (not lot or not best_lot or lot == best_lot)
+
+    dropped = sorted({name for (name, _), _ in groups.items() if name != best_name})
+    return [r for r in trade if keep(r)], [r for r in rent if keep(r)], {"groups": len(groups), "kept": best_name, "dropped": dropped}
+
+
+def area_bucket(trade: list[dict[str, Any]], jeonse: list[dict[str, Any]]) -> float | None:
+    """매매와 전세가 모두 있는 전용면적(1㎡ 반올림) 중 거래가 가장 많은 것. 없으면 None."""
+    sale_areas = {round(float(r.get("exclusiveM2") or 0)) for r in trade if r.get("exclusiveM2")}
+    counts: dict[int, int] = {}
+    for record in [*trade, *jeonse]:
+        area = round(float(record.get("exclusiveM2") or 0))
+        if area and area in sale_areas and any(round(float(j.get("exclusiveM2") or 0)) == area for j in jeonse):
+            counts[area] = counts.get(area, 0) + 1
+    if not counts:
+        return None
+    return float(max(counts.items(), key=lambda item: (item[1], item[0]))[0])
 
 
 def fetch_molit_records(
@@ -341,26 +442,14 @@ def fetch_molit_records(
     deal_months = recent_deal_months(months)
 
     def fetch_month(deal_ym: str) -> tuple[str, list[dict[str, Any]], str]:
-        params = {
-            "serviceKey": service_key,
-            "LAWD_CD": lawd_code,
-            "DEAL_YMD": deal_ym,
-            "pageNo": "1",
-            "numOfRows": "1000",
-        }
-        try:
-            root = request_xml(endpoint, params)
-        except Exception as exc:  # noqa: BLE001 - live adapter must not break prototype.
-            return deal_ym, [], str(exc)
-        error = response_error(root)
+        items, error = month_items(endpoint, service_key, lawd_code, deal_ym, parser)
         if error:
             return deal_ym, [], error
         month_records = []
-        for item in root.findall(".//item"):
-            parsed = parser(item)
-            if parsed.get("amount10k") or parsed.get("deposit10k"):
-                if apartment_record_matches(apartment, parsed):
-                    month_records.append(parsed)
+        for parsed in items:
+            parsed = dict(parsed)  # 캐시 원본에 matchMethod가 섞이지 않게 복사
+            if apartment_record_matches(apartment, parsed):
+                month_records.append(parsed)
         return deal_ym, month_records, ""
 
     with ThreadPoolExecutor(max_workers=min(MOLIT_FETCH_WORKERS, len(deal_months))) as executor:
@@ -513,6 +602,7 @@ def status_base(configured: bool, lawd_code: str, label: str) -> dict[str, Any]:
 
 def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str, Any]) -> dict[str, Any]:
     market = dict(fallback_market)
+    market["officialPriceLive"] = False
     lawd_code = lawd_code_for(apartment)
     trade_key = env_key(*TRADE_KEY_ENVS)
     rent_key = env_key(*RENT_KEY_ENVS)
@@ -531,49 +621,88 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
         },
     }
 
+    trade_records, trade_error = (
+        fetch_molit_records(MOLIT_TRADE_ENDPOINT, trade_key, lawd_code, parse_trade_item, apartment)
+        if trade_key and lawd_code else ([], "")
+    )
+    rent_records, rent_error = (
+        fetch_molit_records(MOLIT_RENT_ENDPOINT, rent_key, lawd_code, parse_rent_item, apartment)
+        if rent_key and lawd_code else ([], "")
+    )
+    trade_records, rent_records, complex_info = select_complex(apartment, trade_records, rent_records)
+    market["complexMatch"] = complex_info
+    jeonse_records = [item for item in rent_records if not item.get("monthlyRent10k")]
+    monthly_records = [item for item in rent_records if item.get("monthlyRent10k")]
+
+    # 전세가율은 같은 평형의 매매와 전세로만 계산한다. 84㎡ 매매와 59㎡ 전세를 나누면 의미 없는 비율이 나온다.
+    bucket = area_bucket(trade_records, jeonse_records)
+
+    def latest(rows: list[dict[str, Any]], area: float | None = None) -> dict[str, Any] | None:
+        pool = [r for r in rows if area is None or round(float(r.get("exclusiveM2") or 0)) == area]
+        return max(pool, key=_record_key) if pool else None
+
+    market["areaM2"] = bucket
+    market["areaMatched"] = bucket is not None
+    # sourceMode는 전월세만 붙어도 molit_*가 된다. 매매가·전세가가 각각 실거래인지는 따로 표시해야
+    # 추정 매매가를 '실거래'로 믿는 일이 없다 (2026-11-08 옥수삼성임대: 전월세만 매칭, 매매가는 추정).
+    market["saleLive"] = False
+    market["jeonseLive"] = False
+
     if trade_key and lawd_code:
-        records, error = fetch_molit_records(MOLIT_TRADE_ENDPOINT, trade_key, lawd_code, parse_trade_item, apartment)
         live_status["molitTrade"].update(
             {
-                "mode": "live_api" if records else "no_matching_record",
-                "recordCount": len(records),
-                "error": error,
-                "note": "단지명/주소 매칭 실거래가를 상세 가격에 반영했습니다." if records else "최근 12개월 내 단지명/주소 매칭 매매 실거래가가 없습니다.",
+                "mode": "live_api" if trade_records else "no_matching_record",
+                "recordCount": len(trade_records),
+                "error": trade_error,
+                "note": "단지명/주소 매칭 실거래가를 상세 가격에 반영했습니다." if trade_records else "최근 12개월 내 단지명/주소 매칭 매매 실거래가가 없습니다.",
             }
         )
-        if records:
-            recent = sorted(records, key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")), reverse=True)[0]
+        recent = latest(trade_records, bucket) or latest(trade_records)
+        if recent:
+            market["saleLive"] = True
             market["recentSale10k"] = recent["amount10k"]
             market["molitLatestTradeRecord"] = recent
-            market["molitTradeRecordsForTrend"] = records
-            market["molitTradeRecords"] = records[:6]
+            market["molitTradeRecordsForTrend"] = trade_records
+            market["molitTradeRecords"] = sorted(trade_records, key=_record_key, reverse=True)[:6]
             market["sourceMode"] = "molit_live_trade_partial"
             market["sourceLabel"] = "국토교통부 매매 실거래가 live 보정 + 공개 단지정보"
 
     if rent_key and lawd_code:
-        records, error = fetch_molit_records(MOLIT_RENT_ENDPOINT, rent_key, lawd_code, parse_rent_item, apartment)
-        jeonse_records = [item for item in records if not item.get("monthlyRent10k")]
-        monthly_records = [item for item in records if item.get("monthlyRent10k")]
         live_status["molitRent"].update(
             {
-                "mode": "live_api" if records else "no_matching_record",
-                "recordCount": len(records),
-                "error": error,
-                "note": "단지명/주소 매칭 전월세 실거래가를 상세 가격에 반영했습니다." if records else "최근 12개월 내 단지명/주소 매칭 전월세 실거래가가 없습니다.",
+                "mode": "live_api" if rent_records else "no_matching_record",
+                "recordCount": len(rent_records),
+                "error": rent_error,
+                "note": "단지명/주소 매칭 전월세 실거래가를 상세 가격에 반영했습니다." if rent_records else "최근 12개월 내 단지명/주소 매칭 전월세 실거래가가 없습니다.",
             }
         )
-        if jeonse_records:
-            recent = sorted(jeonse_records, key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")), reverse=True)[0]
+        recent = latest(jeonse_records, bucket) or latest(jeonse_records)
+        if recent:
+            market["jeonseLive"] = True
             market["recentJeonse10k"] = recent["deposit10k"]
             market["molitLatestJeonseRecord"] = recent
-        if monthly_records:
-            recent = sorted(monthly_records, key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")), reverse=True)[0]
+            # 같은 구·비슷한 평형(±10%)의 다른 단지 전세 중앙값. 추정 생활권 평균 대신 실거래로 비교한다.
+            ref_area = float(recent.get("exclusiveM2") or 0)
+            own = normalize_name(recent.get("name", ""))
+            peers = [
+                float(r["deposit10k"])
+                for r in district_items(MOLIT_RENT_ENDPOINT, rent_key, lawd_code, parse_rent_item)
+                if not r.get("monthlyRent10k") and ref_area
+                and abs(float(r.get("exclusiveM2") or 0) - ref_area) <= ref_area * 0.1
+                and normalize_name(r.get("name", "")) != own
+            ]
+            if len(peers) >= 5:
+                market["districtJeonseMedian10k"] = round(statistics.median(peers))
+                market["districtJeonseCount"] = len(peers)
+                market["districtJeonseBasis"] = f"같은 구 전용 {ref_area:.0f}㎡ ±10% 전세 실거래 {len(peers)}건 중앙값(최근 12개월)"
+        recent = latest(monthly_records)
+        if recent:
             market["monthlyDeposit10k"] = recent["deposit10k"]
             market["monthlyRent10k"] = recent["monthlyRent10k"]
             market["molitLatestMonthlyRecord"] = recent
-        if records:
-            market["molitRentRecordsForTrend"] = records
-            market["molitRentRecords"] = records[:6]
+        if rent_records:
+            market["molitRentRecordsForTrend"] = rent_records
+            market["molitRentRecords"] = sorted(rent_records, key=_record_key, reverse=True)[:6]
             market["sourceMode"] = "molit_live_trade_rent_partial"
             market["sourceLabel"] = "국토교통부 실거래가 live 보정 + 공개 단지정보"
 
@@ -596,8 +725,11 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
         if public_record:
             market["officialPrice10k"] = public_record["officialPrice10k"]
             market["publicPriceRecords"] = public_record["sampleRecords"]
-            market["sourceMode"] = "public_price_live_partial"
-            market["sourceLabel"] = "공동주택 공시가격 live 보정 + 공개 집계 정보"
+            market["officialPriceLive"] = True
+            # 실거래가 이미 붙었으면 sourceMode(실거래 여부 판단에 쓰임)를 덮어쓰지 않는다.
+            if not str(market.get("sourceMode") or "").startswith("molit"):
+                market["sourceMode"] = "public_price_live_partial"
+                market["sourceLabel"] = "공동주택 공시가격 live 보정 + 공개 집계 정보"
 
     if market.get("recentSale10k"):
         market["jeonseRatio"] = round((float(market.get("recentJeonse10k") or 0) / float(market["recentSale10k"])) * 100, 1)

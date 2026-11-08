@@ -20,7 +20,18 @@ import os
 import urllib.error
 import urllib.request
 
-from agent_llm import MAX_TURNS, SYSTEM_PROMPT, TOOL_SCHEMAS, _run_tool
+from agent_llm import (
+    MAX_TURNS,
+    TOOL_SCHEMAS,
+    _run_tool,
+    answer_problems,
+    build_system,
+    finalize_answer,
+    last_user_text,
+    needs_handoff,
+    rewrite_request,
+)
+from jeonse_knowledge import cited_sources
 
 # OLLAMA_HOST는 ollama CLI가 쓰는 관례적 이름이라 그대로 따른다.
 HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
@@ -64,16 +75,16 @@ SYSTEM_SUFFIX = """
 - web_search 도구가 없습니다. 제도·법령이 최신인지 확인할 수 없으니, 최신 여부가 중요하면 해당 기관에서 확인하라고 안내하세요.
 - 단지의 가격·전세가율·위험 점수·거리는 반드시 도구를 먼저 호출해서 받은 값만 쓰세요. 도구를 부르지 않았다면 숫자를 말하지 마세요.
 
-## 도구를 먼저 부르세요
-- 제도를 묻는 질문이어도 화면 맥락에 단지가 있으면 jeonse_safeguard를 먼저 호출하세요. 대항력·특약·깡통 판정·지원센터는 그 도구가 이 단지에 맞춘 단계별 타임라인과 특약 문구를 돌려줍니다. 기억으로 일반론만 답하면 사용자가 정작 필요한 특약 문구를 못 받습니다.
-- 계약·안전성·체크리스트를 물으면 contract_checklist를, 더 안전한 곳을 물으면 safer_alternatives를 부르세요.
-- 도구를 부를 수 있는 질문에 부르지 않고 답하는 것이 이 엔진의 가장 흔한 실수입니다.
+## 도구 고르기
+- 제도·법령·수법·서류 질문은 '참고 지식'으로 답하고, 부족하면 search_jeonse_knowledge를 부르세요. 기억으로 답하지 마세요.
+- 이 단지의 가격·전세가율·깡통 여유·특약 문구가 필요하면 jeonse_safeguard나 apartment_snapshot을, 체크리스트는 contract_checklist를 부르세요.
+- safer_alternatives는 사용자가 "다른 곳", "더 안전한 곳"을 물을 때만 부르세요.
 
 ## 숫자 인용 규칙 (반드시 지킬 것)
 - 도구 결과의 숫자는 **그대로 복사**하세요. 반올림하지 말고, 다시 계산하지 말고, 어림잡지 마세요. 62.7이면 62.7이라고 쓰세요. 59라고 쓰면 안 됩니다.
 - verdictLabel 같은 판정 문구도 도구가 준 표현을 그대로 쓰세요. "여력 보통"을 "여력이 있습니다"로 바꾸지 마세요. 위험 판정을 부드럽게 고쳐 쓰면 사용자가 잘못된 결정을 합니다.
 - 도구 결과에 없는 숫자는 절대 만들지 마세요.
-- 출처를 지어내지 마세요. 검색을 못 하므로 "(출처: ○○)" 같은 표기를 붙일 근거가 없습니다. 근거는 "FitHome 도구가 돌려준 값"이라고만 밝히세요."""
+- 출처를 지어내지 마세요. 출처는 참고 지식의 [K번호]와 search_jeonse_knowledge 결과의 URL만 쓰세요. 단지 수치의 근거는 "FitHome 도구가 돌려준 값"이라고 밝히세요."""
 
 
 def _api(path: str, payload: dict | None, timeout: int) -> dict:
@@ -140,9 +151,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
     if not state["available"]:
         return {"ok": False, "error": state["reason"], "availability": state}
 
-    system = SYSTEM_PROMPT + SYSTEM_SUFFIX
-    if context:
-        system += f"\n\n## 현재 화면 맥락\n{context}"
+    system, hits = build_system(context, messages, SYSTEM_SUFFIX)
 
     history: list[dict] = [{"role": "system", "content": system}]
     history += [
@@ -157,8 +166,9 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
     input_tokens = 0
     output_tokens = 0
     peak_prompt = 0
+    rewrote = False
 
-    for _ in range(MAX_TURNS):
+    for turn in range(MAX_TURNS):
         try:
             data = _api(
                 "/api/chat",
@@ -185,12 +195,24 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
         calls = message.get("tool_calls") or []
 
         if not calls:
+            answer = str(message.get("content") or "").strip()
+            found = answer_problems(answer)
+            if found and not rewrote and turn < MAX_TURNS - 1:  # 마지막 턴이면 고쳐 쓰게 하지 않고 고지를 붙여 돌려준다
+                rewrote = found
+                history.append({"role": "user", "content": rewrite_request(found)})
+                continue
+            question = last_user_text(messages)
+            handoff_added = needs_handoff(question, answer)
+            answer = finalize_answer(question, answer, found)
             result = {
                 "ok": True,
-                "answer": str(message.get("content") or "").strip(),
+                "answer": answer,
                 "toolTrace": tool_trace,
-                # 로컬 엔진에는 서버사이드 검색이 없다. app.js는 빈 배열이면 출처를 안 그린다.
-                "sources": [],
+                # 웹 검색은 없지만 RAG 근거 조각을 [K번호]로 인용하면 그 출처를 화면에 보낸다.
+                "sources": cited_sources(answer, hits),
+                "knowledge": [h["id"] for h in hits],
+                # 안심 단정 표현이 나와 한 번 고쳐 쓰게 했다면 그 표현을 남긴다. 고친 뒤에도 남았으면 그대로 드러난다.
+                "guard": {"rewroteFor": rewrote or [], "remaining": found, "handoffAdded": handoff_added},
                 "model": data.get("model") or MODEL,
                 "usage": {
                     "inputTokens": input_tokens,

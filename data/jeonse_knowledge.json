@@ -1,0 +1,1251 @@
+{
+ "meta": {
+  "builtAt": "2026-11-08",
+  "from": "orchestra 팀 위키의 verified: true 노트 (sources·concepts)",
+  "notes": 32,
+  "chunks": 58,
+  "rule": "검증된 원문 근거만. 조각마다 출처 URL과 확인 못 한 부분(caveat)을 함께 싣는다."
+ },
+ "chunks": [
+  {
+   "id": "auction-housing-tax-priority-substitution#1",
+   "slug": "auction-housing-tax-priority-substitution",
+   "title": "주택보증금의 국세·지방세 당해세 배분 특례",
+   "summary": "주택보증금의 당해세 특례는 세금의 우선 징수 순서를 대신하는 구조이며, 국세와 지방세의 시행일이 다르다.",
+   "text": "- 기준일 2026-11-08에 확인한 국세기본법과 지방세기본법의 현행본 시행일은 모두 2026-10-02이다.\n- 확정일자부 임차보증금이 일반 국세보다 앞선다: 국세기본법 제35조제1항제3호에 따라 대항요건과 확정일자를 국세 법정기일 전에 갖춘 경우다. 소유권 이전 특례와 해당 재산에 부과된 세금은 별도 규정을 적용한다.\n- 확정일자부 임차보증금이 일반 지방세보다 앞선다: 지방세기본법 제71조제1항제3호에 따라 대항요건과 확정일자를 법정기일 전에 갖춘 사실이 증명되는 경우이며, 당해세는 별도 특례를 확인한다.\n- 국세기본법 제35조제7항에 따라 주택임차보증금 또는 주거용 건물의 전세권 채권이 당해세의 징수 순서를 대신한다: 확정일자 또는 전세권 설정일보다 해당 재산의 상속세·증여세·종합부동산세 법정기일이 늦은 경우다.",
+   "sources": [
+    {
+     "title": "국세기본법 제35조 현행 조문",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?lsiSeq=289999&joNo=0035&joBrNo=00&docCls=jo&urlMode=lsScJoRltInfoR"
+    },
+    {
+     "title": "지방세기본법 제71조 현행 조문",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?lsiSeq=290139&joNo=0071&joBrNo=00&docCls=jo&urlMode=lsScJoRltInfoR"
+    }
+   ],
+   "caveat": "확인 못 함: 다수 임차인·담보권·조세의 복합 경합 계산과 소유권 변경에 따른 국세기본법 제35조제1항제3호의2의 개별 적용.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "auction-housing-tax-priority-substitution#2",
+   "slug": "auction-housing-tax-priority-substitution",
+   "title": "주택보증금의 국세·지방세 당해세 배분 특례",
+   "summary": "주택보증금의 당해세 특례는 세금의 우선 징수 순서를 대신하는 구조이며, 국세와 지방세의 시행일이 다르다.",
+   "text": "- 국세 특례의 대신 변제액은 해당 당해세 징수액 한도이며, 선순위 저당권자의 변제액과 특례 없이도 임차인이 받을 수 있었던 변제액에는 영향을 주지 않는다. 제35조제7항·2026-10-02 시행본 기준이다.\n- 국세기본법 법률 제19189호 부칙 제1조·제3조에 따라 제35조 개정은 2023-04-01 시행이며, 그 이후 매각결정 또는 매각허가결정을 하는 경우부터 적용한다.\n- 지방세기본법 제71조제6항에 따라 주택보증금이 재산세등의 징수 순서를 대신한다: 확정일자 또는 전세권 설정일보다 해당 세금의 법정기일이 늦은 경우다. 대상은 재산세·소방분 지역자원시설세·재산세에 부가되는 지방교육세다.\n- 지방세 특례도 해당 재산세등의 징수액 한도이며, 선순위 저당권자의 변제액과 기존 임차보증금 배분액에는 영향을 주지 않는다. 제71조제6항·2026-10-02 시행본 기준이다.",
+   "sources": [
+    {
+     "title": "국세기본법 제35조 현행 조문",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?lsiSeq=289999&joNo=0035&joBrNo=00&docCls=jo&urlMode=lsScJoRltInfoR"
+    },
+    {
+     "title": "지방세기본법 제71조 현행 조문",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?lsiSeq=290139&joNo=0071&joBrNo=00&docCls=jo&urlMode=lsScJoRltInfoR"
+    },
+    {
+     "title": "국세기본법 법률 제19189호 및 부칙",
+     "url": "https://law.go.kr/LSW/lsInfoP.do?chrClsCd=010202&lsiSeq=247433&urlMode=lsInfoP"
+    }
+   ],
+   "caveat": "확인 못 함: 다수 임차인·담보권·조세의 복합 경합 계산과 소유권 변경에 따른 국세기본법 제35조제1항제3호의2의 개별 적용.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "auction-housing-tax-priority-substitution#3",
+   "slug": "auction-housing-tax-priority-substitution",
+   "title": "주택보증금의 국세·지방세 당해세 배분 특례",
+   "summary": "주택보증금의 당해세 특례는 세금의 우선 징수 순서를 대신하는 구조이며, 국세와 지방세의 시행일이 다르다.",
+   "text": "- 지방세기본법 법률 제19401호 부칙 제1조·제2조에 따라 특례는 2023-05-04 시행이며, 그 이후 매각결정 또는 매각허가결정을 하는 경우부터 적용한다.\n- 법정기일은 신고로 확정되는 세액의 신고일, 부과·경정하는 세액의 고지서 발송일 등으로 구분한다. 국세는 제35조제2항, 지방세는 제71조제1항제3호 각 목을 적용한다.",
+   "sources": [
+    {
+     "title": "국세기본법 제35조 현행 조문",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?lsiSeq=289999&joNo=0035&joBrNo=00&docCls=jo&urlMode=lsScJoRltInfoR"
+    },
+    {
+     "title": "지방세기본법 제71조 현행 조문",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?lsiSeq=290139&joNo=0071&joBrNo=00&docCls=jo&urlMode=lsScJoRltInfoR"
+    },
+    {
+     "title": "지방세기본법 부칙 포함 본문",
+     "url": "https://law.go.kr/LSW/LsiJoLinkP.do?lsNm=지방세기본법"
+    }
+   ],
+   "caveat": "확인 못 함: 다수 임차인·담보권·조세의 복합 경합 계산과 소유권 변경에 따른 국세기본법 제35조제1항제3호의2의 개별 적용.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "auction-small-deposit-and-wage-priority#1",
+   "slug": "auction-small-deposit-and-wage-priority",
+   "title": "소액보증금과 임금·퇴직급여의 최우선변제 범위",
+   "summary": "소액보증금과 최종 임금·퇴직급여는 담보권보다 앞설 수 있어, 일반 보증금과 구분해 배당을 판단한다.",
+   "text": "- 소액임차보증금의 법정 보호액이 다른 담보물권보다 앞선다: 주택임대차보호법 제8조제1항·2026-01-02 시행본의 요건에 해당하고, 경매신청 등기 전에 주택 인도와 주민등록을 갖춘 경우다.\n- 같은 조 제3항·2026-01-02 시행본은 보호 대상과 금액을 시행령에 위임하고, 보증금 중 일정액의 범위가 대지를 포함한 주택가액의 절반을 넘지 못하도록 한다.\n- 최종 3개월분 임금과 재해보상금이 저당권·조세·그 밖의 채권보다 앞선다: 근로기준법 제38조제2항·2026-10-08 시행본에 따라 사용자의 총재산에서 변제하는 경우다.\n- 최종 3년간 퇴직급여등이 저당권·조세·그 밖의 채권보다 앞선다: 근로자퇴직급여 보장법 제12조제2항·2026-07-01 시행본에 따라 사용자의 총재산에서 변제하는 경우다.",
+   "sources": [
+    {
+     "title": "주택임대차보호법 제8조",
+     "url": "https://www.law.go.kr/법령/주택임대차보호법/제8조"
+    },
+    {
+     "title": "근로기준법 제38조",
+     "url": "https://www.law.go.kr/법령/근로기준법/제38조"
+    },
+    {
+     "title": "근로자퇴직급여 보장법 제12조",
+     "url": "https://www.law.go.kr/법령/근로자퇴직급여보장법/제12조"
+    }
+   ],
+   "caveat": "확인 못 함: 소액보증금과 최우선 임금채권 사이의 구체적 안분 방식, 일반 임금채권과 확정일자부 임차보증금 사이의 상세 판례 적용.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "auction-small-deposit-and-wage-priority#2",
+   "slug": "auction-small-deposit-and-wage-priority",
+   "title": "소액보증금과 임금·퇴직급여의 최우선변제 범위",
+   "summary": "소액보증금과 최종 임금·퇴직급여는 담보권보다 앞설 수 있어, 일반 보증금과 구분해 배당을 판단한다.",
+   "text": "- 일반 임금채권은 근로기준법 제38조제1항·2026-10-08 시행본에 따라 조세·공과금·다른 채권보다 우선하지만, 담보권으로 담보된 채권과 그 담보권보다 우선하는 조세 등에 관한 예외가 있다.\n- 대법원 2015-08-19 선고 2015다204762 판결은 최우선 임금채권자도 원칙적으로 배당요구 종기까지 적법하게 배당요구해야 우선배당을 받는다고 판시했다.",
+   "sources": [
+    {
+     "title": "근로기준법 제38조",
+     "url": "https://www.law.go.kr/법령/근로기준법/제38조"
+    },
+    {
+     "title": "대법원 배당이의 판결",
+     "url": "https://law.go.kr/LSW/precInfoP.do?precSeq=179110"
+    }
+   ],
+   "caveat": "확인 못 함: 소액보증금과 최우선 임금채권 사이의 구체적 안분 방식, 일반 임금채권과 확정일자부 임차보증금 사이의 상세 판례 적용.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "auction-tenant-priority-versus-registered-security#1",
+   "slug": "auction-tenant-priority-versus-registered-security",
+   "title": "확정일자부 보증금과 저당권·전세권의 선후 비교",
+   "summary": "임차보증금과 담보권의 배당 순위는 대항요건·확정일자의 완성과 담보권 등기 순서를 비교해 정한다.",
+   "text": "- 주택임대차보호법 제3조제1항의 현행본은 2026-01-02 시행이며, 주택 인도와 주민등록을 마치면 다음 날부터 제삼자에 대한 효력이 생긴다.\n- 같은 법 제3조의2제2항·2026-01-02 시행본은 대항요건과 확정일자를 갖춘 임차인에게 후순위 권리자 등에 대한 우선변제권을 인정한다.\n- 조문을 결합한 날짜 비교에서는 대항력 발생일과 확정일자 취득일 중 늦은 날짜를 사용한다. 계약서 작성일만으로 우선변제 순위를 정하지 않는다.\n- 확정일자부 임차보증금이 저당권·전세권보다 앞선다: 위 요건을 모두 완성한 날짜가 해당 담보권의 등기일보다 앞서는 경우이며, 다른 법정 우선권은 별도로 적용한다.\n- 저당권·전세권이 확정일자부 임차보증금보다 앞선다: 담보권 등기가 임차인의 위 요건 완성보다 먼저인 경우다. 소액보증금 최우선변제 등 특칙은 이 비교에서 별도로 검토한다.",
+   "sources": [
+    {
+     "title": "주택임대차보호법 제3조",
+     "url": "https://www.law.go.kr/법령/주택임대차보호법/제3조"
+    },
+    {
+     "title": "주택임대차보호법 제3조의2",
+     "url": "https://www.law.go.kr/법령/주택임대차보호법/제3조의2"
+    }
+   ],
+   "caveat": "확인 못 함: 확정일자부 임차권과 담보권이 같은 날짜에 경합하는 경우의 세부 판례 및 개별 사건의 배당요구 적법 여부.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "auction-tenant-priority-versus-registered-security#2",
+   "slug": "auction-tenant-priority-versus-registered-security",
+   "title": "확정일자부 보증금과 저당권·전세권의 선후 비교",
+   "summary": "임차보증금과 담보권의 배당 순위는 대항요건·확정일자의 완성과 담보권 등기 순서를 비교해 정한다.",
+   "text": "- 부동산등기법 제4조·2025-01-31 시행본에 따르면, 등기된 권리끼리는 법률상 예외가 없으면 등기 순서를 따른다. 같은 구의 등기는 순위번호, 다른 구의 등기는 접수번호로 비교한다.",
+   "sources": [
+    {
+     "title": "부동산등기법 제4조",
+     "url": "https://www.law.go.kr/법령/부동산등기법/제4조"
+    }
+   ],
+   "caveat": "확인 못 함: 확정일자부 임차권과 담보권이 같은 날짜에 경합하는 경우의 세부 판례 및 개별 사건의 배당요구 적법 여부.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "building-ledger-guarantee-and-loan-restrictions#1",
+   "slug": "building-ledger-guarantee-and-loan-restrictions",
+   "title": "위반건축물·근린생활시설의 대장 확인과 보증 제한",
+   "summary": "건축물대장의 위반 표시와 용도는 반환보증·대출보증 심사에 쓰이며, 상품별 제한과 예외를 따로 확인해야 한다.",
+   "text": "- 2026-11-08 정부24 안내 기준, 건축물대장 등·초본은 누구나 신청할 수 있고 인터넷 발급·열람은 무료다. 일반대장·집합건축물 표제부·전유부 등 해당 서류를 선택한다.\n- 세움터의 공식 경로는 `민원서비스 → 발급서비스 → 건축물대장 발급·열람`이며, 회원과 비회원 모두 온라인 발급을 이용할 수 있다고 안내한다.\n- HUG의 현행 반환보증 FAQ는 건축물대장에 위반건축물로 기재되지 않을 것을 요구하며 아파트를 예외로 표시한다. 2026-11-08 공식 안내 확인 기준이다.\n- HUG 공식 상품안내는 근린생활시설을 반환보증 대상 주택에서 제외한다. 주거용 오피스텔은 계약서 또는 중개대상물 확인·설명서에 주거용 표기가 있어야 한다. 2026-11-08 안내 확인 기준이다.\n- HF 일반전세자금보증은 등기사항전부증명서상 용도가 주택·오피스텔이거나 지자체에 신고된 노인복지주택이면서 실제 주거용으로 이용되는 목적물을 요구한다. 2026-11-08 공식 상품안내 기준이다.",
+   "sources": [
+    {
+     "title": "정부24 건축물대장 발급·열람",
+     "url": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000098&tp_seq=01"
+    },
+    {
+     "title": "세움터 발급 안내",
+     "url": "https://www.eais.go.kr/moct/bci/aaa01/BCIAAA01V01"
+    },
+    {
+     "title": "HUG 반환보증 FAQ",
+     "url": "https://khug.or.kr/hug/web/ig/dr/igdr000003.jsp?gotoPage=3"
+    },
+    {
+     "title": "HUG 공식 상품안내",
+     "url": "https://onestop.khug.or.kr/webView/webBiz/apply/goods001"
+    }
+   ],
+   "caveat": "확인 못 함: 모든 은행·전세대출 상품에 공통으로 적용되는 위반건축물 금지 규정, HF 해당 용도 요건의 최초 시행일.",
+   "date": "2026-11-08",
+   "confidence": "medium"
+  },
+  {
+   "id": "building-ledger-guarantee-and-loan-restrictions#2",
+   "slug": "building-ledger-guarantee-and-loan-restrictions",
+   "title": "위반건축물·근린생활시설의 대장 확인과 보증 제한",
+   "summary": "건축물대장의 위반 표시와 용도는 반환보증·대출보증 심사에 쓰이며, 상품별 제한과 예외를 따로 확인해야 한다.",
+   "text": "- HF는 보증요건을 충족하더라도 은행 심사에 따라 대출 가능 여부가 달라질 수 있다고 안내한다. 위 용도 요건은 HF 일반전세자금보증을 이용하는 대출에 대한 기준이다.",
+   "sources": [
+    {
+     "title": "HF 일반전세자금보증",
+     "url": "https://www.hf.go.kr/ko/sub02/sub02_01_02.do"
+    }
+   ],
+   "caveat": "확인 못 함: 모든 은행·전세대출 상품에 공통으로 적용되는 위반건축물 금지 규정, HF 해당 용도 요건의 최초 시행일.",
+   "date": "2026-11-08",
+   "confidence": "medium"
+  },
+  {
+   "id": "deposit-return-mediation-and-payment-order#1",
+   "slug": "deposit-return-mediation-and-payment-order",
+   "title": "보증금 반환 분쟁의 조정과 지급명령 공식 경로",
+   "summary": "보증금 분쟁은 조정을 신청할 수 있고, 지급명령은 송달·이의신청 요건에 따라 확정판결의 효력을 얻는다.",
+   "text": "- 주택임대차보호법 제14조제2항·2026-01-02 시행본에 따라 보증금 증감·보증금 반환·임대차기간·주택 유지수선 등에 관한 분쟁을 주택임대차분쟁조정위원회에 신청할 수 있다.\n- 2026-11-08 대한법률구조공단 위원회 안내 기준, 공식 홈페이지에서 본인인증 후 온라인 조정 신청·답변서 제출·진행 조회가 가능하고, 방문 신청을 위한 예약도 제공한다.\n- 강제집행을 승낙하는 내용이 기재된 조정서 정본에는 집행권원과 같은 효력이 있다. 모든 조정 신청에 자동으로 집행력이 생기는 것은 아니며, 주택임대차보호법 제27조·2026-01-02 시행본의 조건을 확인한다.\n- 민사소송법 제462조·2026-10-02 시행본에 따라 금전 지급 청구에 지급명령을 신청할 수 있다. 대한민국에서 공시송달 이외의 방법으로 송달할 수 있어야 한다.\n- 지급명령의 온라인 접속 경로는 대한민국 법원 전자소송포털이며, 공식 사용자 매뉴얼은 지급명령 신청 관련 절차를 안내한다.",
+   "sources": [
+    {
+     "title": "주택임대차보호법 제14조",
+     "url": "https://www.law.go.kr/법령/주택임대차보호법/제14조"
+    },
+    {
+     "title": "대한법률구조공단 임대차분쟁조정위원회",
+     "url": "https://www.hldcc.or.kr/index.jsp"
+    },
+    {
+     "title": "주택임대차보호법 제27조",
+     "url": "https://www.law.go.kr/법령/주택임대차보호법/제27조"
+    },
+    {
+     "title": "민사소송법 현행본 제462·470·474조",
+     "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290113"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 사건의 송달 가능 여부, 신청 비용과 처리기간.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "deposit-return-mediation-and-payment-order#2",
+   "slug": "deposit-return-mediation-and-payment-order",
+   "title": "보증금 반환 분쟁의 조정과 지급명령 공식 경로",
+   "summary": "보증금 분쟁은 조정을 신청할 수 있고, 지급명령은 송달·이의신청 요건에 따라 확정판결의 효력을 얻는다.",
+   "text": "- 채무자가 지급명령을 송달받은 날부터 2주 이내에 이의하면 그 범위에서 지급명령의 효력이 사라진다. 민사소송법 제470조·2026-10-02 시행본 기준이다.\n- 이의가 없거나 이의가 취하되거나 각하결정이 확정되면 지급명령은 확정판결과 같은 효력이 있다. 민사소송법 제474조·2026-10-02 시행본 기준이다.",
+   "sources": [
+    {
+     "title": "민사소송법 현행본 제462·470·474조",
+     "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsiSeq=290113"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 사건의 송달 가능 여부, 신청 비용과 처리기간.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "hf-jeonse-jikim-loan-linked-eligibility#1",
+   "slug": "hf-jeonse-jikim-loan-linked-eligibility",
+   "title": "HF 일반전세지킴보증의 대출 연계와 가입 요건",
+   "summary": "HF 일반전세지킴보증은 HF 전세자금보증과 연계하며, 지역별 한도 안에서 보증금 전액만 보장한다.",
+   "text": "- 2026-11-08 공식 상품안내 기준, HF 전세자금보증을 해당 금융기관에서 이용하는 임차인이 대상이며, 동시 신청자는 HF 보증부 대출이 실제 실행되어야 한다.\n- 대상 계약은 2020-04-01 이후 체결한 계약이며, 보증금의 5% 이상을 지급한 세대주여야 한다. 계약기간은 원칙적으로 1년 이상이다.\n- 주택 인도·전입신고·확정일자로 대항력과 우선변제권을 갖춰야 하며, 대출보증과 동시 취급하는 경우에는 상품안내가 정한 발급일까지 확인하는 조건을 적용할 수 있다.\n- 보증한도는 지역별 상한인 수도권 7억원·그 밖의 지역 5억원과, `주택가격 × 90% − 선순위채권총액` 중 작은 금액이다. 한도 안에서 임차보증금 전액만 가입할 수 있다.\n- HF가 평가한 주택가격은 12억원 이하여야 한다. 이를 초과하는 단독·다가구는 전체 연면적 대비 임차면적에 해당하는 금액이 12억원 이하인지 확인한다.",
+   "sources": [
+    {
+     "title": "HF 일반전세지킴보증 상품안내",
+     "url": "https://www.hf.go.kr/ko/sub02/sub02_05_01.do"
+    }
+   ],
+   "caveat": "확인 못 함: 상품안내에 열거된 전체 요건의 일괄 시행일.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "hf-jeonse-jikim-loan-linked-eligibility#2",
+   "slug": "hf-jeonse-jikim-loan-linked-eligibility",
+   "title": "HF 일반전세지킴보증의 대출 연계와 가입 요건",
+   "summary": "HF 일반전세지킴보증은 HF 전세자금보증과 연계하며, 지역별 한도 안에서 보증금 전액만 보장한다.",
+   "text": "- 신청기한은 계약기간의 절반이 지나기 전이며, 토스뱅크 이용자는 전월세 보증금대출 실행일부터 3개월까지라는 별도 안내가 있다.\n- 2024-07-10 이후 신청 건은 원칙적으로 보증서 발급 전에 보증금반환채권을 HF에 양도해야 하며, 동일 목적물에 이미 시행한 채권양도에 관한 생략 조건이 있다.\n- 신청 경로는 HF 전세자금보증을 이용하는 취급은행이며, 은행에서 상담·신청·심사·보증서 발급 절차를 진행한다.",
+   "sources": [
+    {
+     "title": "HF 일반전세지킴보증 상품안내",
+     "url": "https://www.hf.go.kr/ko/sub02/sub02_05_01.do"
+    }
+   ],
+   "caveat": "확인 못 함: 상품안내에 열거된 전체 요건의 일괄 시행일.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "hug-housing-value-source-order#1",
+   "slug": "hug-housing-value-source-order",
+   "title": "주택 유형별 HUG 인정가격의 적용 순서",
+   "summary": "HUG 인정가격은 주택 유형에 따라 적용 순서가 다르며, 상품안내에는 감정평가서 우선 적용 예외가 있다.",
+   "text": "- 2026-10-23 기준 조회한 HUG 안내는 보증승인일 현재의 가격정보를 정해진 순서로 적용한다. 실거래·KB시세·공시가격에 공통으로 적용되는 단일 순서는 없다.\n- 아파트·오피스텔·노인복지주택은 `KB 또는 한국부동산원 시세 → 공시가격 환산액 → 안심전세 앱 하한가 → 등기부상 최근 매매가 → 분양가 환산액 → 토지·건물 기준가액 환산액` 순이다.\n- 시세는 두 기관 중 선택하며, 아파트 최저층과 주거용 오피스텔에는 하한가를 적용한다. 오피스텔의 공시가격 단계는 국세청장이 공시하는 가격을 사용한다.\n- 연립·다세대는 `공동주택 공시가격 환산액 → 앱 하한가 → 등기부상 최근 매매가 → 토지·건물 기준가액 환산액` 순이다.\n- 단독·다중·다가구는 `개별단독주택 공시가격 환산액 → 등기부상 최근 매매가 → 토지·건물 기준가액 환산액` 순이다.",
+   "sources": [
+    {
+     "title": "HUG 주택가격 산정기준",
+     "url": "https://www.khug.or.kr/hug/web/ig/dr/igdr000001.jsp"
+    }
+   ],
+   "caveat": "확인 못 함: 감정평가 우선 적용 문구의 변경 시행일과 주택별 실제 심사 적용 범위. > 검증 정정: 유형별 적용 순서 전체는 원문 인코딩이 깨져 일부만 확인",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "hug-housing-value-source-order#2",
+   "slug": "hug-housing-value-source-order",
+   "title": "주택 유형별 HUG 인정가격의 적용 순서",
+   "summary": "HUG 인정가격은 주택 유형에 따라 적용 순서가 다르며, 상품안내에는 감정평가서 우선 적용 예외가 있다.",
+   "text": "- 상품안내의 별도 감정평가 항목은 임차인·임대인이 받은 감정평가를 산정표보다 우선 적용하고, 평가서 작성일부터 6개월이 지나지 않아야 한다고 설명한다.\n- 반면 2023-05-01 변경 당시 HUG 답변은 감정평가를 후순위 가격 항목에 배치했다. 과거 답변과 현재 조회되는 상품안내의 예외 문구를 구분해야 한다.",
+   "sources": [
+    {
+     "title": "HUG 감정평가서 이용 안내",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000001.jsp?tabMenu=Y"
+    },
+    {
+     "title": "HUG 2023년 가격 적용순서 답변",
+     "url": "https://www.khug.or.kr/hug/web/cs/el/csel000182.jsp?hmpg_cvap_dcd=04&hmpg_sno=66466"
+    }
+   ],
+   "caveat": "확인 못 함: 감정평가 우선 적용 문구의 변경 시행일과 주택별 실제 심사 적용 범위. > 검증 정정: 유형별 적용 순서 전체는 원문 인코딩이 깨져 일부만 확인",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "hug-jeonse-guarantee#1",
+   "slug": "hug-jeonse-guarantee",
+   "title": "HUG 전세보증금반환보증의 대상과 신청 요건",
+   "summary": "HUG 전세보증금반환보증은 수도권 7억원·그 외 5억원 이하 전세를 대상으로 하며 계약기간 절반 경과 전 신청해야 한다",
+   "text": "- 기준 시점: 2026-10-23 확인한 HUG 공식 상품 안내.\n- 전세계약 종료 후 임대인이 반환해야 하는 전세보증금의 반환을 책임지는 보증상품이다.\n- 보증 대상 전세보증금은 수도권 7억원 이하, 그 외 지역 5억원 이하이다.\n- 신규 계약은 잔금지급일과 전입신고일 중 늦은 날부터 계약기간의 절반이 지나기 전에 신청한다.\n- 대상에는 아파트, 다세대·연립, 단독·다가구·다중주택, 주거용 오피스텔, 노인복지주택이 포함된다.\n- 주거용 오피스텔은 계약서 또는 중개대상물 확인·설명서에 주거용 표시가 필요하다.\n- 근린생활시설 등은 보증 대상 주택에서 제외된다.\n- 모바일 안내의 기본 제출서류에는 확정일자부 계약서, 전입세대열람내역서, 보증금 지급서류, 주민등록등본이 포함된다.\n- 보증서 발급일 기준으로 심사사항을 재확인하고 보증서가 발급되어야 가입이 완료된다.",
+   "sources": [
+    {
+     "title": "HUG 전세보증금반환보증 상품 안내",
+     "url": "https://onestop.khug.or.kr/webView/webBiz/apply/goods001"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "hug-return-guarantee-current-rules#1",
+   "slug": "hug-return-guarantee-current-rules",
+   "title": "HUG 반환보증의 담보인정비율과 선순위채권 한도",
+   "summary": "HUG 반환보증의 90%는 담보인정비율이며, 선순위채권의 60% 한도는 주택가액을 기준으로 한다.",
+   "text": "- 2026-10-23 기준 조회한 HUG 상품안내는 `전세보증금 + 선순위채권 ≤ 주택가격 × 90%`를 요구한다. 여기서 90%의 명칭은 담보인정비율이다.\n- 신규보증은 2023-05-01 이후 신청분부터, 갱신보증은 2024-01-01 이후 신청분부터 담보인정비율 90%를 적용한다.\n- 보증한도는 `주택가격 × 90% − 선순위채권 등`이며, 단순히 전세보증금만 주택가격과 비교하는 조건이 아니다.\n- 선순위채권은 주택가액의 60% 이내여야 하며, 주택가액은 주택가격에 담보인정비율을 곱한 값이다.\n- 단독·다중·다가구는 선순위채권과 다른 세입자의 선순위 보증금 등을 합한 금액이 주택가액의 80% 이내여야 한다. 다른 세입자 금액에는 후순위·공실의 최우선변제금도 포함한다.\n- 공시가격을 140%로 환산한 주택가격에 90%를 적용하면 산술적으로 공시가격의 126%가 된다. 선순위채권이 있으면 내 보증금의 한도는 여기서 추가 차감된다.",
+   "sources": [
+    {
+     "title": "HUG 반환보증 상품개요",
+     "url": "https://www.khug.or.kr/hug/web/ig/dr/igdr000001.jsp"
+    },
+    {
+     "title": "HUG 담보인정비율 변경 공식 답변",
+     "url": "https://www.khug.or.kr/hug/web/cs/el/csel000182.jsp?hmpg_cvap_dcd=04&hmpg_sno=66466"
+    },
+    {
+     "title": "HUG 다가구 추가 확인사항",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000001.jsp?tabMenu=Y"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 신청의 예외·경과조치 적용 및 최종 보증승인 여부.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "hug-return-guarantee-current-rules#2",
+   "slug": "hug-return-guarantee-current-rules",
+   "title": "HUG 반환보증의 담보인정비율과 선순위채권 한도",
+   "summary": "HUG 반환보증의 90%는 담보인정비율이며, 선순위채권의 60% 한도는 주택가액을 기준으로 한다.",
+   "text": "- HUG의 과거 답변은 공시가격 반영률 140%와 2022-12-31까지 신청된 보증의 150% 적용을 구분한다. 140% 전환과 2023-05-01의 90% 적용은 같은 변경으로 묶을 수 없다.",
+   "sources": [
+    {
+     "title": "HUG 담보인정비율 변경 공식 답변",
+     "url": "https://www.khug.or.kr/hug/web/cs/el/csel000182.jsp?hmpg_cvap_dcd=04&hmpg_sno=66466"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 신청의 예외·경과조치 적용 및 최종 보증승인 여부.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-information-duties-reform-timeline#1",
+   "slug": "jeonse-information-duties-reform-timeline",
+   "title": "임대인 정보 제시·중개사 설명 의무의 개정 이력",
+   "summary": "임대인의 정보 제시 의무와 중개사의 확인·설명 의무는 구분되며, 계약 시 원자료와 적용 서식을 확인해야 한다.",
+   "text": "- 기준일은 2026-10-23이며, 확인한 주택임대차보호법 현행본은 2026-01-02 시행본이다. 제3조의6의 정보제공 제도 자체는 2023년 신설이 아니다.\n- 제3조의6제3항은 이해관계인의 해당 주택 확정일자 부여일·차임·보증금 정보 요청을 정하고, 제4항은 계약 예정자가 임대인 동의를 받아 요청하는 경로를 정한다.\n- 제3조의7은 2023-04-18 신설·시행됐고 이후 체결하는 임대차계약부터 적용한다. 임대인은 확정일자 등 임대차 정보와 국세·지방세 납세증명서를 제시해야 한다.\n- 계약 전 임대차 정보제공 동의로 해당 정보 제시를, 미납 국세·지방세 열람 동의로 납세증명서 제시를 갈음할 수 있다. 이는 익명의 공개 API 제공 의무가 아니다.\n- 2024-07-10 시행된 중개사 확인·설명 강화는 시행 이후 중개를 의뢰받은 경우부터 적용한다. 시행령상 설명 대상과 시행규칙 별지 제20호서식의 기록 항목을 함께 봐야 한다.",
+   "sources": [
+    {
+     "title": "제3조의6제3항",
+     "url": "https://law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1011064617"
+    },
+    {
+     "title": "제3조의6제4항",
+     "url": "https://www.law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1026294289"
+    },
+    {
+     "title": "제3조의7",
+     "url": "https://www.law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1031157321"
+    },
+    {
+     "title": "2023년 개정법·부칙",
+     "url": "https://www.law.go.kr/LSW/lsInfoP.do?efYd=20230418&lsiSeq=249999"
+    }
+   ],
+   "caveat": "확인 못 함: 2026년 개정 서식 전체 항목의 직접 대조, 기준일 현재 표준계약서의 모든 후속 개정 이력. > 검증 정정: 제3조의6·제3조의7과 표준계약서는 일치. 2024-07-10 확인·설명 강화 시행일과 2026-08-28 시행규칙은 원문 미확인",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-information-duties-reform-timeline#2",
+   "slug": "jeonse-information-duties-reform-timeline",
+   "title": "임대인 정보 제시·중개사 설명 의무의 개정 이력",
+   "summary": "임대인의 정보 제시 의무와 중개사의 확인·설명 의무는 구분되며, 계약 시 원자료와 적용 서식을 확인해야 한다.",
+   "text": "- 당시 서식에는 확정일자 부여현황, 국세·지방세 체납정보, 전입세대확인서, 최우선변제금, 임대보증금 보증제도 확인 항목이 신설됐다.\n- 기준일의 시행규칙은 2026-08-28 시행본이며 별지 제20호서식도 다시 개정됐다. 2024년 서식을 현행 최종본으로 표시하면 안 된다.\n- 법무부는 2023-04-18 수정 표준계약서에 정보 제시 의무 안내와 허위 정보에 대한 계약 해제 특약을 반영했다. 미고지 선순위 임대차·체납 사실 발견 시 위약금 없는 해제는 특약 체결을 권고한 내용이다.",
+   "sources": [
+    {
+     "title": "부산시 개정 시행 안내",
+     "url": "https://www.busan.go.kr/nbnews/1634432"
+    },
+    {
+     "title": "시행규칙 제정·개정문",
+     "url": "https://law.go.kr/LSW/lsRvsDocListP.do?lsId=007292"
+    },
+    {
+     "title": "법무부 표준계약서 수정 안내",
+     "url": "https://www.immigration.go.kr/bbs/moj/118/569781/artclView.do"
+    },
+    {
+     "title": "법무부 2023-03-30 개정 설명자료",
+     "url": "https://www.moj.go.kr/bbs/moj/182/451959/download.do"
+    }
+   ],
+   "caveat": "확인 못 함: 2026년 개정 서식 전체 항목의 직접 대조, 기준일 현재 표준계약서의 모든 후속 개정 이력. > 검증 정정: 제3조의6·제3조의7과 표준계약서는 일치. 2024-07-10 확인·설명 강화 시행일과 2026-08-28 시행규칙은 원문 미확인",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-prevention-support-center#1",
+   "slug": "jeonse-prevention-support-center",
+   "title": "전세피해 및 예방지원센터의 계약 전 상담 근거",
+   "summary": "2026-05-12 특별법 개정으로 전세피해 및 예방지원센터가 계약 전 등기부 권리분석과 계약서 문구 상담을 맡게 되었다",
+   "text": "- 기준 시점: 2026-10-23, 법률 제21634호의 개정문과 부칙.\n- 2026-05-12 개정은 특별법 제11조의 제목을 ‘전세피해 및 예방지원센터’로 변경했다.\n- 개정 조문에는 임대차계약을 체결하려는 사람을 대상으로 하는 상담 업무가 추가되었다.\n- 상담 범위에는 등기사항증명서의 권리관계 분석이 포함된다.\n- 임대차계약증서의 문구 검토와 안전한 계약을 위한 주의사항 상담도 포함된다.\n- 해당 제11조 개정은 공포한 날부터 시행하는 규정에 해당한다.\n- 같은 개정법의 일부 다른 조문은 2026-11-13 시행이므로 조문별 시행일이 구분된다.",
+   "sources": [
+    {
+     "title": "국가법령정보센터, 특별법 제정·개정문",
+     "url": "https://law.go.kr/LSW/lsRvsDocListP.do?chrClsCd=010202&lsId=014450&lsRvsGubun=all"
+    },
+    {
+     "title": "특별법 본문·부칙",
+     "url": "https://law.go.kr/lsInfoP.do?ancYnChk=0&lsId=014450"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-victim-special-act#1",
+   "slug": "jeonse-victim-special-act",
+   "title": "전세사기피해자 특별법의 인정 요건과 적용기간",
+   "summary": "전세사기피해자법은 보증금 5억원 이하 등 요건을 두며 신청 유효기간은 2027-05-31까지로 2025-05-31 이전 계약이 대상이다",
+   "text": "- 기준 시점: 2026-10-23, 국가법령정보센터의 법령·개정문과 법제처 안내.\n- 정식 법률명은 「전세사기피해자 지원 및 주거안정에 관한 특별법」이다.\n- 제3조의 인정 요건에는 주택 인도·주민등록·확정일자 등이 포함되며, 임차권등기나 전세권 설정을 포함하는 규정이 있다.\n- 임차보증금 기본 상한은 5억원이고, 위원회가 여건을 고려해 2억원 범위에서 상향할 수 있다.\n- 2인 이상 임차인의 피해 발생 또는 예상과 임대인의 반환채무 불이행 의도를 의심할 상당한 이유도 요건에 포함된다.\n- 법제처 안내에 따르면 결정 신청 및 지원 등의 유효기간은 2027-05-31까지로 연장되었다.\n- 적용 대상은 2025-05-31 이전에 최초로 임대차계약을 체결한 임차인이다.\n- 유효기간 만료 전에 피해자등으로 결정되거나 결정 신청을 한 사람에게는 만료 후에도 법을 적용하는 경과조치가 있다.",
+   "sources": [
+    {
+     "title": "국가법령정보센터, 특별법",
+     "url": "https://law.go.kr/lsInfoP.do?ancYnChk=0&lsId=014450"
+    },
+    {
+     "title": "2024년 개정문과 인정 요건",
+     "url": "https://law.go.kr/lsInfoP.do?lsiSeq=265193&viewCls=lsRvsDocInfoR"
+    },
+    {
+     "title": "법제처, 전세피해지원 안내",
+     "url": "https://easylaw.go.kr/CSP/CnpClsMainBtr.laf?ccfNo=2&cciNo=2&cnpClsNo=2&csmSeq=1972&popMenu=ov"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "post-contract-registry-alert-and-lease-registration#1",
+   "slug": "post-contract-registry-alert-and-lease-registration",
+   "title": "등기 알림 확인 경로와 임차권등기명령의 사용 시점",
+   "summary": "임차권등기는 보증금 미반환 상태에서 권리를 보전하며, 인터넷등기소 알림의 이용조건은 별도 확인이 필요하다.",
+   "text": "- 2026-11-08 확인한 인터넷등기소 공개 메뉴에는 `나의 등기정보 → 알림 서비스 → 부동산 알리미 서비스`가 있다.\n- 주택임대차보호법 제3조의3제1항·2026-01-02 시행본에 따라 임대차가 끝났는데 보증금을 돌려받지 못한 임차인은 임차권등기명령을 신청할 수 있다.\n- 같은 항의 신청 법원은 임차주택 소재지 관할 지방법원·지방법원지원 또는 시·군법원이다.\n- 같은 조 제5항·2026-01-02 시행본에 따라 임차권등기를 마치면 대항력과 우선변제권을 취득하고, 이미 취득한 권리가 있으면 그 권리는 유지된다.\n- 기존 권리를 가진 임차인은 임차권등기를 마친 뒤 주택 인도·주민등록의 대항요건을 상실하더라도 기존 대항력·우선변제권을 잃지 않는다. 제3조의3제5항은 등기를 마친 이후의 효과를 규정한다.\n- 같은 조 제8항·2026-01-02 시행본에 따라 임차권등기명령 신청과 등기에 든 비용을 임대인에게 청구할 수 있다.",
+   "sources": [
+    {
+     "title": "인터넷등기소 공식 메뉴",
+     "url": "https://www.iros.go.kr/index.jsp?from=CA&pin=12482002001231"
+    },
+    {
+     "title": "주택임대차보호법 제3조의3",
+     "url": "https://www.law.go.kr/법령/주택임대차보호법/제3조의3"
+    }
+   ],
+   "caveat": "확인 못 함: 부동산 알리미 서비스의 현재 비용·이용기간·임차인 신청 자격·신청 완료 절차, 전자소송포털의 현행 임차권등기명령 서식 메뉴 위치.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "post-contract-registry-alert-and-lease-registration#2",
+   "slug": "post-contract-registry-alert-and-lease-registration",
+   "title": "등기 알림 확인 경로와 임차권등기명령의 사용 시점",
+   "summary": "임차권등기는 보증금 미반환 상태에서 권리를 보전하며, 인터넷등기소 알림의 이용조건은 별도 확인이 필요하다.",
+   "text": "- 법원 전자절차의 공식 접속 주소는 대한민국 법원 전자소송포털이며, 공식 사용자 매뉴얼도 같은 포털에서 제공한다.",
+   "sources": [
+    {
+     "title": "전자소송포털 공식 사용자 매뉴얼",
+     "url": "https://ecfs.scourt.go.kr/psp/help/ecfs_scourt_manual_v1.1.pdf"
+    }
+   ],
+   "caveat": "확인 못 함: 부동산 알리미 서비스의 현재 비용·이용기간·임차인 신청 자격·신청 완료 절차, 전자소송포털의 현행 임차권등기명령 서식 메뉴 위치.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "post-contract-resident-date-and-lease-report#1",
+   "slug": "post-contract-resident-date-and-lease-report",
+   "title": "전입신고·확정일자·주택임대차 신고의 공식 경로",
+   "summary": "전입신고·확정일자·임대차 신고는 신청 경로와 요건이 다르며, 계약서를 낸 임대차 신고는 확정일자를 의제한다.",
+   "text": "- 2026-11-08 정부24 안내 기준, 전입신고는 14일 이내에 신청하며, 정부24 온라인 신청 또는 읍·면·동 방문 경로를 이용한다.\n- 주택임대차보호법 제3조의6제1항·2026-01-02 시행본에 따라 확정일자는 주택 소재지 주민센터·읍면사무소, 법원·등기소, 공증인 등 법정 부여기관에서 받는다.\n- 온라인 확정일자 신청 경로는 인터넷등기소의 `신청 → 전자확정일자 → 신청서 작성/제출`이다. 공식 메뉴에 신청사건 관리와 계약증서 발급 기능도 표시되어 있다.\n- 부동산 거래신고 등에 관한 법률 제6조의2제1항·2024-05-17 시행본에 따라 신고 대상 주택임대차는 계약 체결일부터 30일 이내에 공동 신고한다.\n- 2026-11-08 부동산거래관리시스템 안내 기준, 신고 금액은 보증금 6천만원 초과 또는 월세 30만원 초과이며, 수도권 전역·광역시·세종시 등의 시 지역에 적용하고 지방 도의 군 지역은 제외한다.",
+   "sources": [
+    {
+     "title": "정부24 전입신고",
+     "url": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000016"
+    },
+    {
+     "title": "주택임대차보호법 제3조의6",
+     "url": "https://www.law.go.kr/법령/주택임대차보호법/제3조의6"
+    },
+    {
+     "title": "인터넷등기소 공식 메뉴",
+     "url": "https://www.iros.go.kr/index.jsp?from=CA&pin=12482002001231"
+    },
+    {
+     "title": "부동산거래신고법 제6조의2",
+     "url": "https://www.law.go.kr/법령/부동산거래신고등에관한법률/제6조의2"
+    }
+   ],
+   "caveat": "확인 못 함: 인터넷등기소 전자확정일자의 현행 수수료와 신청 시간대별 처리 기준.",
+   "date": "2026-11-08",
+   "confidence": "medium"
+  },
+  {
+   "id": "post-contract-resident-date-and-lease-report#2",
+   "slug": "post-contract-resident-date-and-lease-report",
+   "title": "전입신고·확정일자·주택임대차 신고의 공식 경로",
+   "summary": "전입신고·확정일자·임대차 신고는 신청 경로와 요건이 다르며, 계약서를 낸 임대차 신고는 확정일자를 의제한다.",
+   "text": "- 같은 공식 안내는 계약금액이 바뀌지 않은 갱신계약을 신고 대상에서 제외하며, 계약서를 첨부하면 단독신고가 가능하고 확정일자가 자동 부여된다고 설명한다.\n- 신고 경로는 부동산거래관리시스템 온라인 신고 또는 임차주택 소재지 관할 주민센터 방문이다. 거주지와 임차주택 소재지가 다르면 임차주택 소재지 기준으로 방문한다.\n- 계약서를 제출한 임대차 신고의 접수가 완료되면 확정일자를 부여한 것으로 본다. 부동산거래신고법 제6조의5제3항·2024-05-17 시행본에 따른 효과다.",
+   "sources": [
+    {
+     "title": "부동산거래관리시스템 신고 안내",
+     "url": "https://rtms.molit.go.kr/main/serviceInfo.do"
+    },
+    {
+     "title": "부동산거래신고법 제6조의5",
+     "url": "https://www.law.go.kr/법령/부동산거래신고등에관한법률/제6조의5"
+    }
+   ],
+   "caveat": "확인 못 함: 인터넷등기소 전자확정일자의 현행 수수료와 신청 시간대별 처리 기준.",
+   "date": "2026-11-08",
+   "confidence": "medium"
+  },
+  {
+   "id": "safe-jeonse-public-app#1",
+   "slug": "safe-jeonse-public-app",
+   "title": "안심전세 앱의 공공 서비스와 개편 발표",
+   "summary": "안심전세 앱은 시세·등기부·집주인 조회를 제공하며 국토교통부가 2026년 9월 개시를 목표로 위험진단 개편을 추진한다고 발표했다",
+   "text": "- 기준 시점: 기존 기능은 HUG 안내, 개편 계획은 국토교통부의 2026-06-18 발표 기준이다.\n- HUG는 안심전세 앱의 기능으로 빌라 시세 확인, 건축물대장·등기부 조회, 집주인 정보 조회를 안내한다.\n- 등기부 변동 알림과 전세보증 가입 기능도 안내되어 있다.\n- 국토교통부는 2026년 9월 서비스 개시를 목표로 위험진단 기능 개편을 추진한다고 발표했다.\n- 정부의 후속 안내는 57종 정보 연계와 ‘안전·주의·위험’ 3단계 표시를 개편 내용으로 제시했다.\n- 개편 안내의 임대인 체납액·신용정보 제공에는 임대인 동의가 필요하다고 명시되어 있다.\n- 인용한 개편 자료는 추진 계획이며, 실제 개시 완료를 입증하는 자료는 아니다.",
+   "sources": [
+    {
+     "title": "HUG 안심전세 앱 기능 안내",
+     "url": "https://www.khug.or.kr/hug/homepage_file_upload/makeBetterApp.pdf"
+    },
+    {
+     "title": "국토교통부, 2026년 개편 추진 발표",
+     "url": "https://www.molit.go.kr/USR/NEWS/dtl.jsp?id=95092134&lcmspage=1"
+    },
+    {
+     "title": "정부 정책브리핑, 개편 내용 안내",
+     "url": "https://www.korea.kr/news/policyNewsView.do?newsId=148967965"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "sgi-tenant-credit-insurance-source-boundaries#1",
+   "slug": "sgi-tenant-credit-insurance-source-boundaries",
+   "title": "SGI 임차인용 보장보험의 가입 주체와 확인 범위",
+   "summary": "SGI 공식 동의 안내는 세입자 가입형과 임대인 가입형을 구분하며, 현행 한도는 상품 원문 재확인이 필요하다.",
+   "text": "- 2026-11-08 확인한 SGI 가입 관련 동의 안내는 전세금보장신용보험을 세입자가 가입하는 전세계약의 상품으로 설명한다.\n- 전세금반환보증보험의 가입용 동의 대상은 세입자를 위해 직접 보험에 가입하려는 임대인으로 안내되어 있다. 두 상품의 가입 주체가 다르다.\n- 전세금보장신용보험의 임대인 사전 심사용 동의는 임차인의 보험 가입을 위해 임대인 또는 예정 임대인을 심사하는 절차다.\n- 특례보증에 대해서는 별도의 임대인용 동의 항목이 마련되어 있다.\n- 가입 관련 동의 메뉴는 SGI M 앱에서도 이용할 수 있다고 안내한다. 이 안내만으로 보험 청약 전체의 비대면 가능 여부를 확정할 수는 없다.",
+   "sources": [
+    {
+     "title": "SGI 가입 관련 동의 안내",
+     "url": "https://sejong.sgica.co.kr/biz/cmw/index.html?p=CMWSGN010001F01"
+    }
+   ],
+   "caveat": "확인 못 함: SGI 임차인용 공식 상품 페이지의 세부 본문을 확보하지 못해, 현행 주택별 가입 대상·보증금 상한·인수 요건·신청기한·청약 경로를 확정하지 못했다.",
+   "date": "2026-11-08",
+   "confidence": "high"
+  },
+  {
+   "id": "small-tenant-priority-payment-current#1",
+   "slug": "small-tenant-priority-payment-current",
+   "title": "소액임차인 지역별 보증금 기준과 최우선변제액",
+   "summary": "소액임차인 보호액은 지역별로 다르며, 현행 금액과 함께 담보물권 취득 시점의 경과규정을 확인해야 한다.",
+   "text": "- 2026-10-23 기준 시행령은 2026-07-01 시행 판본이며, 제10조는 우선변제액, 제11조는 적용받는 임차인의 보증금 상한을 정한다. 아래 금액 조문의 마지막 개정일은 2023-02-21이다.\n- 서울특별시: 보증금 1억6,500만원 이하, 우선변제액 5,500만원 이하다.\n- 수도권 과밀억제권역 중 서울 제외 지역과 세종·용인·화성·김포: 보증금 1억4,500만원 이하, 우선변제액 4,800만원 이하다.\n- 광역시 중 과밀억제권역·군지역 제외 지역과 안산·광주·파주·이천·평택: 보증금 8,500만원 이하, 우선변제액 2,800만원 이하다.\n- 그 밖의 지역: 보증금 7,500만원 이하, 우선변제액 2,500만원 이하다.\n- 현행 금액은 2023-02-21 시행됐다. 개정 당시 존속 중인 계약에도 적용하지만, 시행 전에 담보물권을 취득한 자와의 관계에는 종전 규정을 적용한다.",
+   "sources": [
+    {
+     "title": "시행령 제10조·제11조",
+     "url": "https://www.law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lspttninfSeq=130113"
+    },
+    {
+     "title": "시행령 제11조 현행 조문",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0011&lsiSeq=287183&urlMode=lsScJoRltInfoR"
+    },
+    {
+     "title": "시행령 개정문과 부칙",
+     "url": "https://www.law.go.kr/LSW/lsRvsDocListP.do?chrClsCd=010202&lsId=004950&lsRvsGubun=all"
+    },
+    {
+     "title": "서초구 주거임차 정보",
+     "url": "https://www.seocho.go.kr/site/seocho/04/10421050000002021030910.jsp"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 주택의 담보권 설정 연혁과 실제 경매 배당액.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "small-tenant-priority-payment-current#2",
+   "slug": "small-tenant-priority-payment-current",
+   "title": "소액임차인 지역별 보증금 기준과 최우선변제액",
+   "summary": "소액임차인 보호액은 지역별로 다르며, 현행 금액과 함께 담보물권 취득 시점의 경과규정을 확인해야 한다.",
+   "text": "- 시행령 제10조는 주택가액의 2분의 1 한도와 복수 임차인 사이의 안분을 규정하므로, 표의 최대액이 항상 전액 배당되는 것은 아니다.\n- 경매개시결정 등기 전 주택 인도·주민등록 등 대항요건과 배당요구도 확인해야 한다. 서초구 공식 안내는 담보물권 설정일을 기준시점으로 설명한다.",
+   "sources": [
+    {
+     "title": "시행령 제10조·제11조",
+     "url": "https://www.law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lspttninfSeq=130113"
+    },
+    {
+     "title": "서초구 주거임차 정보",
+     "url": "https://www.seocho.go.kr/site/seocho/04/10421050000002021030910.jsp"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 주택의 담보권 설정 연혁과 실제 경매 배당액.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "broker-listing-contract-checks#1",
+   "slug": "broker-listing-contract-checks",
+   "title": "중개사 등록·매물 실재·계약 안전 확인의 구분",
+   "summary": "중개사 등록과 확인매물 표시는 서로 다른 대상을 확인하므로 계약의 권리관계 검토를 대신할 수 없다.",
+   "text": "- 기준일 2026-10-23, 중개사 조회·매물 검증·계약상 확인·설명은 확인 대상과 근거가 다른 절차다.\n| 확인 종류 | 확인하는 내용 | 해당 절차만으로 확인되지 않는 내용 | 근거 |\n| 중개사 등록 확인 | 등록번호·상호·대표자·영업상태 등 등록정보 대조 | 특정 매물의 존재, 임대인의 권리, 보증금 회수 가능성 |\n| 매물 실재·거래 가능 확인 | 매물정보·거래 의사 확인과 등기부등본 확인, 방식에 따른 본인인증·현장 방문 | 개별 임차인의 계약 조건을 반영한 보증금 회수 가능성 |\n| 계약 안전을 위한 권리관계 확인 | 상태·입지·권리관계·거래 제한을 확인하고 등기사항증명서·신탁원부 등 근거 제시 | 확인·설명 의무 자체가 장래 보증금 반환을 보장한다는 의미는 아님 |\n- 법률 근거는 2026-08-28 시행 공인중개사법 제25조이며, 적용 주체는 중개를 의뢰받은 개업공인중개사다.",
+   "sources": [
+    {
+     "title": "브이월드 중개업 조회를 제공하는 부산 중구청",
+     "url": "https://www.bsjunggu.go.kr/index.junggu?menuCd=DOM_000000112003007000"
+    },
+    {
+     "title": "네이버 확인매물 안내",
+     "url": "https://help.pay.naver.com/faq/content.help?faqId=17124"
+    },
+    {
+     "title": "공인중개사법 제25조",
+     "url": "https://law.go.kr/LSW/lsLawLinkInfo.do?ancYnChk=0&chrClsCd=010202&lsJoLnkSeq=1004146005"
+    }
+   ],
+   "caveat": "확인 못 함: 확인매물 검증에서 선순위 임차보증금·체납세금까지 일괄 심사한다는 근거. > 검증 정정: 세 가지 확인의 구분은 유지한다. 네이버 가입 심사와 확인매물의 등기부 확인 서술은 원문을 열지 못해 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "broker-listing-contract-checks#2",
+   "slug": "broker-listing-contract-checks",
+   "title": "중개사 등록·매물 실재·계약 안전 확인의 구분",
+   "summary": "중개사 등록과 확인매물 표시는 서로 다른 대상을 확인하므로 계약의 권리관계 검토를 대신할 수 없다.",
+   "text": "- 네이버 중개업소 가입 때 제출하는 개설등록증·사업자등록증 심사도 매물별 권리관계 확인과 구분된다.",
+   "sources": [
+    {
+     "title": "네이버 부동산 관리센터",
+     "url": "https://landad.naver.com/"
+    }
+   ],
+   "caveat": "확인 못 함: 확인매물 검증에서 선순위 임차보증금·체납세금까지 일괄 심사한다는 근거. > 검증 정정: 세 가지 확인의 구분은 유지한다. 네이버 가입 심사와 확인매물의 등기부 확인 서술은 원문을 열지 못해 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-checking-timing-and-repeated-verification#1",
+   "slug": "jeonse-checking-timing-and-repeated-verification",
+   "title": "계약 전부터 잔금까지 반복되는 확인 시점",
+   "summary": "공공 체크리스트는 계약 전뿐 아니라 계약 당일과 잔금 단계의 재확인을 안내하지만, 단계별 피해 방지율은 제시하지 않는다.",
+   "text": "- 기준일 2026-10-24에 확인한 인천시 체크리스트의 표시된 최종 업데이트는 2025-10-24다. 아래는 해당 안내의 확인 시점 구분이다.\n- 계약 전에는 주택 상태·건축물대장, 전세가율, 선순위 권리관계, 다가구 선순위 보증금, 임대인 체납을 확인하도록 한다.\n- 계약 당일에는 임대인·대리인 신원, 중개사 정상 영업 여부, 표준계약서 활용과 등기부 권리관계 재확인을 안내한다.\n- 계약 후에는 임대차신고, 잔금·이사 단계에는 등기부 권리관계 재확인과 전입신고, 반환보증 가입을 안내한다.\n- 잔금 단계 재확인의 목적은 계약 체결 후의 권리변동 확인이라고 명시한다. 계약 전 자료만으로 이후 상태까지 보장할 수 없다는 시점상의 한계가 있다〔해석〕.\n- 이 안내는 예방 행동의 권고이며, 어느 단계에서 확인했다면 실제 피해를 막았을지 추정한 피해자 추적조사는 아니다〔자료 성격 구분〕.",
+   "sources": [
+    {
+     "title": "인천주거포털 전세계약 유의사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    }
+   ],
+   "caveat": "확인 못 함: 가계약금 지급 전·갱신·만기 단계의 별도 효과 분석, 단계별 피해 발생률·예방률, 안내에 인용된 법령의 2026-10-24 현재 시행일·적용 대상 재검증.",
+   "date": "2026-10-24",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-double-contract-fake-landlord#1",
+   "slug": "jeonse-double-contract-fake-landlord",
+   "title": "이중계약·위임장 위조·가짜 임대인",
+   "summary": "소유자 신원과 대리권 범위를 확인하고 계약 조건을 직접 대조해야 이중계약과 가짜 임대인 수법을 점검할 수 있다.",
+   "text": "- 건물관리인이 소유자에게 월세계약이라고 알리고 임차인에게는 전세계약을 체결해 보증금을 가로채는 수법과, 신분을 위장해 중복계약하는 수법이 지자체 예방자료에 소개돼 있다.\n- 국토부 전세피해 예방 안내서는 소유자 가족이 나왔더라도 대리권 유무와 범위를 확인해야 한다고 설명한다. 가족관계나 열쇠 보유가 임대 권한 확인을 대신하지 않는다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 등기상 소유자와 계약자 신원 | 임차인·중개사가 등기사항증명서와 계약자 신분증 대조 | 인터넷 등기 열람 기록당 700원; 계약 당일 | 불일치 사유와 적법한 권한을 확인한 뒤 지급 판단 |\n| 위임장 원본·위임 범위·인감 | 임대인·대리인이 제시하고 임차인·중개사가 인감증명서·신분증과 대조 | 계약 전; 서류 발급 비용 미확인 | 배우자·관리인이라는 설명만 받아들이지 않고 권한 자료 요구 |",
+   "sources": [
+    {
+     "title": "부평구 이중계약·신분 위조 예방자료",
+     "url": "https://www.icbp.go.kr/dong/bbs/bbsMsgDetail.do?add3=y&bcd=dong_notice&cate1=bupyeong1&dong=bupyeong1&msg_seq=15347&pgno=417"
+    },
+    {
+     "title": "국토부 전세피해 예방 종합안내서 재게시본",
+     "url": "https://www.kar.or.kr/consult_new/hanbang_portal/전세사기%20피해예방%20종합안내서%28체크리스트%20포함%29.pdf"
+    },
+    {
+     "title": "인천시 계약 유의사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    },
+    {
+     "title": "법제처 등기 열람 안내",
+     "url": "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=2&cciNo=1&cnpClsNo=2&csmSeq=627"
+    }
+   ],
+   "caveat": "확인 못 함: 위임장·신분증 이미지 자체의 진위, 아직 신고·등기되지 않은 중복계약을 모두 탐지하는 공개 API.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-double-contract-fake-landlord#2",
+   "slug": "jeonse-double-contract-fake-landlord",
+   "title": "이중계약·위임장 위조·가짜 임대인",
+   "summary": "소유자 신원과 대리권 범위를 확인하고 계약 조건을 직접 대조해야 이중계약과 가짜 임대인 수법을 점검할 수 있다.",
+   "text": "| 실제 전세 조건과 수령 권한 | 소유자에게 계약 내용과 대리권을 확인하고 위임 범위와 비교 | 계약금·잔금 지급 전; 확인 비용 미확인 | 계약 체결 권한과 금전 수령 권한이 확인되지 않으면 지급 판단 보류 |",
+   "sources": [
+    {
+     "title": "부평구 이중계약·신분 위조 예방자료",
+     "url": "https://www.icbp.go.kr/dong/bbs/bbsMsgDetail.do?add3=y&bcd=dong_notice&cate1=bupyeong1&dong=bupyeong1&msg_seq=15347&pgno=417"
+    },
+    {
+     "title": "국토부 전세피해 예방 종합안내서 재게시본",
+     "url": "https://www.kar.or.kr/consult_new/hanbang_portal/전세사기%20피해예방%20종합안내서%28체크리스트%20포함%29.pdf"
+    }
+   ],
+   "caveat": "확인 못 함: 위임장·신분증 이미지 자체의 진위, 아직 신고·등기되지 않은 중복계약을 모두 탐지하는 공개 API.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-fraud-info-matrix#1",
+   "slug": "jeonse-fraud-info-matrix",
+   "title": "전세사기 수법별로 계약 전에 필요한 정보와 얻는 곳",
+   "summary": "수법 9가지마다 확인할 정보·얻는 곳·비용과 MoveValue가 지금 계산하는 것을 한 표로 잇는다",
+   "text": "회의에서 \"전세 사기를 피하기 위해 필요한 정보가 뭔지 더 구체적이어야 한다\"고 한 질문에 대한 답이다. 왜 일어나는지는 jeonse-fraud-structural-causes를 보면 된다. 줄여 말하면 임차인이 임대인의 자산·부채를 알기 어렵고, 보증 구조가 악용됐으며, 전문 자격사가 가담했다. 수법마다 원문 근거는 각 노트에 있다.\n| 수법 | 계약 전에 알아야 할 정보 | 얻는 곳·비용 | MoveValue 제안 (미적용, jeonse-ltv-check) |\n| 깡통전세(근저당 과다) | 근저당 채권최고액, 집값 | 등기부 을구(열람 700원) | 입력하면 집값 대비 비율을 계산 |\n| 다가구 선순위 보증금 은닉 (jeonse-multifamily-hidden-prior-deposits) | 앞선 세입자 보증금 합계 | 확정일자 부여현황(임대인 동의, 600원), 전입세대확인서 | 입력하면 합산하고, HUG 다가구 80% 요건도 계산 |",
+   "sources": [
+    {
+     "title": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md",
+     "url": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-fraud-info-matrix#2",
+   "slug": "jeonse-fraud-info-matrix",
+   "title": "전세사기 수법별로 계약 전에 필요한 정보와 얻는 곳",
+   "summary": "수법 9가지마다 확인할 정보·얻는 곳·비용과 MoveValue가 지금 계산하는 것을 한 표로 잇는다",
+   "text": "| 동시진행·감정가 부풀리기 (jeonse-simultaneous-sale-inflated-valuation) | HUG 인정가격, 주변 실거래 | 공시가격 × 140%, 실거래 공개시스템 | 공시가격을 넣으면 HUG 기준 집값으로 계산 |\n| 보증 가입 불가 매물 (hug-return-guarantee-current-rules) | 보증금 + 선순위 ≤ 90% 등 | HUG 상품개요 | 요건별 충족·미달을 표시 |\n| 소액임차인 보호 (small-tenant-priority-payment-current) | 지역별 보증금 상한·우선변제액 | 시행령 제10·11조 | 서울 기준으로 해당 여부를 표시 |\n| 신탁 사기 (jeonse-trust-property-authority-check) | 신탁원부, 수탁자 동의 | 등기부·신탁원부·신탁회사 | 체크리스트만 (후속) |",
+   "sources": [
+    {
+     "title": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md",
+     "url": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-fraud-info-matrix#3",
+   "slug": "jeonse-fraud-info-matrix",
+   "title": "전세사기 수법별로 계약 전에 필요한 정보와 얻는 곳",
+   "summary": "수법 9가지마다 확인할 정보·얻는 곳·비용과 MoveValue가 지금 계산하는 것을 한 표로 잇는다",
+   "text": "| 이중계약·가짜 임대인 (jeonse-double-contract-fake-landlord) | 소유자 신원, 위임장·인감 | 등기부·신분증 대조 | 체크리스트만 (후속) |\n| 근린생활시설 (jeonse-illegal-use-building-check) | 건축물대장 용도·위반 표시 | 정부24(무료), 건축HUB API | 사용승인일 누락만 경고 (후속) |\n| 잔금일 대항력 공백 (jeonse-stage-rechecks-opposability-gap) | 잔금 직전 등기 변동 | 등기부 재열람 | 타임라인·특약 문구 |\n- 임대인이 줘야 하는 정보와 중개사가 설명해야 하는 정보는 jeonse-information-duties-reform-timeline에 정리했다. 제3조의7은 2023-04-18 시행이다.\n- 이 표의 어떤 결과도 법적 판정이 아니다 (jeonse-risk-expression-guardrails).",
+   "sources": [
+    {
+     "title": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md",
+     "url": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-fraud-structural-causes#1",
+   "slug": "jeonse-fraud-structural-causes",
+   "title": "전세사기의 구조적 원인과 시장성 미반환 위험",
+   "summary": "높은 전세가율과 불투명한 가격·권리 정보는 위험을 키우며, 보증금 미반환만으로 사기를 확정할 수는 없다.",
+   "text": "- 정부의 2023년 예방대책은 집값 급등, 반환보증 악용, 전문 자격사 가담을 전세사기 피해 증가의 원인으로 제시했다. 당시 분석이며 현재 발생 비중을 뜻하지 않는다.\n- 당시 시세까지 보증가입을 허용한 구조는 임대인 자기자본 없이 보증금으로 매입하는 거래와 중개사의 고액 전세계약 유도에 악용됐다.\n- 국토연구원 발간 연구에서 윤성진·이슬은 임대인의 자산·부채 상태를 임차인이 알기 어렵고, 금융기관 대출과 달리 임대인의 상환능력을 심사하는 장치가 부족하다고 분석했다.\n- 같은 연구는 신축 빌라의 불명확한 시세와 컨설팅업자·중개사·명의 제공자가 연결된 거래 구조를 설명한다. 해당 Working Paper는 저자 의견이며 연구원 공식 견해는 아니다.\n- 높은 전세가율은 매각대금으로 보증금을 회수할 여유를 줄이며, 신규 전세가격 하락은 후속 보증금으로 기존 보증금을 반환하는 구조에 부족분을 만든다.",
+   "sources": [
+    {
+     "title": "관계부처 전세사기 예방 및 피해 지원방안",
+     "url": "https://www.myhome.go.kr/hws/portal/bbs/selectBoardPressDetailView.do?bbsId=BBST03&nttId=2069"
+    },
+    {
+     "title": "윤성진·이슬, 보증금 반환 지연 및 미반환 구조 이해와 임차인 불안 완화 방안 연구",
+     "url": "https://www.krihs.re.kr/galleryDownload.es?bid=0025&list_no=30032&seq=1"
+    }
+   ],
+   "caveat": "확인 못 함: 구조적 원인별 기여율, 전세가율 상승만으로 사기를 판정하는 검증된 임계값. > 검증 정정: 정부 2023 예방대책 부분은 원문과 일치. 국토연구원 Working Paper 인용 부분은 PDF를 판독하지 못해 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-fraud-structural-causes#2",
+   "slug": "jeonse-fraud-structural-causes",
+   "title": "전세사기의 구조적 원인과 시장성 미반환 위험",
+   "summary": "높은 전세가율과 불투명한 가격·권리 정보는 위험을 키우며, 보증금 미반환만으로 사기를 확정할 수는 없다.",
+   "text": "- 따라서 역전세에 따른 자금 부족과 가격·권리·반환능력을 속이는 사기 수법은 구별해야 한다. 연구도 보증금 반환 지연·미반환을 임대인 요인과 시장 요인으로 나눠 다룬다.\n- 정부가 제시한 대응은 가격·임대인 정보 제공, 보증 심사 개선, 중개사 책임 강화이며, 하나의 전세가율만으로 거래 전체를 검증하는 방식이 아니다.",
+   "sources": [
+    {
+     "title": "관계부처 전세사기 예방 및 피해 지원방안",
+     "url": "https://www.myhome.go.kr/hws/portal/bbs/selectBoardPressDetailView.do?bbsId=BBST03&nttId=2069"
+    },
+    {
+     "title": "윤성진·이슬, 보증금 반환 지연 및 미반환 구조 이해와 임차인 불안 완화 방안 연구",
+     "url": "https://www.krihs.re.kr/galleryDownload.es?bid=0025&list_no=30032&seq=1"
+    }
+   ],
+   "caveat": "확인 못 함: 구조적 원인별 기여율, 전세가율 상승만으로 사기를 판정하는 검증된 임계값. > 검증 정정: 정부 2023 예방대책 부분은 원문과 일치. 국토연구원 Working Paper 인용 부분은 PDF를 판독하지 못해 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-illegal-use-building-check#1",
+   "slug": "jeonse-illegal-use-building-check",
+   "title": "근린생활시설·불법 용도와 보증 가입의 구분",
+   "summary": "건축물대장 용도와 실제 사용을 대조해야 하며, HUG 보증 대상 여부와 주택임대차보호법 적용은 구별해야 한다.",
+   "text": "- 전세 예방자료는 건축물대장으로 불법·무허가 여부와 주택 용도를 확인하도록 안내한다. 주거용으로 소개된 매물도 대장 확인 대상이다.\n- HUG 상품안내상 근린생활시설은 반환보증 대상 주택에서 제외되며, 주거용 오피스텔은 계약서 또는 확인·설명서의 주거용 표기가 필요하다. 2026-10-23 조회 기준 안내다.\n- 현행 주택임대차보호법 제2조는 주거용 건물의 전부·일부 임대차에 적용한다. HUG 상품상 제외와 법 적용 여부를 같은 판정으로 취급해서는 안 된다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 해당 층·호의 용도와 위반 표시 | 누구나 정부24 건축물대장 발급·열람; 임차인·중개사가 매물과 대조 | 인터넷 무료, 방문 발급 500원·열람 300원; 계약 전 | 대장과 설명의 불일치를 해소한 뒤 계약 판단 |",
+   "sources": [
+    {
+     "title": "연수구 전세계약 핵심 체크리스트",
+     "url": "https://www.yeonsu.go.kr/UpFiles/board_1/전세사기_예방_체크리스트.pdf"
+    },
+    {
+     "title": "HUG 반환보증 상품안내",
+     "url": "https://onestop.khug.or.kr/webView/webBiz/apply/goods001"
+    },
+    {
+     "title": "현행 주택임대차보호법 제2조",
+     "url": "https://www.law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1026430233"
+    },
+    {
+     "title": "정부24 건축물대장 발급·열람",
+     "url": "https://m.gov.kr/mw/AA020InfoCappView.do?CappBizCD=15000000098&HighCtgCD=A09005&Mcode=10020&srhQuery=2023&tp_seq=03"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 위반건축물의 적법화 가능성·비용, 해당 계약에 대한 법원 판단과 보증기관의 최종 인수 결정.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-illegal-use-building-check#2",
+   "slug": "jeonse-illegal-use-building-check",
+   "title": "근린생활시설·불법 용도와 보증 가입의 구분",
+   "summary": "건축물대장 용도와 실제 사용을 대조해야 하며, HUG 보증 대상 여부와 주택임대차보호법 적용은 구별해야 한다.",
+   "text": "| 실제 주거용 사용과 계약서 표기 | 현장 확인 및 임대인·중개사의 계약서·확인설명서 확인 | 계약 전·잔금 전; 별도 비용 미확인 | 오피스텔은 주거용 표기와 보증 제출 요건 보완 |\n| 해당 목적물의 반환보증 가능 여부 | 임차인이 HUG에 정확한 건물 유형과 서류로 확인 | 계약 전 확인·신청 시 재확인; 보증료 별도 | 가입 불가 사유를 확인하고 보증 전제의 계약인지 재검토 |",
+   "sources": [
+    {
+     "title": "HUG 반환보증 상품안내",
+     "url": "https://onestop.khug.or.kr/webView/webBiz/apply/goods001"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 위반건축물의 적법화 가능성·비용, 해당 계약에 대한 법원 판단과 보증기관의 최종 인수 결정.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-multifamily-hidden-prior-deposits#1",
+   "slug": "jeonse-multifamily-hidden-prior-deposits",
+   "title": "다가구 선순위 보증금 은닉과 교차 확인",
+   "summary": "다가구는 다른 세입자의 선순위 보증금까지 확인해야 하며, 전입세대 정보만으로 보증금 총액을 알 수 없다.",
+   "text": "- 다가구 계약에서는 선순위 보증금 확인이 필요하며, 정부 안내는 전입세대 내역과 확정일자 부여현황을 확인 대상으로 제시한다.\n- HUG도 단독·다중·다가구 보증 신청에 타 전세계약체결내역 확인서와 확정일자 부여현황을 요구하며, 확인서 작성에는 임대인 또는 중개사 협조가 필요하다고 안내한다.\n- 전입세대확인서는 세대주 등의 성명·전입일자를 확인하는 자료이므로, 보증금 액수는 확정일자 정보·계약 내역과 별도로 대조해야 한다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 다른 임대차의 보증금·기간·확정일자 | 계약 전 임차인은 임대인 동의를 받아 확정일자부여기관에 요청; 임대인 제공 자료와 대조 | 정보제공 기본 수수료 건당 600원·초과분 별도; 계약 전 | 임대인에게 제시 또는 열람 동의를 요구하고 누락 자료 보완 |",
+   "sources": [
+    {
+     "title": "인천시 계약 유의사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    },
+    {
+     "title": "HUG 제출서류",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000002.jsp?tabMenu=Y"
+    },
+    {
+     "title": "정부24 전입세대확인서",
+     "url": "https://m.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000305&HighCtgCD=A01010"
+    },
+    {
+     "title": "현행 제3조의6제4항",
+     "url": "https://www.law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1026294289"
+    }
+   ],
+   "caveat": "확인 못 함: 미등록·미확정일자 계약까지 포함한 보증금 전수 파악, 전입세대확인서 수수료의 개별 면제 적용 여부.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-multifamily-hidden-prior-deposits#2",
+   "slug": "jeonse-multifamily-hidden-prior-deposits",
+   "title": "다가구 선순위 보증금 은닉과 교차 확인",
+   "summary": "다가구는 다른 세입자의 선순위 보증금까지 확인해야 하며, 전입세대 정보만으로 보증금 총액을 알 수 없다.",
+   "text": "| 실제 전입세대 | 소유자·임대차계약자 등 자격 있는 신청인이 주민센터에서 확인 | 정부24 안내상 방문; 열람 300원·교부 400원 또는 500원; 계약 전·잔금 전 | 임대인에게 자료 확보를 요청하고 계약 내역과 불일치 해소 |\n| 타 전세계약체결내역과 가구 현황 | 임대인·중개사가 HUG 양식 작성에 협조; 임차인이 확정일자 자료와 대조 | 계약 전·보증 신청 전; 작성 비용 미확인 | 보증금 총액을 모르면 미확인 상태로 남기고 보증기관 상담 |",
+   "sources": [
+    {
+     "title": "HUG 제출서류",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000002.jsp?tabMenu=Y"
+    },
+    {
+     "title": "정부24 전입세대확인서",
+     "url": "https://m.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000305&HighCtgCD=A01010"
+    }
+   ],
+   "caveat": "확인 못 함: 미등록·미확정일자 계약까지 포함한 보증금 전수 파악, 전입세대확인서 수수료의 개별 면제 적용 여부.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-ratio#1",
+   "slug": "jeonse-ratio",
+   "title": "전세가율의 정의와 보증금 반환 위험",
+   "summary": "전세가율은 전세가격÷매매가격×100이며 높을수록 보증금 미반환 위험이 커지고 매매가 하락 시 상승한다",
+   "text": "- 전세가율은 매매가격에 대한 전세가격의 비율이다.\n- 계산식은 `전세가격 ÷ 매매가격 × 100`이다.\n- 국토교통부는 전세가율이 높을수록 전세금을 돌려받지 못할 위험이 커질 수 있다고 설명한다.\n- 매매가격이 하락하면 전세가격이 그대로여도 전세가율은 상승한다.\n- 국토교통부 실거래가 공개시스템에서 주택 유형과 계약 지역을 선택해 실제 거래금액을 확인할 수 있다.\n- 한국부동산원 부동산테크에서는 지역별 전세가율을 확인할 수 있다.",
+   "sources": [
+    {
+     "title": "국토교통부, 전세가율 확인 안내, 2022-11-08",
+     "url": "https://www.korea.kr/news/policyNewsView.do?newsId=148907939"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-risks-beyond-information-interpretation#1",
+   "slug": "jeonse-risks-beyond-information-interpretation",
+   "title": "해석 보조만으로 해결되지 않는 전세 위험",
+   "summary": "국토연구원은 정보 제공 외에도 임대인·중개사 책임과 제도적 보호를 강조하므로, AI 해석 보조만을 해법으로 제시하기 어렵다.",
+   "text": "- 기준일 2026-10-24에 확인한 국토연구원 2023년 연구 소개는 전세사기를 보증금 관련 제도·관행·행태의 구조적 취약성이 드러난 사건으로 설명한다.\n- 같은 연구는 주택 매매가격과 전세가격 하락이 깡통전세·역전세와 보증금 미반환 우려를 키운다고 설명한다. 문서 이해 수준만의 문제로 제시하지 않는다.\n- 국토연구원의 2024-02-19 정책브리프는 불법건축물 세입자가 보증 가입 제한과 피해지원 적용의 어려움에 놓인다고 지적했다. 이는 당시 연구 진단이다.\n- 해당 브리프는 정보 비대칭 완화를 위해 임대인 정보 제시·중개사 확인설명 의무 강화와 미이행 시 계약 해지·보상 요구 권한을 제안했다. 제안 자체를 현행 권리로 읽으면 안 된다.\n- 서울시의 2025년 위험분석 사업계획에서도 임대인 신용정보 제공은 임대인의 동의를 조건으로 제시됐다. 분석 기능과 정보 접근 권한은 구분된다.",
+   "sources": [
+    {
+     "title": "국토연구원 2023년 연구 소개·NABIS 수록",
+     "url": "https://www.nabis.go.kr/issuReportDetailView.do?gbnCode=P52&menucd=130&poIdx=12402&refCode=10"
+    },
+    {
+     "title": "국토정책Brief 제953호",
+     "url": "https://www.krihs.re.kr/gallery.es?act=view&bid=0022&list_no=30121&mid=a10603000000"
+    },
+    {
+     "title": "서울시 의회 제출 위험분석 사업계획·PDF 25쪽",
+     "url": "https://mas.smc.seoul.kr/attach/record/SEOUL/appendix/a11/A0069744.pdf"
+    }
+   ],
+   "caveat": "확인 못 함: 허위 제출자료의 AI 진위 판별 성능, 비공개 정보의 합법적 자동 취득 범위, 관련 제도 개선의 2026-10-24 현재 시행 여부, AI 도입으로 감소한 실제 피해 규모.",
+   "date": "2026-10-24",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-risks-beyond-information-interpretation#2",
+   "slug": "jeonse-risks-beyond-information-interpretation",
+   "title": "해석 보조만으로 해결되지 않는 전세 위험",
+   "summary": "국토연구원은 정보 제공 외에도 임대인·중개사 책임과 제도적 보호를 강조하므로, AI 해석 보조만을 해법으로 제시하기 어렵다.",
+   "text": "- 따라서 확보하지 못한 정보, 계약 이후 변동, 반환 재원 부족을 AI의 문서 설명 능력만으로 해결한다고 주장할 근거는 없다〔자료 종합 해석〕.",
+   "sources": [
+    {
+     "title": "국토연구원 2023년 연구 소개·NABIS 수록",
+     "url": "https://www.nabis.go.kr/issuReportDetailView.do?gbnCode=P52&menucd=130&poIdx=12402&refCode=10"
+    },
+    {
+     "title": "국토정책Brief 제953호",
+     "url": "https://www.krihs.re.kr/gallery.es?act=view&bid=0022&list_no=30121&mid=a10603000000"
+    },
+    {
+     "title": "서울시 의회 제출 위험분석 사업계획·PDF 25쪽",
+     "url": "https://mas.smc.seoul.kr/attach/record/SEOUL/appendix/a11/A0069744.pdf"
+    }
+   ],
+   "caveat": "확인 못 함: 허위 제출자료의 AI 진위 판별 성능, 비공개 정보의 합법적 자동 취득 범위, 관련 제도 개선의 2026-10-24 현재 시행 여부, AI 도입으로 감소한 실제 피해 규모.",
+   "date": "2026-10-24",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-simultaneous-sale-inflated-valuation#1",
+   "slug": "jeonse-simultaneous-sale-inflated-valuation",
+   "title": "무자본 동시진행·리베이트와 감정가 부풀리기",
+   "summary": "동시진행과 부풀린 가격은 보증금을 매입대금·리베이트로 소진시키므로 시세와 보증 심사 근거를 따로 확인해야 한다.",
+   "text": "- ‘동시진행’은 전세와 매매를 연결해 임차인의 보증금으로 신축 빌라·오피스텔 매입대금을 치르는 방식이며, 관련자가 보증금 일부를 리베이트로 나누는 사례가 연구에 정리돼 있다.\n- 정부는 분양대행사·중개사 공모와 반환보증 악용을 지적했고, HUG는 감정평가를 가격 산정의 후순위로 바꾸는 개선을 안내했다.\n- HUG의 당시 개선은 신규 신청에 2023-05-01부터, 기존 가입세대에는 2024-01-01부터 전세가율 요건 100%→90%를 적용했다. 이는 역사적 변경 내용이며 현재 개별 보증 승인을 대신하지 않는다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 주변 매매 실거래와 제시 전세가격 | 임차인이 국토부 실거래가 공개시스템으로 비교하고 인근 중개업소에 교차 확인 | 계약금 지급 전; 유료 감정 비용은 별도 확인 | 가격 근거를 확보한 뒤 계약 판단 |",
+   "sources": [
+    {
+     "title": "국토연구원 발간 연구",
+     "url": "https://www.krihs.re.kr/galleryDownload.es?bid=0025&list_no=30032&seq=1"
+    },
+    {
+     "title": "관계부처 예방대책",
+     "url": "https://www.myhome.go.kr/hws/portal/bbs/selectBoardPressDetailView.do?bbsId=BBST03&nttId=2069"
+    },
+    {
+     "title": "HUG 보증제도 개선 안내",
+     "url": "https://khug.or.kr/hug/web/cs/no/csno000002.jsp?articleId=31524&mode=S&id=16"
+    },
+    {
+     "title": "인천시 전세계약 유의사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 거래의 리베이트 지급 여부·실질 자기자본을 확인하는 일반 공개 API, 2026-10-23 기준 모든 보증상품의 평가 세칙. > 검증 정정: HUG 100%→90%(신규 2023-05-01, 기존 2024-01-01)와 감정평가 후순위화는 일치. 리베이트 서술은 국토연구원 PDF라 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-simultaneous-sale-inflated-valuation#2",
+   "slug": "jeonse-simultaneous-sale-inflated-valuation",
+   "title": "무자본 동시진행·리베이트와 감정가 부풀리기",
+   "summary": "동시진행과 부풀린 가격은 보증금을 매입대금·리베이트로 소진시키므로 시세와 보증 심사 근거를 따로 확인해야 한다.",
+   "text": "| 매매 동시진행·소유자 변경 계획 | 임대인·중개사에 매매계약 여부와 변경 계획 설명 요구 | 계약 전·잔금 전; 자료 제공 비용 미확인 | 변경 상대방과 책임 관계를 확인하고 통지 특약 검토 |\n| 감정평가 출처와 보증 인정가격 | 임대인 제시 자료와 HUG 인정 기준을 대조하고 보증기관에 확인 | 계약 전·보증 신청 전; 감정 비용 미확인 | ‘보증 가능’이라는 설명만으로 가격 적정성을 판단하지 않음 |",
+   "sources": [
+    {
+     "title": "관계부처 예방대책",
+     "url": "https://www.myhome.go.kr/hws/portal/bbs/selectBoardPressDetailView.do?bbsId=BBST03&nttId=2069"
+    },
+    {
+     "title": "HUG 보증제도 개선 안내",
+     "url": "https://khug.or.kr/hug/web/cs/no/csno000002.jsp?articleId=31524&mode=S&id=16"
+    }
+   ],
+   "caveat": "확인 못 함: 개별 거래의 리베이트 지급 여부·실질 자기자본을 확인하는 일반 공개 API, 2026-10-23 기준 모든 보증상품의 평가 세칙. > 검증 정정: HUG 100%→90%(신규 2023-05-01, 기존 2024-01-01)와 감정평가 후순위화는 일치. 리베이트 서술은 국토연구원 PDF라 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-stage-rechecks-opposability-gap#1",
+   "slug": "jeonse-stage-rechecks-opposability-gap",
+   "title": "계약 단계별 재확인과 잔금일 대항력 공백",
+   "summary": "계약 때 확인한 권리관계는 잔금일에도 다시 확인하고, 입주·전입 후와 갱신·만기까지 보증금 보호를 이어가야 한다.",
+   "text": "- 2026-10-23 기준 확인한 현행 안내에서 일반 주택임차인의 대항력은 주택 인도와 주민등록을 모두 마친 다음 날 발생한다. 확정일자만으로 대항력이 즉시 생기지 않는다.\n- 정부는 명의변경·확정일자 직후 근저당 설정 악용을 지적했다. 2026-06-18 발표의 대항력 즉시 발생은 추진 과제이며, 발표 자체를 시행 근거로 삼을 수 없다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 계약금: 소유자·대리권·시세·체납·선순위 권리 | 임차인이 등기·신분 자료 확인, 임대인 자료 제시, 중개사 설명 확보 | 계약금 지급 전; 인터넷 등기 열람 기록당 700원 | 원자료와 설명을 보완하고 미확인 항목을 남김 |",
+   "sources": [
+    {
+     "title": "법제처 대항력·우선변제권 안내",
+     "url": "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=2&cciNo=3&cnpClsNo=1&csmSeq=629"
+    },
+    {
+     "title": "관계부처 예방대책",
+     "url": "https://www.myhome.go.kr/hws/portal/bbs/selectBoardPressDetailView.do?bbsId=BBST03&nttId=2069"
+    },
+    {
+     "title": "2026년 방지대책 추진 상황",
+     "url": "https://www.korea.kr/news/policyNewsView.do?newsId=148966757"
+    },
+    {
+     "title": "인천시 단계별 확인사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    }
+   ],
+   "caveat": "확인 못 함: 등기 재확인 사이 접수되는 모든 권리 변동의 실시간 탐지, 개별 계약에서 지급 보류·해제할 수 있는 구체적 법적 요건.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-stage-rechecks-opposability-gap#2",
+   "slug": "jeonse-stage-rechecks-opposability-gap",
+   "title": "계약 단계별 재확인과 잔금일 대항력 공백",
+   "summary": "계약 때 확인한 권리관계는 잔금일에도 다시 확인하고, 입주·전입 후와 갱신·만기까지 보증금 보호를 이어가야 한다.",
+   "text": "| 잔금: 신규 근저당·압류·매매·말소 약정 이행 | 임차인·중개사가 최신 등기와 계약 특약을 대조 | 잔금 지급 직전; 등기 재열람 비용 발생 | 변경 원인·말소 이행을 확인하고 특약 위반 대응을 상담 |\n| 입주·전입: 인도·전입신고·확정일자·권리 변동 | 임차인이 신고·접수 자료와 등기를 확인 | 입주 당일 조치하고 다음 날 권리 변동 재확인; 서류별 비용 별도 | 신고 누락·주소 오류를 바로잡고 보증기관에 가입 요건 확인 |\n| 갱신: 보증금 변경·등기·보증 연장 조건 | 임차인이 임대인과 변경 계약을 확인하고 보증기관에 갱신 문의 | 증액 지급 전·보증 만료 전; 보증료 별도 | 종전 보증이 변경 계약까지 자동 적용된다고 가정하지 않고 확인 |\n| 만기: 반환 여부·이사 전 권리 보전 | 임차인이 반환 내역 확인, 미반환 시 법원 임차권등기명령 검토 | 계약 종료 후 미반환 시; 신청 비용 별도 | 이사가 필요하면 신청만으로 끝내지 않고 임차권등기 완료 확인 |",
+   "sources": [
+    {
+     "title": "법제처 대항력·우선변제권 안내",
+     "url": "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=2&cciNo=3&cnpClsNo=1&csmSeq=629"
+    },
+    {
+     "title": "인천시 단계별 확인사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    },
+    {
+     "title": "안심 전세계약 체크리스트",
+     "url": "https://www.kar.or.kr/consult_new/hanbang_portal/안심%20전세계약%20체크리스트.pdf"
+    },
+    {
+     "title": "HUG 반환보증 상품안내",
+     "url": "https://onestop.khug.or.kr/webView/webBiz/apply/goods001"
+    }
+   ],
+   "caveat": "확인 못 함: 등기 재확인 사이 접수되는 모든 권리 변동의 실시간 탐지, 개별 계약에서 지급 보류·해제할 수 있는 구체적 법적 요건.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-stage-rechecks-opposability-gap#3",
+   "slug": "jeonse-stage-rechecks-opposability-gap",
+   "title": "계약 단계별 재확인과 잔금일 대항력 공백",
+   "summary": "계약 때 확인한 권리관계는 잔금일에도 다시 확인하고, 입주·전입 후와 갱신·만기까지 보증금 보호를 이어가야 한다.",
+   "text": "- 담보권 설정 제한·위반 시 대응 특약은 권리 변동에 대비하는 계약 장치이며, 근저당권 등 제3자의 권리가 자동으로 사라진다는 뜻은 아니다.",
+   "sources": [
+    {
+     "title": "법제처 대항력·우선변제권 안내",
+     "url": "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=2&cciNo=3&cnpClsNo=1&csmSeq=629"
+    },
+    {
+     "title": "안심 전세계약 체크리스트",
+     "url": "https://www.kar.or.kr/consult_new/hanbang_portal/안심%20전세계약%20체크리스트.pdf"
+    }
+   ],
+   "caveat": "확인 못 함: 등기 재확인 사이 접수되는 모든 권리 변동의 실시간 탐지, 개별 계약에서 지급 보류·해제할 수 있는 구체적 법적 요건.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "jeonse-trust-property-authority-check#1",
+   "slug": "jeonse-trust-property-authority-check",
+   "title": "신탁 사기와 신탁원부·수탁자 동의 확인",
+   "summary": "신탁등기 주택은 등기 명의와 신탁원부의 임대차 요건을 함께 확인하고 필요한 동의의 진위까지 검증해야 한다.",
+   "text": "- 법무부는 신탁부동산의 처분권한이 통상 위탁자보다 수탁자에게 있으며, 권한 없는 위탁자와 계약해 대항력을 취득하지 못하는 피해를 설명했다.\n- 2024년 확인·설명서 작성방법은 신탁원부에서 계약 당사자와 수탁자·수익자의 동의 또는 승낙 등 임대차 요건을 확인하도록 했다. 동의 필요 범위는 해당 신탁 약정에 따라 확인한다.\n- 행정심판 사례에서도 임대인의 동의서 발급 약속만 믿고 신탁회사에 직접 확인하지 않은 중개행위의 문제를 인정했다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 신탁등기·수탁자 명의 | 임차인·중개사가 등기사항증명서 확인; 일반 등기는 공개 열람 | 인터넷 등기 열람 기록당 700원; 계약 전·잔금 전 | 명의와 계약 권한이 설명될 때까지 계약 판단 보류 |",
+   "sources": [
+    {
+     "title": "법무부 신탁등기 주의사항 안내",
+     "url": "https://www.corrections.go.kr/bbs/moj/182/471936/download.do"
+    },
+    {
+     "title": "2024년 확인·설명서와 작성방법",
+     "url": "https://law.go.kr/flDownload.do?flSeq=141860969"
+    },
+    {
+     "title": "신탁 설명의무 관련 행정심판",
+     "url": "https://www.law.go.kr/LSW/deccInfoP.do?deccSeq=258145&mode=3"
+    },
+    {
+     "title": "법제처 등기 열람 안내",
+     "url": "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=2&cciNo=1&cnpClsNo=2&csmSeq=627"
+    }
+   ],
+   "caveat": "확인 못 함: 신탁원부의 2026-10-23 기준 온라인 제공 범위·수수료, 특정 동의서만으로 보증금 반환채무까지 확정되는지 여부. > 검증 정정: 등기 열람 700원은 일치. 법무부 신탁 안내와 2024 확인·설명서 작성방법은 열람하지 못해 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "jeonse-trust-property-authority-check#2",
+   "slug": "jeonse-trust-property-authority-check",
+   "title": "신탁 사기와 신탁원부·수탁자 동의 확인",
+   "summary": "신탁등기 주택은 등기 명의와 신탁원부의 임대차 요건을 함께 확인하고 필요한 동의의 진위까지 검증해야 한다.",
+   "text": "| 신탁원부의 임대차 허용 요건 | 신탁원부를 확보해 중개사가 계약 당사자·동의 조건 설명 | 계약금 지급 전; 원부 별도 비용·채널은 확인 필요 | 원부 없이 위탁자 설명만으로 진행하지 않음 |\n| 동의서 진위와 적용 계약 | 신탁회사에 계약 대상·당사자·승낙 내용 직접 확인 | 계약 전; 확인 비용 미확인 | 발급 예정이라는 약속만으로 지급하지 않고 보완 요구 |",
+   "sources": [
+    {
+     "title": "법무부 신탁등기 주의사항 안내",
+     "url": "https://www.corrections.go.kr/bbs/moj/182/471936/download.do"
+    },
+    {
+     "title": "2024년 확인·설명서와 작성방법",
+     "url": "https://law.go.kr/flDownload.do?flSeq=141860969"
+    },
+    {
+     "title": "신탁 설명의무 관련 행정심판",
+     "url": "https://www.law.go.kr/LSW/deccInfoP.do?deccSeq=258145&mode=3"
+    }
+   ],
+   "caveat": "확인 못 함: 신탁원부의 2026-10-23 기준 온라인 제공 범위·수수료, 특정 동의서만으로 보증금 반환채무까지 확정되는지 여부. > 검증 정정: 등기 열람 700원은 일치. 법무부 신탁 안내와 2024 확인·설명서 작성방법은 열람하지 못해 미검증",
+   "date": "2026-10-23",
+   "confidence": "medium"
+  },
+  {
+   "id": "registry-checkpoints#1",
+   "slug": "registry-checkpoints",
+   "title": "등기부등본과 선순위 권리 확인 포인트",
+   "summary": "등기부등본은 표제부·갑구·을구로 나뉘며 소유자 일치와 을구 근저당, 신탁등기, 다가구 선순위 임차를 확인해야 한다",
+   "text": "- 등기사항전부증명서는 통상 등기부등본으로 불리며, 표제부·갑구·을구를 구분해 확인한다.\n- 표제부에는 소재지번과 건물의 구조·용도·면적 등 부동산 표시가 기록된다.\n- 갑구는 소유권에 관한 사항, 을구는 근저당권·전세권 등 소유권 이외의 권리에 관한 사항을 담는다.\n- 계약 상대방의 신분증과 등기부상 소유자가 일치하는지 확인한다.\n- 구리시 안전전세 안내는 인터넷등기소에서 등기부를 직접 발급해 확인하도록 안내한다.\n- HUG는 선순위채권 확인 시 을구의 근저당금액과 등기일자를 확인하도록 안내한다.\n- 신탁등기가 있는 경우에는 신탁원부와 임대차 동의서를 추가로 확인하는 절차가 안내되어 있다.\n- 다가구주택은 기존 세입자의 선순위 임차 관계도 별도로 확인할 대상으로 안내된다.",
+   "sources": [
+    {
+     "title": "공공기관 자료, 등기부 구성 설명",
+     "url": "https://lib1.mods.go.kr/dl_image2/IMG/01/000000000954/SERVICE/000000000954_01.PDF"
+    },
+    {
+     "title": "구리시 안전전세프로젝트",
+     "url": "https://www.guri.go.kr/www/contents.do?key=8536"
+    },
+    {
+     "title": "HUG 선순위채권 안내",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000001.jsp?tabMenu=Y"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "tenant-debt-ratio-versus-ltv#1",
+   "slug": "tenant-debt-ratio-versus-ltv",
+   "title": "대출 LTV와 임차인 관점의 주택 대비 부채비율",
+   "summary": "대출 LTV와 임차인 부채비율은 분자가 다르며, 채권최고액을 실제 대출잔액으로 읽어서는 안 된다.",
+   "text": "- 금융상품 비교공시의 단순 LTV는 주택가격에 대한 대출금액의 비율이며, 해당 공시는 선순위채권·임차보증금이 없다고 가정한다.\n- 임차인 관점의 산식 `(선순위 담보채권 + 다른 임차인의 선순위 보증금 + 내 보증금) ÷ 주택가격`은 이 노트에서 주택가격 대비 선순위채무·보증금 비율로 구분한다. HUG의 다가구 추가 심사도 다른 임차인의 보증금을 별도로 반영한다.\n- HUG가 보증료 산정에 사용하는 공식 명칭은 부채비율이며, 산식은 `(선순위 채권금액 + 전세보증금) ÷ 주택가액`이다.\n- HUG의 주택가액은 `주택가격 × 담보인정비율`이므로, 주택가격을 분모로 한 비율과 HUG 부채비율을 같은 수치로 표시할 수 없다.\n- 2026-10-23 기준 확인한 민법 제357조는 담보할 채무의 최고액을 정하고 채무 확정을 미루는 근저당 설정을 허용하며, 해당 법령 판본은 2026-03-17 시행이다.",
+   "sources": [
+    {
+     "title": "저축은행중앙회 주택담보대출 비교공시",
+     "url": "https://www.fsb.or.kr/ratcodi_0300.act"
+    },
+    {
+     "title": "HUG 전세보증금반환보증 상품안내",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000001.jsp?tabMenu=Y"
+    },
+    {
+     "title": "국가법령정보센터 민법 제357조",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0357&lsiSeq=284415&urlMode=lsScJoRltInfoR"
+    }
+   ],
+   "caveat": "확인 못 함: 채권최고액을 실제 대출의 120~130%로 일반화할 기관 근거와 개별 주택의 실제 대출잔액.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "tenant-debt-ratio-versus-ltv#2",
+   "slug": "tenant-debt-ratio-versus-ltv",
+   "title": "대출 LTV와 임차인 관점의 주택 대비 부채비율",
+   "summary": "대출 LTV와 임차인 부채비율은 분자가 다르며, 채권최고액을 실제 대출잔액으로 읽어서는 안 된다.",
+   "text": "- 따라서 채권최고액과 실제 대출잔액은 별개이고, 등기된 최고액만으로 현재 잔액을 확정할 수 없다는 것이 법문에서 도출되는 한계다.",
+   "sources": [
+    {
+     "title": "국가법령정보센터 민법 제357조",
+     "url": "https://www.law.go.kr/LSW/lsSideInfoP.do?docCls=jo&joBrNo=00&joNo=0357&lsiSeq=284415&urlMode=lsScJoRltInfoR"
+    }
+   ],
+   "caveat": "확인 못 함: 채권최고액을 실제 대출의 120~130%로 일반화할 기관 근거와 개별 주택의 실제 대출잔액.",
+   "date": "2026-10-23",
+   "confidence": "high"
+  },
+  {
+   "id": "underwater-jeonse#1",
+   "slug": "underwater-jeonse",
+   "title": "깡통전세와 역전세의 차이",
+   "summary": "깡통전세는 보증금이 매매가보다 높은 상황이고 역전세는 현재 전세시세가 기존 보증금보다 낮아진 상황으로 비교 대상이 다르다",
+   "text": "- 국토연구원은 깡통전세를 전세보증금이 주택 매매가격보다 높아 집을 처분해도 보증금을 보전하지 못하는 상황으로 설명한다.\n- 깡통전세는 법률상 정의된 용어가 아니라 언론과 학계에서 사용하는 표현이다.\n- 한국주택금융공사 연구자료는 기존 보증금보다 현재 매매가격이 낮아지는 상황을 깡통전세로 설명한다.\n- 같은 자료에서 역전세는 기존 보증금보다 현재 전세시세가 낮아지는 상황이다.\n- 두 개념은 비교 대상이 각각 매매가격과 전세가격이라는 차이가 있다.\n- 높은 전세가율로 계약하면 이후 매매가격 하락에 따른 보증금 미반환 위험이 커질 수 있다.",
+   "sources": [
+    {
+     "title": "국토연구원, 깡통전세 용어해설, 2024-11-14",
+     "url": "https://library.krihs.re.kr/main/10350/boards/11994/100266"
+    },
+    {
+     "title": "한국주택금융공사, 역전세에 대한 과거의 기억들",
+     "url": "https://researcher.hf.go.kr/researcher/sub02/sub02_07.do?articleNo=591830&attachNo=90518&mode=download"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-10-23",
+   "confidence": "high"
+  }
+ ]
+}

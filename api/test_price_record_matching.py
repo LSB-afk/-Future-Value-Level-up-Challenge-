@@ -9,7 +9,14 @@
 
 from __future__ import annotations
 
-from real_estate_price_adapters import apartment_record_matches, apt_name_matches, series_number
+from real_estate_price_adapters import (
+    apartment_record_matches,
+    apt_name_matches,
+    area_bucket,
+    normalize_name,
+    select_complex,
+    series_number,
+)
 
 # 서울숲아이파크는 서울숲아이파크리버포레1차의 부분 문자열이고, 전월세 레코드에는
 # 도로명이 비어 있어 주소 검증만으로도 갈리지 않는다. 법정동이 유일한 구분자다.
@@ -68,7 +75,43 @@ def test_match_method_is_recorded() -> None:
     assert record["matchMethod"] in {"name", "address"}
 
 
+def test_road_number_is_not_compared_with_jibun() -> None:
+    """2026-11-08 실측: 래미안 원펜타스(신반포로15길 1)가 래미안원베일리(지번 1, 반포대로 333)를 끌어왔다."""
+    onepentas = {"name": "래미안 원펜타스", "address": "서울특별시 서초구 신반포로15길 1", "dong": "반포동"}
+    onebailey_trade = {"name": "래미안원베일리", "dong": "반포동", "jibun": "1", "roadName": "반포대로", "roadMainNo": "00333", "roadSubNo": "0"}
+    onebailey_rent = {"name": "래미안원베일리", "dong": "반포동", "jibun": "1", "roadName": "", "roadMainNo": "", "roadSubNo": "0"}
+    assert not apartment_record_matches(onepentas, dict(onebailey_trade))
+    assert not apartment_record_matches(onepentas, dict(onebailey_rent))
+    # 같은 도로명이라도 번호가 비어 있으면 같은 단지라는 근거가 아니다
+    same_road_no_number = {"name": "다른단지", "dong": "반포동", "jibun": "", "roadName": "신반포로15길", "roadMainNo": "", "roadSubNo": "0"}
+    assert not apartment_record_matches(onepentas, dict(same_road_no_number))
+
+
+def test_select_complex_keeps_closest_name() -> None:
+    """이름 포함 규칙으로 들어온 다른 단지 묶음은 버린다 (2026-11-08 옥수삼성임대 ← 옥수)."""
+    apartment = {"name": "옥수삼성임대"}
+    rows = [
+        {"name": "옥수삼성", "jibun": "250"}, {"name": "옥수삼성", "jibun": "250"},
+        {"name": "옥수", "jibun": "306"}, {"name": "옥수삼성임대111동", "jibun": "250"},
+    ]
+    trade, rent, info = select_complex(apartment, rows[:2], rows[2:])
+    assert info["kept"] == normalize_name("옥수삼성임대111동"), info
+    assert not trade and [r["name"] for r in rent] == ["옥수삼성임대111동"]
+    single, _, info = select_complex({"name": "잠원신화"}, [{"name": "신화", "jibun": "54-7"}], [])
+    assert len(single) == 1 and info == {"groups": 1}
+
+
+def test_area_bucket_pairs_same_size() -> None:
+    trade = [{"exclusiveM2": 84.9}, {"exclusiveM2": 59.8}]
+    jeonse = [{"exclusiveM2": 59.7}, {"exclusiveM2": 59.9}, {"exclusiveM2": 114.0}]
+    assert area_bucket(trade, jeonse) == 60.0
+    assert area_bucket([{"exclusiveM2": 84.9}], [{"exclusiveM2": 59.7}]) is None
+
+
 if __name__ == "__main__":
+    test_road_number_is_not_compared_with_jibun()
+    test_select_complex_keeps_closest_name()
+    test_area_bucket_pairs_same_size()
     test_each_complex_matches_only_itself()
     test_dong_alone_separates_when_road_is_missing()
     test_series_number_separates_same_dong()

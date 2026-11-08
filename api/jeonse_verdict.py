@@ -14,6 +14,7 @@ K Car 진단 대시보드처럼 항목마다 "기준 · 이 집 값 · 결과 ·
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 
 LINES = [
@@ -48,13 +49,79 @@ REQUEST_STATUS_LABELS = {
 }
 
 
+SECTIONS = ("property", "price", "registry", "landlord", "building", "requests", "inspection")
+MONEY_FIELDS = (
+    ("deposit10k",), ("price", "value10k"), ("price", "official10k"),
+    ("registry", "mortgageMax10k"), ("landlord", "priorDeposits10k"),
+)
+DATE_FIELDS = (("registry", "issuedAt"), ("registry", "lastOwnershipChange"))
+# 화면(브라우저)이 주장할 수 있는 집값 출처. "핏홈 점검"은 시연용 예시에서만, "실거래"는 서버가 확인한 뒤에만 인정한다.
+CLIENT_PRICE_SOURCES = {"input", "estimate", "trade", "public", "none"}
+MAX_MONEY_10K = 10_000_000  # 1,000억원. 이보다 크면 단위를 잘못 넣은 것이다.
+
+
+def validate_input(inp, today: date | None = None) -> dict:
+    """요청 본문을 검사해 잘못된 값은 ValueError(→ 400)로 돌려보내고, 믿을 수 없는 출처는 낮춘다."""
+    if not isinstance(inp, dict):
+        raise ValueError("JSON 객체가 필요합니다.")
+    today = today or date.today()
+    scalar = (str, int, float, bool, type(None))
+    for key in SECTIONS:
+        if key in inp and inp[key] is not None and not isinstance(inp[key], dict):
+            raise ValueError(f"{key}는 객체여야 합니다.")
+        for field, value in (inp.get(key) or {}).items():
+            if not isinstance(value, scalar):
+                raise ValueError(f"{key}.{field}는 숫자나 글자여야 합니다.")
+    for key in ("deposit10k", "key", "isDemo", "asOf", "feedbackCount"):
+        if not isinstance(inp.get(key), scalar):
+            raise ValueError(f"{key}는 숫자나 글자여야 합니다.")
+    if "history" in inp and not isinstance(inp["history"], (list, type(None))):
+        raise ValueError("history는 배열이어야 합니다.")
+    for event in inp.get("history") or []:
+        if not isinstance(event, dict) or not all(isinstance(v, scalar) for v in event.values()):
+            raise ValueError("history 항목은 {date, kind, title, detail} 객체여야 합니다.")
+    for path in MONEY_FIELDS:
+        holder = inp if len(path) == 1 else (inp.get(path[0]) or {})
+        value = holder.get(path[-1])
+        if value in (None, ""):
+            continue
+        number = _num(value)
+        label = ".".join(path)
+        if number is None:
+            raise ValueError(f"{label}는 숫자(만원 단위)여야 합니다.")
+        if number < 0:
+            raise ValueError(f"{label}는 0 이상이어야 합니다.")
+        if number > MAX_MONEY_10K:
+            raise ValueError(f"{label}가 너무 큽니다. 만원 단위인지 확인하세요.")
+    price = inp.get("price") or {}
+    if _num(price.get("value10k")) == 0 and price.get("basis", "market") != "official":
+        raise ValueError("집값(price.value10k)은 0보다 커야 합니다.")
+    for section, key in DATE_FIELDS:
+        raw = (inp.get(section) or {}).get(key)
+        if raw in (None, ""):
+            continue
+        parsed = _date(raw)
+        if parsed is None:
+            raise ValueError(f"{section}.{key}는 YYYY-MM-DD 날짜여야 합니다.")
+        if parsed > today:
+            raise ValueError(f"{section}.{key}가 오늘({today.isoformat()})보다 뒤입니다.")
+    source = price.get("source")
+    if source is not None and source not in CLIENT_PRICE_SOURCES:
+        if source == "inspected" and inp.get("isDemo"):
+            pass
+        else:
+            inp = {**inp, "price": {**price, "source": "input"}, "sourceDowngraded": f"{source}→input"}
+    return inp
+
+
 def _num(value) -> float | None:
-    if value in (None, ""):
+    if value in (None, "") or isinstance(value, bool):
         return None
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if math.isfinite(number) else None  # "nan"·"inf"는 숫자로 보지 않는다
 
 
 def _tri(value) -> str:
@@ -278,7 +345,8 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          {"residential": "주거용", "nonresidential": "비주거(근린생활시설 등)", "unknown": "미확인"}.get(use, "미확인"),
                          {"residential": "pass", "nonresidential": "caution"}.get(use, "unknown"),
                          bld_source if use in {"residential", "nonresidential"} else "none",
-                         "근린생활시설을 주택으로 개조한 집은 보증보험과 전세대출이 막힐 수 있습니다." if use == "nonresidential" else ""))
+                         building.get("ledgerNote")
+                         or ("근린생활시설을 주택으로 개조한 집은 보증보험과 전세대출이 막힐 수 있습니다." if use == "nonresidential" else "")))
     violation = _tri(building.get("violation"))
     checks.append(_check("building", "violation", "위반건축물", "건축물대장에 위반건축물 표시가 없을 것",
                          {"yes": "위반건축물", "no": "해당 없음", "unknown": "미확인"}[violation],
@@ -493,6 +561,29 @@ if __name__ == "__main__":
     unknown = {**clean, "registry": {**clean["registry"], "mortgageMax10k": None}}
     r = evaluate(unknown, today)
     assert r["grade"] == "caution" and r["ltv"]["isLowerBound"]
+
+    # 입력 검증: 잘못된 값은 ValueError(→ 400), 믿을 수 없는 출처는 낮춘다.
+    def rejects(payload) -> bool:
+        try:
+            validate_input(payload, today)
+        except ValueError:
+            return True
+        return False
+
+    assert rejects([]) and rejects({"property": "x"}) and rejects({"requests": "x"}) and rejects({"history": "x"})
+    assert rejects({**clean, "deposit10k": -50000})
+    assert rejects({**clean, "price": {**clean["price"], "value10k": -1}})
+    assert rejects({**clean, "price": {**clean["price"], "value10k": 0}})
+    assert rejects({**clean, "registry": {**clean["registry"], "mortgageMax10k": "abc"}})
+    assert rejects({**clean, "registry": {**clean["registry"], "issuedAt": "2027-01-01"}})
+    assert rejects({**clean, "registry": {**clean["registry"], "lastOwnershipChange": "어제"}})
+    assert rejects({**clean, "deposit10k": "nan"}) and rejects({**clean, "deposit10k": "inf"}) and rejects({**clean, "deposit10k": [1]})
+    assert rejects({**clean, "price": {**clean["price"], "source": ["trade"]}})
+    assert rejects({**clean, "building": {"use": ["residential"]}}) and rejects({**clean, "history": [1]})
+    assert not rejects(clean)
+    spoofed = validate_input({**clean, "price": {**clean["price"], "source": "inspected"}}, today)
+    assert spoofed["price"]["source"] == "input" and evaluate(spoofed, today)["ltv"]["priceSource"] == "input"
+    assert validate_input({**clean, "isDemo": True, "price": {**clean["price"], "source": "inspected"}}, today)["price"]["source"] == "inspected"
 
     over = {**clean, "deposit10k": 72000}  # (1.2억 + 7.2억) / 9억 = 93.3%
     assert evaluate(over, today)["grade"] == "danger"

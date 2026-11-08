@@ -143,6 +143,37 @@ result = agent_ollama.agent_chat([{"role": "user", "content": "등기부 봐줘"
 assert result["ok"] is True and result["answer"] == "등기부는 제가 확인할 수 없습니다."
 assert result["toolTrace"] == []
 
+# 5-1. 안심 단정("안전합니다")이 나오면 한 번 고쳐 쓰게 하고, 고친 답을 돌려준다
+calls = install_fake_ollama([
+    chat(content="이 집은 안전합니다."),
+    chat(content="확인한 범위에서 큰 신호는 없지만 등기부를 다시 열람해 확인하세요. [K1]"),
+])
+result = agent_ollama.agent_chat([{"role": "user", "content": "신탁 있는 집 계약해도 돼?"}])
+assert result["ok"] is True and "안전합니다" not in result["answer"], result
+assert result["guard"]["rewroteFor"] == ["안전합니다"] and result["guard"]["remaining"] == [], result["guard"]
+# 신탁처럼 판단이 필요한 질문인데 답에 상담 안내가 없으면 지원센터 안내가 붙는다
+assert result["guard"]["handoffAdded"] is True and "예방지원센터" in result["answer"], result["answer"]
+sent = [c for c in calls if c["url"].endswith("/api/chat")][1]["body"]["messages"]
+assert sent[-1]["role"] == "user" and "안전합니다" in sent[-1]["content"], sent[-1]
+# RAG: 질문에 맞는 근거 조각이 시스템 프롬프트에 실리고, [K1]로 인용하면 그 출처가 sources로 나간다
+assert "[K1]" in sent[0]["content"] and "출처:" in sent[0]["content"]
+assert result["sources"] and result["sources"][0]["url"].startswith("http"), result["sources"]
+
+# 5-2. 고쳐 쓴 뒤에도 남으면 숨기지 않고 remaining에 드러낸다 (두 번째 재작성은 하지 않음)
+install_fake_ollama([chat(content="안전합니다."), chat(content="여전히 안전합니다.")])
+result = agent_ollama.agent_chat([{"role": "user", "content": "괜찮아?"}])
+assert result["guard"]["remaining"] == ["안전합니다"], result
+# 남은 안심 단정은 숨기지 않되, 판정하지 않는다는 고지를 붙인다
+assert "판정하지 않습니다" in result["answer"], result["answer"]
+
+# 5-3. 중국어로 새거나 도구 호출을 글자로 내보내면 고쳐 쓰게 하고, 그래도 도구 문자열이면 실패 안내로 바꾼다
+install_fake_ollama([chat(content="신탁 주의. [参考知识 K1] 和 [参考知识 K2] 中提到"), chat(content="신탁원부와 수탁자 동의를 확인하세요. [K1]")])
+result = agent_ollama.agent_chat([{"role": "user", "content": "신탁이 뭐야?"}])
+assert result["guard"]["rewroteFor"] == ["외국어(한자) 문장"] and "参" not in result["answer"], result
+install_fake_ollama([chat(content='jeonse_safeguard {"apartment_id": "x"}'), chat(content='jeonse_safeguard {"apartment_id": "x"}')])
+result = agent_ollama.agent_chat([{"role": "user", "content": "괜찮아?"}])
+assert result["answer"].startswith("답을 제대로 만들지 못했습니다"), result["answer"]
+
 # 6. 도구만 계속 부르면 상한에서 멈춘다 (무한 루프 방지)
 install_fake_ollama([
     chat(tool_calls=[{"function": {"name": "lookup_apartment", "arguments": {"query": "논현동부센트레빌"}}}])

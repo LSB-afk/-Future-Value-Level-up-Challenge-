@@ -14,6 +14,7 @@ import json
 import math
 from pathlib import Path
 
+from building_ledger_adapters import ledger_for_market
 from jeonse_safeguard import build_safeguard
 from real_estate_price_adapters import enrich_market_from_live
 
@@ -292,37 +293,67 @@ def build_risk(apartment: dict, market: dict) -> dict:
     age = building_age(apartment)
     jeonse_ratio = number(market.get("jeonseRatio"))
     official_ratio = number(market.get("depositOfficialRatio"))
-    volatility = number(market.get("volatilityRate"))
-    surrounding_jeonse = number(market.get("surroundingAverageJeonse10k"))
     recent_jeonse = number(market.get("recentJeonse10k"))
-    surrounding_gap = ((recent_jeonse - surrounding_jeonse) / surrounding_jeonse) * 100 if surrounding_jeonse else 0
+    sale_live = bool(market.get("saleLive"))
+    jeonse_live = bool(market.get("jeonseLive"))
+    live = sale_live and jeonse_live
+    sale_label = "실거래" if live else "추정"
+    tail = "깡통전세 실무 기준은 보증금+대출 80%, HUG 보증 한도는 90%입니다."
+
+    # 비교하는 두 값의 출처가 다르면(실거래 vs 추정) 비교하지 않고 '확인 필요'로 둔다.
+    # 추정끼리의 비교도 마찬가지다: 추정 공시가격·추정 주변 시세는 단지마다 고정 난수로 만든 값이라
+    # '정상'으로 표시하면 근거 없는 안심이 된다 (B008 판정, 2026-11-08 QA).
+    if sale_live != jeonse_live:
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": "unknown",
+                        "evidence": f"매매가와 전세가 중 하나만 실거래라 전세가율을 비교하지 않았습니다. 같은 평형의 매매 실거래를 확인하세요. {tail}"}
+    elif live and market.get("areaMatched") is False:
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": "unknown",
+                        "evidence": f"최근 매매와 전세의 평형이 달라 전세가율을 비교하지 않았습니다. 같은 평형의 매매가를 확인하세요. {tail}"}
+    elif not live:
+        # 추정 시세의 전세가율은 계산 구조상 47~72%에 갇혀 80%에 닿지 않는다(B008 G1). '정상'으로 두면 근거 없는 안심이다.
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}% (추정)", "status": "unknown",
+                        "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])}로 계산한 참고값이라 판정하지 않습니다. 같은 평형 실거래를 확인하세요. {tail}"}
+    else:
+        area = f" 전용 {market['areaM2']:.0f}㎡" if market.get("areaM2") else ""
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
+                        "evidence": f"{sale_label}{area} 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. {tail}"}
+
+    if market.get("officialPriceLive"):
+        official_signal = {"value": f"{official_ratio:.1f}%", "status": signal_status(official_ratio >= 120, official_ratio >= 95),
+                           "evidence": f"공동주택 공시가격 {format_money_10k(market['officialPrice10k'])}(공시가격 API) 기준입니다."}
+    else:
+        official_signal = {"value": "확인 필요", "status": "unknown",
+                           "evidence": "공시가격 API가 연결되지 않아 비교하지 않습니다. 부동산공시가격알리미에서 공시가격을 확인하세요. HUG 보증은 공시가격 기준을 씁니다."}
+
+    district = number(market.get("districtJeonseMedian10k"))
+    if jeonse_live and district and recent_jeonse:
+        gap = (recent_jeonse - district) / district * 100
+        surrounding_signal = {"value": f"{gap:+.1f}%", "status": signal_status(gap >= 18, gap >= 8),
+                              "evidence": f"{market.get('districtJeonseBasis')} {format_money_10k(district)} 대비 수준입니다."}
+    else:
+        surrounding_signal = {"value": "확인 필요", "status": "unknown",
+                              "evidence": "같은 구·같은 평형 전세 실거래가 부족해 주변 시세와 비교하지 않았습니다."}
+
+    monthly = {}
+    for record in market.get("molitTradeRecordsForTrend") or []:
+        if market.get("areaM2") and round(number(record.get("exclusiveM2"))) != market["areaM2"]:
+            continue
+        key = f"{record.get('dealYear')}.{str(record.get('dealMonth')).zfill(2)}"
+        monthly.setdefault(key, []).append(number(record.get("amount10k")))
+    averages = [sum(v) / len(v) for v in monthly.values() if v]
+    if sale_live and market.get("areaM2") and len(averages) >= 3:
+        swing = (max(averages) - min(averages)) / (sum(averages) / len(averages)) * 100
+        volatility_signal = {"value": f"{swing:.1f}%", "status": signal_status(swing >= 11, swing >= 7),
+                             "evidence": f"최근 12개월 같은 평형 월평균 매매가 {len(averages)}개월의 최고·최저 차이입니다."}
+    else:
+        volatility_signal = {"value": "확인 필요", "status": "unknown",
+                             "evidence": "같은 평형 매매 실거래가 3개월 이상 없어 변동성을 계산하지 않았습니다."}
 
     signals = [
-        {
-            "label": "매매가 대비 전세가율",
-            "value": f"{jeonse_ratio:.1f}%",
-            # 깡통전세 실무 기준선이 80%라 경고 임계값을 그 기준에 맞춘다.
-            "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
-            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. 깡통전세 실무 기준은 보증금+대출 80%, HUG 보증 한도는 90%입니다.",
-        },
-        {
-            "label": "공시가격 대비 보증금 비율",
-            "value": f"{official_ratio:.1f}%",
-            "status": signal_status(official_ratio >= 120, official_ratio >= 95),
-            "evidence": f"공시가격은 API 연계 전 추정값 {format_money_10k(market['officialPrice10k'])}을 사용했습니다.",
-        },
-        {
-            "label": "주변 전세 중앙값 대비",
-            "value": f"{surrounding_gap:+.1f}%",
-            "status": signal_status(surrounding_gap >= 18, surrounding_gap >= 8),
-            "evidence": f"인근 전세 중앙값 {format_money_10k(surrounding_jeonse)} 대비 수준입니다.",
-        },
-        {
-            "label": "최근 가격 변동성",
-            "value": f"{volatility:.1f}%",
-            "status": signal_status(volatility >= 11, volatility >= 7),
-            "evidence": "실거래 API 연계 전까지 인근 권역 기반 변동성 추정값으로 표시합니다.",
-        },
+        {"label": "매매가 대비 전세가율", **ratio_signal},
+        {"label": "공시가격 대비 보증금 비율", **official_signal},
+        {"label": "주변 전세 중앙값 대비", **surrounding_signal},
+        {"label": "최근 가격 변동성", **volatility_signal},
         {
             "label": "건축물 노후도",
             "value": f"{age}년" if age else "확인 필요",
@@ -474,6 +505,7 @@ def build_property_preview(apartment: dict, destination: str = "gangnam") -> dic
 def build_property_detail(apartment: dict) -> dict:
     area = nearest_living_area(apartment)
     market = enrich_market_from_live(apartment, estimate_market(apartment, area))
+    ledger = ledger_for_market(market)
     trend = transaction_trend(apartment, market)
     risk = build_risk(apartment, market)
     safeguard = build_safeguard(apartment, market)
@@ -506,6 +538,7 @@ def build_property_detail(apartment: dict) -> dict:
             "method": apartment.get("managementMethod") or "확인 필요",
         },
         "price": market,
+        "buildingLedger": ledger,
         "transactions": trend,
         "risk": risk,
         "safeguard": safeguard,
