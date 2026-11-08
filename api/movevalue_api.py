@@ -196,12 +196,16 @@ def verify_trade_price(payload: dict) -> dict:
     notes = [payload["sourceDowngraded"]] if payload.get("sourceDowngraded") else []
     if price.get("source") == "trade":
         server_price = (detail or {}).get("price") or {}
-        confirmed = bool(server_price.get("saleLive")) and number(
-            server_price.get("recentSale10k")
-        ) == number(price.get("value10k"), -1)
+        claimed = number(price.get("value10k"), -1)
+        server_values = {number(server_price.get(k)) for k in ("recentSale10k", "saleMedian10k") if server_price.get(k)}
+        confirmed = bool(server_price.get("saleLive")) and claimed in server_values
         if not confirmed:
             price["source"] = "estimate"
             notes.append("trade→estimate")
+        elif server_price.get("saleMedian10k") and claimed != number(server_price["saleMedian10k"]):
+            # 화면은 최근 1건을 보내지만, 판정은 Agent·위험 카드와 같은 기준(같은 평형 12개월 중앙값)으로 맞춘다.
+            price["value10k"] = server_price["saleMedian10k"]
+            notes.append("실거래 최근 1건→같은 평형 중앙값")
     if detail:
         server_price = detail.get("price") or {}
         if (not server_price.get("officialPriceLive") and price.get("official10k") is not None

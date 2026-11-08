@@ -443,9 +443,12 @@ def tool_jeonse_verdict_check(
         except ValueError as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
         market = detail["price"]
+        # 매매가가 같은 평형 실거래일 때만 '실거래'로 넘긴다. 공시가격은 API 값일 때만 넘긴다(B010 P1).
         live = bool(market.get("saleLive"))
-        price = {"basis": "market", "value10k": market.get("recentSale10k"),
-                 "official10k": market.get("officialPrice10k"), "source": "trade" if live else "estimate"}
+        price = {"basis": "market", "value10k": market.get("saleMedian10k") or market.get("recentSale10k"),
+                 "source": "trade" if live else "estimate"}
+        if market.get("officialPriceLive"):
+            price["official10k"] = market.get("officialPrice10k")
         address = detail.get("address") or ""
     if price.get("value10k") is None:
         return json.dumps({"error": "집값을 모릅니다. 단지 id를 주거나 사용자에게 매매 시세를 물어보세요."}, ensure_ascii=False)
@@ -482,6 +485,7 @@ def tool_jeonse_verdict_check(
             "grade": result["gradeLabel"],
             "headline": result["headline"],
             "debtRatio": f"{ltv['ratioPct']}%" + (" 이상(모르는 값은 0으로 계산한 하한)" if ltv["isLowerBound"] else ""),
+            "ifPriceDrops": f"집값(매매가)이 {ltv['stressDropPct']}% 내리면 {ltv['stressRatioPct']}%" + (" 이상" if ltv["isLowerBound"] else "") + " (가정 계산, 판정 기준 아님)",
             "formula": f"(근저당 {money(ltv['mortgage10k'])} + 선순위 보증금 {money(ltv['prior10k'])} + 내 보증금 {money(ltv['deposit10k'])}) ÷ 집값 {money(ltv['price10k'])}",
             "priceBasis": f"{ltv['priceLabel']} ({ltv['priceSourceLabel']})",
             "lines": "70% 주의 시작(실무 권고) · 80% 깡통전세 실무 경계(법정 기준 아님) · 90% HUG 보증 한도",
@@ -521,7 +525,9 @@ def tool_deposit_priority(
             if price_10k is None:
                 price_10k = detail["price"].get("recentSale10k")
                 live = bool(detail["price"].get("saleLive"))
-                price_note = "실거래" if live else "추정 시세(확인 필요)"
+                if detail["price"].get("saleMedian10k"):
+                    price_10k = detail["price"]["saleMedian10k"]
+                price_note = ("같은 평형 실거래 중앙값" if detail["price"].get("saleMedian10k") else "실거래 최근 1건") if live else "추정 시세(확인 필요)"
         except ValueError as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
     region_key = {"서울": "seoul", "seoul": "seoul", "과밀억제권역": "overcrowded", "광역시": "metro", "그 밖": "other", "기타": "other"}.get(
@@ -719,6 +725,22 @@ def _run_tool(name: str, payload: dict) -> str:
         return json.dumps({"error": f"{name} 실행 실패: {exc}"}, ensure_ascii=False)
 
 
+REPEAT_TOOL_ERROR = (
+    "같은 도구를 같은 값으로 이미 불렀습니다. 다시 불러도 결과는 같습니다. 도구를 더 부르지 말고, "
+    "필요한 값(보증금·근저당 등)을 사용자에게 물어보거나 지금까지의 결과로 답하세요."
+)
+
+
+def run_tool_once(name: str, payload: dict, seen: set) -> str:
+    """같은 (도구, 인자) 반복 호출을 막는다. 2026-11-08 평가에서 qwen2.5:7b가 보증금 없이
+    jeonse_verdict_check를 7번 연달아 불러 턴 상한에 걸렸다(S2)."""
+    key = (name, json.dumps(payload, ensure_ascii=False, sort_keys=True))
+    if key in seen:
+        return json.dumps({"error": REPEAT_TOOL_ERROR}, ensure_ascii=False)
+    seen.add(key)
+    return _run_tool(name, payload)
+
+
 def _web_search_count(usage) -> int:
     """usage.server_tool_use.web_search_requests. 검색이 안 돌면 통째로 None이다."""
     server = getattr(usage, "server_tool_use", None)
@@ -761,6 +783,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
         return {"ok": False, "error": "대화 내용이 비어 있습니다."}
 
     tool_trace: list[dict] = []
+    seen_calls: set = set()
     sources: list[dict] = []
     web_searches = 0
     rewrote: list[str] | bool = False
@@ -812,7 +835,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
 
         results = []
         for block in tool_uses:
-            output = _run_tool(block.name, dict(block.input))
+            output = run_tool_once(block.name, dict(block.input), seen_calls)
             tool_trace.append({"name": block.name, "input": dict(block.input)})
             results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
         # 웹 검색과 우리 도구가 같은 턴에 병렬로 불리면 stop_reason이 tool_use로 오고 검색은

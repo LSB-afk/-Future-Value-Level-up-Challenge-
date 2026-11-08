@@ -926,6 +926,7 @@ function formatPercent(value, digits = 1) {
 function riskTone(key) {
   if (key === "high") return "danger";
   if (key === "warning" || key === "unknown") return "warn";
+  if (key === "info") return "info"; // 판정 기준이 없는 참고 비교: 색을 칠하지 않는다
   return "safe";
 }
 
@@ -4137,6 +4138,7 @@ function statusText(status) {
   if (status === "high") return "집중 확인";
   if (status === "warning") return "주의";
   if (status === "unknown") return "미확인";
+  if (status === "info") return "참고";
   return "양호";
 }
 

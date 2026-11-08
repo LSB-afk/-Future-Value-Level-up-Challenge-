@@ -429,6 +429,56 @@ def area_bucket(trade: list[dict[str, Any]], jeonse: list[dict[str, Any]]) -> fl
     return float(max(counts.items(), key=lambda item: (item[1], item[0]))[0])
 
 
+def _ym(record: dict[str, Any]) -> int:
+    try:
+        return int(record.get("dealYear") or 0) * 12 + int(record.get("dealMonth") or 0)
+    except ValueError:
+        return 0
+
+
+def price_pattern(trade: list[dict[str, Any]], jeonse: list[dict[str, Any]], bucket: float | None) -> dict[str, Any]:
+    """같은 평형 실거래로 본 가격 모양 (B010 제안 P2·P3·P5).
+
+    - 중앙값·건수: 최근 1건 대신 12개월 중앙값으로 전세가율을 계산한다(한 건의 이상치에 흔들리지 않게).
+    - 매매가 급등: 최근 매매가가 이 단지의 그전 같은 평형 매매 중앙값보다 얼마나 높은지. 기준선은 두지 않는다(참고).
+    - 전세 추이: 최근 3개월 전세 중앙값 vs 그 전 중앙값. 역전세(전세가 하락) 방향을 본다(참고).
+    - 같은 달 겹침: 같은 달에 같은 평형의 전세 보증금이 매매가 이상인 거래가 있으면, 정의상 그 거래 시점에
+      보증금이 집값 이상이었다는 뜻이다(깡통). 동·호가 공개되지 않아 같은 호실인지는 알 수 없다.
+    """
+    if bucket is None:
+        return {}
+    sales = sorted((r for r in trade if round(float(r.get("exclusiveM2") or 0)) == bucket), key=_record_key)
+    leases = sorted((r for r in jeonse if round(float(r.get("exclusiveM2") or 0)) == bucket), key=_record_key)
+    out: dict[str, Any] = {"saleCount": len(sales), "jeonseCount": len(leases)}
+    if sales:
+        out["saleMedian10k"] = round(statistics.median(float(r["amount10k"]) for r in sales))
+    if leases:
+        out["jeonseMedian10k"] = round(statistics.median(float(r["deposit10k"]) for r in leases))
+    if len(sales) >= 4:
+        earlier = statistics.median(float(r["amount10k"]) for r in sales[:-1])
+        out["saleSurgePct"] = round((float(sales[-1]["amount10k"]) - earlier) / earlier * 100, 1)
+        out["saleSurgeBasis"] = f"최근 매매 1건 vs 그전 같은 평형 매매 {len(sales) - 1}건 중앙값"
+    if leases:
+        newest = _ym(leases[-1])
+        recent = [float(r["deposit10k"]) for r in leases if newest - _ym(r) < 3]
+        before = [float(r["deposit10k"]) for r in leases if newest - _ym(r) >= 3]
+        if len(recent) >= 2 and len(before) >= 2:
+            base = statistics.median(before)
+            out["jeonseTrendPct"] = round((statistics.median(recent) - base) / base * 100, 1)
+            out["jeonseTrendBasis"] = f"최근 3개월 전세 {len(recent)}건 중앙값 vs 그전 {len(before)}건 중앙값"
+    # 그 달의 가장 비싼 매매와 비교한다. 가장 싼 매매(저층 등)와 비교하면 고층 전세 한 건으로도 경고가 떠서 오탐이 많다(B011 리뷰).
+    sale_by_month: dict[int, float] = {}
+    for r in sales:
+        sale_by_month[_ym(r)] = max(sale_by_month.get(_ym(r), 0.0), float(r["amount10k"]))
+    overlap = sorted({
+        f"{r.get('dealYear')}.{str(r.get('dealMonth')).zfill(2)}"
+        for r in leases
+        if _ym(r) in sale_by_month and float(r["deposit10k"]) >= sale_by_month[_ym(r)]
+    })
+    out["depositOverSaleMonths"] = overlap
+    return out
+
+
 def fetch_molit_records(
     endpoint: str,
     service_key: str,
@@ -643,6 +693,7 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
 
     market["areaM2"] = bucket
     market["areaMatched"] = bucket is not None
+    market.update(price_pattern(trade_records, jeonse_records, bucket))
     # sourceMode는 전월세만 붙어도 molit_*가 된다. 매매가·전세가가 각각 실거래인지는 따로 표시해야
     # 추정 매매가를 '실거래'로 믿는 일이 없다 (2026-11-08 옥수삼성임대: 전월세만 매칭, 매매가는 추정).
     market["saleLive"] = False
@@ -731,8 +782,13 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
                 market["sourceMode"] = "public_price_live_partial"
                 market["sourceLabel"] = "공동주택 공시가격 live 보정 + 공개 집계 정보"
 
-    if market.get("recentSale10k"):
+    if market.get("saleLive") and market.get("jeonseLive") and market.get("saleMedian10k") and market.get("jeonseMedian10k"):
+        # 같은 평형 12개월 중앙값끼리 나눈다. 최근 1건씩 나누면 부풀린 매매 한 건이 비율을 낮춰 안전해 보이게 한다(B010).
+        market["jeonseRatio"] = round(float(market["jeonseMedian10k"]) / float(market["saleMedian10k"]) * 100, 1)
+        market["jeonseRatioBasis"] = f"전용 {market['areaM2']:.0f}㎡ 매매 {market['saleCount']}건·전세 {market['jeonseCount']}건 중앙값"
+    elif market.get("recentSale10k"):
         market["jeonseRatio"] = round((float(market.get("recentJeonse10k") or 0) / float(market["recentSale10k"])) * 100, 1)
+    if market.get("recentSale10k"):
         market["saleGapPercent"] = round(
             ((float(market["recentSale10k"]) - float(market.get("surroundingAverageSale10k") or market["recentSale10k"])) / float(market.get("surroundingAverageSale10k") or market["recentSale10k"])) * 100,
             1,

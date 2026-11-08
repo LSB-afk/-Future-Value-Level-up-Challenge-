@@ -14,6 +14,7 @@ from real_estate_price_adapters import (
     apt_name_matches,
     area_bucket,
     normalize_name,
+    price_pattern,
     select_complex,
     series_number,
 )
@@ -108,7 +109,25 @@ def test_area_bucket_pairs_same_size() -> None:
     assert area_bucket([{"exclusiveM2": 84.9}], [{"exclusiveM2": 59.7}]) is None
 
 
+def test_price_pattern_median_surge_trend_overlap() -> None:
+    def sale(m, amount):
+        return {"exclusiveM2": 59.9, "dealYear": "2026", "dealMonth": str(m), "dealDay": "1", "amount10k": amount}
+
+    def lease(m, deposit):
+        return {"exclusiveM2": 59.8, "dealYear": "2026", "dealMonth": str(m), "dealDay": "2", "deposit10k": deposit}
+
+    trade = [sale(1, 50000), sale(2, 51000), sale(3, 49000), sale(9, 70000), {**sale(9, 99000), "exclusiveM2": 84.9}]
+    jeonse = [lease(1, 40000), lease(2, 41000), lease(8, 36000), lease(9, 35000), lease(3, 49500)]
+    p = price_pattern(trade, jeonse, 60.0)
+    assert p["saleCount"] == 4 and p["saleMedian10k"] == 50500, p  # 84㎡ 거래는 빠진다
+    assert p["saleSurgePct"] == 40.0, p  # 7억 vs 그전 중앙값 5억
+    assert p["jeonseTrendPct"] < 0, p  # 최근 3개월 전세가 그전보다 낮다(역전세 방향)
+    assert p["depositOverSaleMonths"] == ["2026.03"], p  # 3월 보증금 4.95억 ≥ 3월 매매 4.9억
+    assert price_pattern(trade, jeonse, None) == {}
+
+
 if __name__ == "__main__":
+    test_price_pattern_median_surge_trend_overlap()
     test_road_number_is_not_compared_with_jibun()
     test_select_complex_keeps_closest_name()
     test_area_bucket_pairs_same_size()

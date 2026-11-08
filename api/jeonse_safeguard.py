@@ -160,15 +160,29 @@ def _money(value_10k: float) -> str:
 
 def gaptong_verdict(market: dict) -> dict:
     """전세가율을 실무 80% 기준과 대조해 '근저당 얼마까지 안전한가'로 바꾼다."""
-    sale = float(market.get("recentSale10k") or 0)
-    jeonse = float(market.get("recentJeonse10k") or 0)
+    # 위험 카드와 같은 기준: 같은 평형 12개월 중앙값이 있으면 그것을 쓴다. 최근 1건만 쓰면 부풀린 매매 한 건이
+    # 비율을 낮춰 '여력 있음'이 나온다(B011 리뷰 H2: 위험 카드 80% vs 깡통 패널 57%).
+    sale = float(market.get("saleMedian10k") or market.get("recentSale10k") or 0)
+    jeonse = float(market.get("jeonseMedian10k") or market.get("recentJeonse10k") or 0)
     ratio = (jeonse / sale * 100) if sale else 0.0
     headroom_pct = GAPTONG_THRESHOLD_PCT - ratio
     headroom_10k = max(0.0, sale * headroom_pct / 100)
 
+    # 시세가 실거래가 아니면(추정) 또는 매매·전세 평형이 다르면 '여력 있음'을 말하지 않는다(B010 P1).
+    # 추정 시세의 전세가율은 계산 구조상 80%에 닿지 않아 늘 '여력 있음'이 나오던 문제(B008 G1)를 막는다.
+    # 실거래 표시(saleLive)가 없는 dict(오래된 호출·테스트)는 예전 방식대로 계산한다.
+    estimated = "saleLive" in market and not (
+        market.get("saleLive") and market.get("jeonseLive") and market.get("areaMatched")
+    )
     if sale <= 0 or jeonse <= 0:
         key, label = "unknown", "판정 불가"
         detail = "매매가 또는 전세가 추정치가 없어 깡통주택 기준을 계산할 수 없습니다."
+    elif estimated:
+        key, label = "unknown", "판정 보류(실거래 부족)"
+        detail = (
+            "같은 평형의 매매·전세 실거래가 모두 있어야 깡통주택 기준과 비교할 수 있습니다. "
+            "지금 값은 추정이거나 평형이 달라 판정하지 않습니다. 등기부 근저당과 실거래를 직접 확인하세요."
+        )
     elif ratio >= GAPTONG_THRESHOLD_PCT:
         key, label = "danger", "깡통주택 기준 초과"
         detail = (
@@ -369,6 +383,16 @@ if __name__ == "__main__":
     roomy = gaptong_verdict({"recentSale10k": 50000, "recentJeonse10k": 25000})  # 50%
     assert roomy["verdictKey"] == "safe" and roomy["headroom10k"] == 15000.0, roomy
     assert gaptong_verdict({})["verdictKey"] == "unknown"
+    # 실거래 표시가 있는데 추정이거나 평형이 다르면 '여력 있음'을 내지 않는다
+    estimated = {"recentSale10k": 50000, "recentJeonse10k": 25000, "saleLive": False, "jeonseLive": False}
+    assert gaptong_verdict(estimated)["verdictKey"] == "unknown", gaptong_verdict(estimated)
+    mismatched = {**estimated, "saleLive": True, "jeonseLive": True, "areaMatched": False}
+    assert gaptong_verdict(mismatched)["verdictKey"] == "unknown"
+    assert gaptong_verdict({**mismatched, "areaMatched": True})["verdictKey"] == "safe"
+    # 부풀린 최근 매매 1건(7억)이 있어도 같은 평형 중앙값(5억) 기준으로 80% → 깡통 기준 초과
+    inflated = {"recentSale10k": 70000, "saleMedian10k": 50000, "recentJeonse10k": 40000, "jeonseMedian10k": 40000,
+                "saleLive": True, "jeonseLive": True, "areaMatched": True}
+    assert gaptong_verdict(inflated)["verdictKey"] == "danger", gaptong_verdict(inflated)
 
     seoul = {"name": "테스트단지", "address": "서울시", "lat": 37.5, "lng": 127.0, "category": "아파트", "households": 500}
     assert nearest_center(seoul)["name"].startswith("서울"), nearest_center(seoul)

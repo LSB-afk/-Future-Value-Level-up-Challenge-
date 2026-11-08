@@ -182,6 +182,16 @@ install_fake_ollama([
 result = agent_ollama.agent_chat([{"role": "user", "content": "루프"}])
 assert result["ok"] is False and "넘었습니다" in result["error"], result
 
+# 6-1. 같은 도구를 같은 인자로 다시 부르면 실행하지 않고 "이미 불렀다"를 돌려준다(반복 호출 차단)
+calls = install_fake_ollama([
+    chat(tool_calls=[{"function": {"name": "jeonse_verdict_check", "arguments": {"deposit": ""}}}]),
+    chat(tool_calls=[{"function": {"name": "jeonse_verdict_check", "arguments": {"deposit": ""}}}]),
+    chat(content="보증금을 알려주시면 계산하겠습니다."),
+])
+result = agent_ollama.agent_chat([{"role": "user", "content": "깡통이야?"}])
+sent = [c for c in calls if c["url"].endswith("/api/chat")][2]["body"]["messages"]
+assert "이미 불렀습니다" in sent[-1]["content"] and result["ok"] is True, sent[-1]
+
 # 7. 빈 대화는 모델을 호출하지 않는다
 install_fake_ollama([])
 assert agent_ollama.agent_chat([])["ok"] is False

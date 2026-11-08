@@ -30,6 +30,7 @@ from agent_llm import (
     last_user_text,
     needs_handoff,
     rewrite_request,
+    run_tool_once,
 )
 from jeonse_knowledge import cited_sources
 
@@ -163,6 +164,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
         return {"ok": False, "error": "대화 내용이 비어 있습니다."}
 
     tool_trace: list[dict] = []
+    seen_calls: set = set()
     input_tokens = 0
     output_tokens = 0
     peak_prompt = 0
@@ -234,7 +236,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
             function = call.get("function") or {}
             name = str(function.get("name") or "")
             payload = _tool_args(function.get("arguments"))
-            output = _run_tool(name, payload)
+            output = run_tool_once(name, payload, seen_calls)
             tool_trace.append({"name": name, "input": payload})
             # Anthropic은 tool_result를 한 user 메시지에 모아 보내지만 Ollama는 호출당 tool 메시지다.
             history.append({"role": "tool", "tool_name": name, "content": output})

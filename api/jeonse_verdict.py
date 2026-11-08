@@ -24,6 +24,7 @@ LINES = [
 ]
 OFFICIAL_TO_PRICE = 1.4  # HUG: 비아파트 주택가격 = 공시가격 × 140%
 HUG_DEPOSIT_CAP = 1.26  # 140% × 90%
+STRESS_DROP = 0.10  # 집값 하락 가정. 판정에는 쓰지 않고 보여 주기만 한다.
 RECENT_OWNERSHIP_DAYS = 90
 REGISTRY_FRESH_DAYS = 30
 
@@ -196,6 +197,8 @@ def ltv_block(inp: dict) -> dict:
         prior_effective, prior_known = (prior or 0.0), prior is not None
     debt = (mortgage or 0.0) + prior_effective + deposit
     ratio = round(debt / price * 100, 1) if price else None
+    # 역전세·집값 하락 가정(B010 P5): 집값이 10% 내리면 같은 빚이 집값의 몇 %가 되는지. 기준선이 아니라 가정 계산이다.
+    stress = round(debt / (price * (1 - STRESS_DROP)) * 100, 1) if price else None
     headroom = {
         str(line["pct"]): (round(price * line["pct"] / 100 - debt) if price else None) for line in LINES
     }
@@ -209,6 +212,8 @@ def ltv_block(inp: dict) -> dict:
         "deposit10k": deposit,
         "debt10k": round(debt),
         "ratioPct": ratio,
+        "stressDropPct": int(STRESS_DROP * 100),
+        "stressRatioPct": stress,
         "isLowerBound": mortgage is None or not prior_known,
         "lines": LINES,
         "headroom10k": headroom,
@@ -289,7 +294,8 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         checks.append(_check("ratio", "ltv", "집값 대비 빚 비율(LTV)",
                              "근저당 + 선순위 보증금 + 내 보증금이 집값의 70% 미만일 것",
                              value, result, ltv["priceSource"],
-                             "90%를 넘으면 HUG 전세보증 가입이 안 됩니다."))
+                             f"90%를 넘으면 HUG 전세보증 가입이 안 됩니다. 집값(매매가)이 {ltv['stressDropPct']}% 내리면 "
+                             f"{ltv['stressRatioPct']}%{' 이상' if ltv['isLowerBound'] else ''}가 됩니다(가정 계산)."))
     mortgage = _num(registry.get("mortgageMax10k"))
     checks.append(_check("ratio", "mortgage", "근저당 채권최고액", "등기부 을구의 근저당 합계를 확인할 것",
                          money(mortgage), "pass" if mortgage is not None else "unknown",
@@ -422,6 +428,9 @@ def build_stages(checks_by_id: dict, ltv: dict) -> list[dict]:
             {"id": "registry", "text": "등기부를 직접 열람해 소유자·근저당·신탁·압류 확인"},
             {"id": "ltv", "text": "집값 대비 빚 비율이 70% 미만인지 확인"},
             {"id": "requests", "text": "확인 요청 서류(확정일자 부여현황·납세증명서) 받기"},
+            # B010: 판결로 확인된 동시진행·명의 이전 구조와 단속에서 드러난 무등록 중개에 대응하는 질문
+            {"id": "concurrentSale", "text": "매매와 전세를 동시에 진행하는지, 계약 뒤 소유자가 바뀔 계획이 있는지 묻고 답을 기록하기"},
+            {"id": "roles", "text": "분양 담당·등기부 소유자·중개 담당자가 누구인지, 상담한 사람이 계약서의 중개사와 같은지 확인하기"},
             *([{"id": "trustDoc", "text": "신탁원부와 신탁회사 동의서 확인 (없으면 계약하지 않기)"}] if trust else []),
         ]},
         {"id": "contractDay", "label": "계약 당일", "items": [
@@ -553,6 +562,7 @@ if __name__ == "__main__":
     r = evaluate(clean, today)
     assert r["grade"] == "safe", r["reasons"]
     assert r["ltv"]["ratioPct"] == 60.0 and not r["ltv"]["isLowerBound"]
+    assert r["ltv"]["stressRatioPct"] == 66.7  # 5.4억 / (9억 × 0.9)
     assert r["ltv"]["headroom10k"]["80"] == 18000  # 9억 × 80% − 5.4억
 
     trust = {**clean, "registry": {**clean["registry"], "trust": "yes"}}
