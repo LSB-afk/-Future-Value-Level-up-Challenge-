@@ -25,6 +25,7 @@ from agent_llm import (
     TOOL_SCHEMAS,
     _run_tool,
     answer_problems,
+    auto_facts,
     build_system,
     finalize_answer,
     last_user_text,
@@ -165,6 +166,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
 
     tool_trace: list[dict] = []
     seen_calls: set = set()
+    facts: dict = {}
     input_tokens = 0
     output_tokens = 0
     peak_prompt = 0
@@ -205,7 +207,8 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
                 continue
             question = last_user_text(messages)
             handoff_added = needs_handoff(question, answer)
-            answer = finalize_answer(question, answer, found)
+            auto_facts(question, context, facts, tool_trace)
+            answer = finalize_answer(question, answer, found, facts)
             result = {
                 "ok": True,
                 "answer": answer,
@@ -236,7 +239,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
             function = call.get("function") or {}
             name = str(function.get("name") or "")
             payload = _tool_args(function.get("arguments"))
-            output = run_tool_once(name, payload, seen_calls)
+            output = run_tool_once(name, payload, seen_calls, facts)
             tool_trace.append({"name": name, "input": payload})
             # Anthropic은 tool_result를 한 user 메시지에 모아 보내지만 Ollama는 호출당 tool 메시지다.
             history.append({"role": "tool", "tool_name": name, "content": output})

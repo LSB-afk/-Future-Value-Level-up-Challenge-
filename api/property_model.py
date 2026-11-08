@@ -309,6 +309,11 @@ def build_risk(apartment: dict, market: dict) -> dict:
     elif live and market.get("areaMatched") is False:
         ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": "unknown",
                         "evidence": f"최근 매매와 전세의 평형이 달라 전세가율을 비교하지 않았습니다. 같은 평형의 매매가를 확인하세요. {tail}"}
+    elif live and (((market.get("liveStatus") or {}).get("molitTrade") or {}).get("incomplete")
+                   or ((market.get("liveStatus") or {}).get("molitRent") or {}).get("incomplete")):
+        # 실거래를 다 받지 못한 달이 있으면(1,000건 넘는 달·조회 실패) 중앙값이 치우칠 수 있어 '정상'으로 두지 않는다(재점검 Astra-13).
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": "unknown" if jeonse_ratio < 80 else "high",
+                        "evidence": f"일부 달의 실거래를 다 받지 못해 참고값입니다. 같은 평형 실거래를 직접 확인하세요. {tail}"}
     elif not live:
         # 추정 시세의 전세가율은 계산 구조상 47~72%에 갇혀 80%에 닿지 않는다(B008 G1). '정상'으로 두면 근거 없는 안심이다.
         ratio_signal = {"value": f"{jeonse_ratio:.1f}% (추정)", "status": "unknown",
@@ -322,21 +327,23 @@ def build_risk(apartment: dict, market: dict) -> dict:
     # 예전 120%·95% 선은 근거가 없어 지웠다(B010 P7).
     # HUG는 아파트·오피스텔 가격을 KB·부동산원 시세부터 쓰고 공시가격 환산은 그다음이다(위키 hug-housing-value-source-order).
     # 그래서 아파트에는 126% 규칙을 판정에 쓰지 않고 참고로만 보여 준다(B011 리뷰).
-    is_apartment = "아파트" in str(apartment.get("category") or "아파트")
+    # 오피스텔도 HUG가 시세를 먼저 쓴다(전체 QA Sol P03).
+    is_apartment = any(t in str(apartment.get("category") or "아파트") for t in ("아파트", "오피스텔"))
     if market.get("officialPriceLive") and is_apartment:
         official_signal = {"value": f"{official_ratio:.1f}%", "status": "info",
                            "evidence": f"공동주택 공시가격 {format_money_10k(market['officialPrice10k'])} 대비 전세 시세입니다. 아파트는 HUG가 시세를 먼저 쓰므로 공시가격 126% 기준은 참고로만 봅니다."}
     elif market.get("officialPriceLive"):
+        # 이 비율에는 선순위채권이 빠져 있다. 넘으면 주의지만, 안 넘어도 '양호'라 할 수 없어 참고로 둔다(재점검 Sol P03).
         over = official_ratio > 126
-        official_signal = {"value": f"{official_ratio:.1f}%", "status": "warning" if over else "ok",
+        official_signal = {"value": f"{official_ratio:.1f}%", "status": "warning" if over else "info",
                            "evidence": f"공시가격 {format_money_10k(market['officialPrice10k'])}(공시가격 API) 대비 전세 시세입니다. "
-                                       + ("연립·다세대 등은 HUG가 공시가격 환산액을 먼저 쓰므로, 126%를 넘으면 반환보증 가입이 어려울 수 있습니다." if over else "공시가격의 126% 이하입니다.")}
+                                       + ("연립·다세대 등은 HUG가 공시가격 환산액(×140%)을 먼저 쓰므로, 보증금과 선순위채권 합계가 공시가격의 126%를 넘으면 반환보증 가입이 어려울 수 있습니다(최종은 HUG 심사)." if over else "공시가격의 126% 이하입니다. 선순위채권이 있으면 그만큼 한도가 줄어듭니다.")}
     elif is_apartment:
         official_signal = {"value": "확인 필요", "status": "info",
                            "evidence": "공시가격 API가 연결되지 않았습니다. 아파트는 HUG가 시세를 먼저 쓰므로 공시가격은 참고입니다. 부동산공시가격알리미에서 확인할 수 있습니다."}
     else:
         official_signal = {"value": "확인 필요", "status": "unknown",
-                           "evidence": "공시가격 API가 연결되지 않아 비교하지 않습니다. 부동산공시가격알리미에서 공시가격을 확인하세요. HUG 보증은 공시가격의 126%를 보증금 상한으로 봅니다."}
+                           "evidence": "공시가격 API가 연결되지 않아 비교하지 않습니다. 부동산공시가격알리미에서 공시가격을 확인하세요. 연립·다세대 등은 HUG가 공시가격 × 140%를 집값으로 보고 그 90%(공시가격의 126%)에서 선순위채권을 뺀 만큼 보증합니다."}
 
     # 같은 달에 같은 평형 전세 보증금이 매매가 이상인 거래 = 그 시점에 보증금이 집값 이상(정의상 깡통). 동시진행 수법의 흔적일 수 있다.
     overlap = market.get("depositOverSaleMonths") or []
@@ -396,7 +403,8 @@ def build_risk(apartment: dict, market: dict) -> dict:
     elif score >= 45 or any(item["status"] == "warning" for item in signals):
         level = "주의 요소 있음"
         level_key = "warning"
-    elif scored_unknown >= 2:
+    elif scored_unknown >= 2 or ratio_signal["status"] == "unknown":
+        # 핵심 신호인 전세가율을 모르면 다른 게 괜찮아도 '낮음'이라 하지 않는다.
         # 모르는 가격 신호가 많은데 점수가 낮다고 '낮음'이라 하면 근거 없는 안심이다.
         level = "확인 필요"
         level_key = "unknown"
@@ -455,7 +463,7 @@ def contract_checklist(apartment: dict, market: dict, signals: list[dict]) -> li
             "status": "임대인 동의 필요",
             "priority": "high",
             "consent": "landlord",
-            "reason": "당해세는 확정일자보다 앞서 배당됩니다. 열람에 임대인 동의가 필요하므로, 거부당하면 그 자체를 위험 신호로 보고 특약으로 대체하세요.",
+            "reason": "법정기일이 내 확정일자보다 빠른 세금은 보증금보다 먼저 배당될 수 있습니다. 계약 전 열람에는 임대인 동의가 필요하니(계약 후 보증금 1천만원 초과 임차인은 동의 없이 열람 가능), 거부당하면 그 자체를 위험 신호로 보고 특약으로 대체하세요.",
         },
         {
             "label": "신탁등기 여부",

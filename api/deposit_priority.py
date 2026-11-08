@@ -11,8 +11,10 @@
 - 우선변제: 대항요건 + 확정일자 → 둘 중 늦은 날 기준으로 담보권 등기일과 선후 비교 (제3조의2제2항)
 - 소액임차인 최우선변제: 경매신청 등기 전 대항요건, 지역별 보증금 상한·보호액, 주택가액 1/2 한도 (제8조, 시행령 제10·11조)
   금액은 2023-02-21 시행분. 그 전에 설정된 담보권과의 관계에는 종전 기준이 적용된다.
-- 당해세 특례: 확정일자보다 법정기일이 늦은 상속세·증여세·종부세(국세기본법 제35조제7항, 2023-04-01 이후 매각)와
-  재산세 등(지방세기본법 제71조제6항, 2023-05-04 이후 매각)은 보증금이 그 징수 순서를 대신한다.
+- 당해세 특례: 대항요건과 확정일자를 갖춘 임차인의 보증금은, 확정일자보다 법정기일이 늦은 그 집의 당해세
+  (국세: 상속세·증여세·종합부동산세, 국세기본법 제35조제7항, 2023-04-01 이후 매각결정·매각허가결정분 /
+   지방세: 재산세·소방분 지역자원시설세·재산세에 붙는 지방교육세, 지방세기본법 제71조제6항, 2023-05-04 이후분)에
+  배분될 금액 한도에서 그 징수 순서를 대신한다. 선순위 저당권자 몫에는 영향이 없다.
 """
 
 from __future__ import annotations
@@ -70,7 +72,12 @@ def repayment_priority(
     prior_tenants10k: float | None = None,
     tax_arrears: str = "unknown",
     today: date | None = None,
+    mortgage_status: str = "auto",
 ) -> dict:
+    """mortgage_status: 'none'(등기부에 근저당 없음 확인) | 'known'(mortgages에 금액이 있음) | 'unknown'(모름).
+    'auto'면 mortgages가 있으면 known, 없으면 unknown이다. 근저당을 모르는데 '없음'으로 계산하면 보호액과 최소 매각가를
+    확정해 버린다(전체 QA Astra-05).
+    """
     if deposit10k is None or deposit10k <= 0:
         raise ValueError("보증금(만원)이 필요합니다.")
     if house_price10k is not None and house_price10k <= 0:
@@ -97,6 +104,12 @@ def repayment_priority(
     old_mortgage = any(d and d < SMALL_TENANT_SINCE for d in mortgage_dates)
     # 등기일을 모르는 근저당은 2023-02-21 전 것일 수 있다. 현행 금액을 단정하지 않는다(리뷰 2026-11-08).
     undated_mortgage = any(d is None for d in mortgage_dates)
+    amounts_unknown = any(m.get("amount10k") in (None, "") for m in mortgages or [])
+    if mortgage_status == "auto":
+        mortgage_status = "known" if mortgages else "unknown"
+    mortgage_unknown = mortgage_status == "unknown" or amounts_unknown
+    if mortgage_unknown:
+        unknowns.append("근저당 유무·금액·등기일(등기부 을구)")
     if rule is None:
         small["note"] = "지역을 알아야 소액임차인 해당 여부를 판단할 수 있습니다(서울 외 지역은 과밀억제권역 여부 확인)."
         unknowns.append("주택 소재 지역 구분")
@@ -107,9 +120,13 @@ def repayment_priority(
             f"2023-02-21 전에 설정된 근저당이 있어 그 근저당과의 관계에는 종전 기준이 적용됩니다. "
             "종전 금액은 확인된 자료가 없어 계산하지 않았습니다."))
         unknowns.append("종전 소액임차인 기준 금액")
+    elif mortgage_status == "unknown":
+        small.update(eligible=None, note=(
+            f"보증금은 {rule['label']} 소액임차인 상한({money(rule['cap'])} 이하, 보호액 최대 {money(rule['protected'])}) 안이지만, 근저당이 있는지·언제 설정됐는지 몰라 적용 기준(현행·종전)과 "
+            "보호액을 정할 수 없습니다. 등기부 을구를 확인해 근저당 금액과 접수일을 넣어 주세요."))
     elif undated_mortgage:
         small.update(eligible=None, note=(
-            f"보증금은 {rule['label']} 소액임차인 상한 안이지만, 근저당 등기일을 몰라 어느 기준(현행·종전)이 적용되는지 "
+            f"보증금은 {rule['label']} 소액임차인 상한({money(rule['cap'])} 이하, 보호액 최대 {money(rule['protected'])}) 안이지만, 근저당 등기일을 몰라 어느 기준(현행·종전)이 적용되는지 "
             "정할 수 없습니다. 등기부 을구에서 근저당 접수일을 확인하세요."))
         unknowns.append("근저당 등기일")
     else:
@@ -124,6 +141,10 @@ def repayment_priority(
     # 2) 담보권과 내 확정일자 보증금의 선후
     ahead_known = 0.0
     for m in mortgages or []:
+        if m.get("amount10k") in (None, ""):
+            claims.append({"rank": "내 앞(금액 미확인)", "who": "근저당(채권최고액)", "amount10k": None,
+                           "basis": "주택임대차보호법 제3조의2", "note": "금액을 몰라 계산에 넣지 못했습니다. 등기부 을구의 채권최고액을 확인하세요."})
+            continue
         amount = float(m.get("amount10k") or 0)
         registered = _date(m.get("registered"))
         if registered and my_date:
@@ -152,8 +173,8 @@ def repayment_priority(
         "no": "임대인이 체납이 없다고 확인했습니다(납세증명서로 확인 권장).",
         "unknown": "체납 세금은 확인 전입니다. 납세증명서를 요청하세요.",
     }.get(tax_arrears, "체납 세금은 확인 전입니다.")
-    tax_note += (" 상속세·증여세·종부세·재산세 등 그 집에 붙는 세금(당해세)은 법정기일이 내 확정일자보다 늦으면 "
-                 "보증금이 먼저 배분됩니다(2023년 4~5월 이후 매각분).")
+    tax_note += (" 그 집에 붙는 세금(국세: 상속세·증여세·종합부동산세, 지방세: 재산세·소방분 지역자원시설세·재산세에 붙는 지방교육세)은 "
+                 "내가 대항요건을 갖추고 확정일자를 그 법정기일보다 먼저 받았다면 그 세금에 배분될 금액 한도에서 보증금이 먼저 배분됩니다(국세 2023-04-01, 지방세 2023-05-04 이후 매각결정·매각허가결정분). 선순위 저당권 몫에는 영향이 없습니다.")
     if tax_arrears != "no":
         unknowns.append("임대인 체납 세금액과 법정기일")
 
@@ -173,7 +194,9 @@ def repayment_priority(
         "claims": claims,
         "aheadKnown10k": round(ahead_known),
         "minSalePriceForFullReturn10k": round(needed),
-        "minSalePriceLabel": f"경매로 최소 {money(needed)} 이상에 팔려야 보증금 전액이 돌아올 수 있습니다(경매 비용·세금·임금채권 제외 계산).",
+        "minSalePriceIsLowerBound": mortgage_unknown or prior_tenants10k is None,
+        "minSalePriceLabel": (f"경매로 최소 {money(needed)} 이상에 팔려야 보증금 전액이 돌아올 수 있습니다(경매 비용·세금·임금채권 제외 계산)."
+                              + (" 근저당·다른 세입자 보증금을 모르는 상태라 실제로는 이보다 높을 수 있습니다." if (mortgage_unknown or prior_tenants10k is None) else "")),
         "vsHousePricePct": ratio,
         "taxNote": tax_note,
         "unknowns": unknowns,
@@ -202,11 +225,19 @@ if __name__ == "__main__":
     assert repayment_priority(20000, 50000, "seoul", today=today)["smallTenant"]["eligible"] is False
     r = repayment_priority(6000, 30000, None, today=today)
     assert r["smallTenant"]["eligible"] is None and any("지역" in u for u in r["unknowns"])
+    # 근저당 유무를 모르면 보호액을 확정하지 않는다 (전체 QA Astra-05)
+    r = repayment_priority(6000, 30000, "seoul", "2026-03-02", "2026-03-02", [], 0, today=today)
+    assert r["smallTenant"]["eligible"] is None and r["minSalePriceIsLowerBound"], r["smallTenant"]
+    r = repayment_priority(6000, 30000, "seoul", "2026-03-02", "2026-03-02", [], 0, today=today, mortgage_status="none")
+    assert r["smallTenant"]["eligible"] is True and not r["minSalePriceIsLowerBound"]
+    # 2023-02-21 뒤 근저당이면 금액을 몰라도 현행 기준은 정해진다. 다만 최소 매각가는 하한이다.
+    r = repayment_priority(6000, 30000, "seoul", "2026-03-02", "2026-03-02", [{"amount10k": None, "registered": "2025-01-01"}], 0, today=today)
+    assert r["smallTenant"]["eligible"] is True and r["minSalePriceIsLowerBound"]
     # 근저당 날짜를 모르면 현행 금액을 단정하지 않는다
     r = repayment_priority(6000, 30000, "seoul", "2026-03-02", "2026-03-02", [{"amount10k": 12000, "registered": ""}], 0, today=today)
     assert r["smallTenant"]["eligible"] is None and "근저당 등기일" in r["unknowns"]
     # 보호액은 주택가액 1/2을 넘지 못한다
-    assert repayment_priority(5500, 9000, "seoul", today=today)["smallTenant"]["protected10k"] == 4500
+    assert repayment_priority(5500, 9000, "seoul", today=today, mortgage_status="none")["smallTenant"]["protected10k"] == 4500
     for bad in (dict(deposit10k=0), dict(deposit10k=6000, move_in_date="9999-12-31")):
         try:
             repayment_priority(**bad, today=today)

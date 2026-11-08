@@ -27,6 +27,7 @@ MAX_RADIUS_METERS = 20000
 PAGE_SIZE = 15
 MAX_PAGES = 3
 CACHE_SECONDS = 60 * 60 * 6
+FAILURE_CACHE_SECONDS = 60 * 5
 
 SOC_QUERIES: dict[str, dict[str, list[str]]] = {
     "medical": {"categories": ["HP8"], "keywords": []},
@@ -73,7 +74,7 @@ SOC_LABELS = {
     "welfare": "복지시설",
 }
 
-_CACHE: dict[tuple[float, float, int], tuple[float, dict[str, Any]]] = {}
+_CACHE: dict[tuple[float, float, int], tuple[float, dict[str, Any], float]] = {}  # (저장 시각, 응답, TTL)
 
 
 def _env_key() -> str:
@@ -192,9 +193,14 @@ def _category_places(category: str, lat: float, lng: float, radius: int, api_key
             deduped[key] = place
 
     samples = sorted(deduped.values(), key=lambda item: int(item.get("distanceMeters") or 0))
+    attempts = len(query_set.get("categories", [])) + len(query_set.get("keywords", []))
+    status = "failed" if errors and len(errors) >= attempts else ("partial" if errors else "ok")
     return {
         "label": SOC_LABELS.get(category, category),
-        "count": len(samples),
+        # 조회가 모두 실패하면 0이 아니라 None(모름). 일부만 실패하면 받은 만큼의 하한값이다.
+        "count": None if status == "failed" else len(samples),
+        "ok": status == "ok",
+        "status": status,
         "nearest": samples[0] if samples else None,
         "samples": samples[:12],
         "source": "kakao_local_api",
@@ -251,22 +257,42 @@ def kakao_soc_response(raw: dict[str, list[str]]) -> dict[str, Any]:
     cache_key = (round(lat, 5), round(lng, 5), radius)
     cached = _CACHE.get(cache_key)
     now = time.time()
-    if cached and now - cached[0] < CACHE_SECONDS:
+    if cached and now - cached[0] < cached[2]:
         return {**cached[1], "cached": True}
 
     categories = {
         key: _category_places(key, lat, lng, radius, api_key)
         for key in SOC_LABELS
     }
-    has_errors = any(item.get("errors") for item in categories.values())
     result = {
         "ok": True,
-        "mode": "partial_error" if has_errors else "live_api",
         "radiusMeters": radius,
         "apartmentId": apartment_id,
         "source": "Kakao Local API",
         "categories": categories,
         "integrations": kakao_soc_status(),
+        **_failure_summary(categories),
     }
-    _CACHE[cache_key] = (now, result)
+    # 실패가 섞인 결과는 짧게만 캐시한다. 일시 장애가 6시간 동안 "시설 0개"로 굳지 않게.
+    _CACHE[cache_key] = (now, result, CACHE_SECONDS if result["status"] == "ok" else FAILURE_CACHE_SECONDS)
     return result
+
+
+def _failure_summary(categories: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """조회 실패를 0개와 구분하는 응답 필드.
+
+    - status: "ok"(모두 성공) | "partial"(일부 카테고리·키워드 실패) | "failed"(모든 카테고리 실패)
+    - failedCategories: 조회가 모두 실패해 count가 None인 카테고리 키
+    - partialCategories: 일부 키워드만 실패해 count가 하한값인 카테고리 키
+    - 카테고리마다 ok(bool)·status("ok"|"partial"|"failed")가 붙고, failed면 count는 None이다.
+    - mode는 기존 값("live_api" | "partial_error")을 그대로 둔다(하위 호환).
+    """
+    failed = [key for key, item in categories.items() if item.get("status") == "failed"]
+    partial = [key for key, item in categories.items() if item.get("status") == "partial"]
+    status = "failed" if failed and len(failed) == len(categories) else ("partial" if failed or partial else "ok")
+    return {
+        "mode": "live_api" if status == "ok" else "partial_error",
+        "status": status,
+        "failedCategories": failed,
+        "partialCategories": partial,
+    }

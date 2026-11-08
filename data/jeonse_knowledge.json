@@ -3,7 +3,7 @@
   "builtAt": "2026-11-08",
   "from": "orchestra 팀 위키의 verified: true 노트 (sources·concepts)",
   "notes": 45,
-  "chunks": 89,
+  "chunks": 88,
   "rule": "검증된 원문 근거만. 조각마다 출처 URL과 확인 못 한 부분(caveat)을 함께 싣는다."
  },
  "chunks": [
@@ -1075,8 +1075,20 @@
    "text": "회의에서 \"전세 사기를 피하기 위해 필요한 정보가 뭔지 더 구체적이어야 한다\"고 한 질문에 대한 답이다. 왜 일어나는지는 jeonse-fraud-structural-causes를 보면 된다. 줄여 말하면 임차인이 임대인의 자산·부채를 알기 어렵고, 보증 구조가 악용됐으며, 전문 자격사가 가담했다. 수법마다 원문 근거는 각 노트에 있다.\n| 수법 | 계약 전에 알아야 할 정보 | 얻는 곳·비용 | MoveValue 제안 (미적용, jeonse-ltv-check) |\n| 깡통전세(근저당 과다) | 근저당 채권최고액, 집값 | 등기부 을구(열람 700원) | 입력하면 집값 대비 비율을 계산 |\n| 다가구 선순위 보증금 은닉 (jeonse-multifamily-hidden-prior-deposits) | 앞선 세입자 보증금 합계 | 확정일자 부여현황(임대인 동의, 600원), 전입세대확인서 | 입력하면 합산하고, HUG 다가구 80% 요건도 계산 |",
    "sources": [
     {
-     "title": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md",
-     "url": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md"
+     "title": "관계부처 전세사기 예방 및 피해 지원방안",
+     "url": "https://www.myhome.go.kr/hws/portal/bbs/selectBoardPressDetailView.do?bbsId=BBST03&nttId=2069"
+    },
+    {
+     "title": "윤성진·이슬, 보증금 반환 지연 및 미반환 구조 이해와 임차인 불안 완화 방안 연구",
+     "url": "https://www.krihs.re.kr/galleryDownload.es?bid=0025&list_no=30032&seq=1"
+    },
+    {
+     "title": "인천시 계약 유의사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    },
+    {
+     "title": "HUG 제출서류",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000002.jsp?tabMenu=Y"
     }
    ],
    "caveat": "",
@@ -1091,8 +1103,20 @@
    "text": "| 동시진행·감정가 부풀리기 (jeonse-simultaneous-sale-inflated-valuation) | HUG 인정가격, 주변 실거래 | 공시가격 × 140%, 실거래 공개시스템 | 공시가격을 넣으면 HUG 기준 집값으로 계산 |\n| 보증 가입 불가 매물 (hug-return-guarantee-current-rules) | 보증금 + 선순위 ≤ 90% 등 | HUG 상품개요 | 요건별 충족·미달을 표시 |\n| 소액임차인 보호 (small-tenant-priority-payment-current) | 지역별 보증금 상한·우선변제액 | 시행령 제10·11조 | 서울 기준으로 해당 여부를 표시 |\n| 신탁 사기 (jeonse-trust-property-authority-check) | 신탁원부, 수탁자 동의 | 등기부·신탁원부·신탁회사 | 체크리스트만 (후속) |",
    "sources": [
     {
-     "title": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md",
-     "url": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md"
+     "title": "국토연구원 발간 연구",
+     "url": "https://www.krihs.re.kr/galleryDownload.es?bid=0025&list_no=30032&seq=1"
+    },
+    {
+     "title": "관계부처 예방대책",
+     "url": "https://www.myhome.go.kr/hws/portal/bbs/selectBoardPressDetailView.do?bbsId=BBST03&nttId=2069"
+    },
+    {
+     "title": "HUG 보증제도 개선 안내",
+     "url": "https://khug.or.kr/hug/web/cs/no/csno000002.jsp?articleId=31524&mode=S&id=16"
+    },
+    {
+     "title": "인천시 전세계약 유의사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
     }
    ],
    "caveat": "",
@@ -1107,8 +1131,20 @@
    "text": "| 이중계약·가짜 임대인 (jeonse-double-contract-fake-landlord) | 소유자 신원, 위임장·인감 | 등기부·신분증 대조 | 체크리스트만 (후속) |\n| 근린생활시설 (jeonse-illegal-use-building-check) | 건축물대장 용도·위반 표시 | 정부24(무료), 건축HUB API | 사용승인일 누락만 경고 (후속) |\n| 잔금일 대항력 공백 (jeonse-stage-rechecks-opposability-gap) | 잔금 직전 등기 변동 | 등기부 재열람 | 타임라인·특약 문구 |\n- 임대인이 줘야 하는 정보와 중개사가 설명해야 하는 정보는 jeonse-information-duties-reform-timeline에 정리했다. 제3조의7은 2023-04-18 시행이다.\n- 이 표의 어떤 결과도 법적 판정이 아니다 (jeonse-risk-expression-guardrails).",
    "sources": [
     {
-     "title": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md",
-     "url": "orchestra/runs/2026-10-23-jeonse-fraud/decision.md"
+     "title": "부평구 이중계약·신분 위조 예방자료",
+     "url": "https://www.icbp.go.kr/dong/bbs/bbsMsgDetail.do?add3=y&bcd=dong_notice&cate1=bupyeong1&dong=bupyeong1&msg_seq=15347&pgno=417"
+    },
+    {
+     "title": "국토부 전세피해 예방 종합안내서 재게시본",
+     "url": "https://www.kar.or.kr/consult_new/hanbang_portal/전세사기%20피해예방%20종합안내서%28체크리스트%20포함%29.pdf"
+    },
+    {
+     "title": "인천시 계약 유의사항",
+     "url": "https://www.incheon.go.kr/housing/hou040401"
+    },
+    {
+     "title": "법제처 등기 열람 안내",
+     "url": "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=2&cciNo=1&cnpClsNo=2&csmSeq=627"
     }
    ],
    "caveat": "",
@@ -1123,8 +1159,12 @@
    "text": "사용자 가설은 \"부동산 일을 하는 사람들은 전세사기가 왜 생기는지 더 잘 안다\"이다. 근거로 보면 업계 사람들은 구조를 안다. 다만 그중 상당수는 가담자로서 알았다. 업계가 위험을 더 잘 판별한다는 비교 조사는 확인되지 않았다.\n- 2022-07-25~2024-07-28 특별단속에서 8,323명이 검거되고 610명이 구속됐다. 가담 형태별로 나누면 다음과 같다 (jeonse-crackdown-2024-offenses-and-participants).\n- (가짜) 임대인·임차인 37.7%\n- 공인중개사·중개보조원 25.0%\n- 임대인·소유자 17.5%\n- 브로커 13.5%\n- 건축주 1.5%\n- 감정평가사 0.3%\n- 수법별로는 다음과 같다.\n- 허위 보증·보험 35.3%\n- 무자본 갭투자 24.0%\n- 불법 중개·감정 18.9%\n- 이 비율은 검거자 안의 비율이다. 업계 전체가 가담한 비율이 아니다.",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "관계부처 특별단속 결과·별첨 경찰청 보도자료와 붙임 통계",
+     "url": "https://www.spo.go.kr/common/board/Download.do?bcIdx=1059649&cbIdx=1403&streFileNm=dba60e07-8b3c-4537-8180-2e727c357b64.pdf"
+    },
+    {
+     "title": "한국공인중개사협회 예방 자료",
+     "url": "https://www.kar.or.kr/consult_new/menu1.html"
     }
    ],
    "caveat": "",
@@ -1139,8 +1179,20 @@
    "text": "- 위험 거래를 2회 이상 중개해 선별 점검한 중개사 242명 중 99명에서 위반이 나왔다. 이것도 선별 표본이다 (jeonse-broker-inspection-2023-duty-and-sanctions).\n1. 신축 분양 연결: 건축주·분양대행이 리베이트를 넣은 매매가로 집을 넘긴다 (uijeongbu-2024no3192-rebate-and-nominee-judgment).\n2. 세입자 모집: 중개사가 세입자를 모집하고, 보증금은 매매대금보다 크거나 비슷하다 (동시진행).\n3. 보증금 배분: 받은 보증금 일부는 리베이트로 분양대행·중개사·갭투자자에게 가고, 나머지는 분양대금이 된다.\n4. 명의 이전: 집은 갚을 능력이 없는 명의자(바지 임대인)에게 넘어간다. 입법조사처도 같은 구조를 설명한다 (nars-villa-sales-agency-oversight-gap).",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "국토부 원 보도자료, 2023-05-30",
+     "url": "https://www.molit.go.kr/USR/NEWS/m_71/dtl.jsp?id=95088372&lcmspage=100"
+    },
+    {
+     "title": "국토부 점검 세부 유형 공개, 2023-06-09",
+     "url": "https://www.korea.kr/news/policyNewsView.do?newsId=148916072"
+    },
+    {
+     "title": "의정부지방법원 공개 판결요지, 2024노3192",
+     "url": "https://www.scourt.go.kr/portal/dcboard/DcNewsViewAction.work?bub_name=&cbub_code=000214&currentPage=&gubun=44&searchOption=&searchWord=&seqnum=26534"
+    },
+    {
+     "title": "국회입법조사처, 2023년 1월 공청회 기록",
+     "url": "https://www.nars.go.kr/front/new/202301/seminar/seminar.html"
     }
    ],
    "caveat": "",
@@ -1155,8 +1207,20 @@
    "text": "5. 다른 사업 자금으로 전용: 건축왕 사건에서 검찰은 보증금이 공사대금으로 쓰였다고 설명했다. 아직 확정되지 않은 수사 자료다 (michuhol-construction-king-deposit-diversion-indictment).\n- 감사원은 다음을 지적했다. 세부 수치는 언론 보도로만 확인했다 (bai-jeonse-guarantee-screening-and-landlord-gaps).\n- 담보인정비율 하향 요청에 대한 대응이 늦었다.\n- 악성 임대인의 보증 가입을 차단하지 못했다.\n- '보증 가입 가능'은 안전하다는 뜻이 아니다. 보증 인정가격이 시세보다 높게 잡히면, 보증이 오히려 부풀린 보증금을 받쳐 주는 구조가 된다 (jeonse-inflated-price-denominator-history).",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "인천지검, 건축왕 사건 2차 중간수사 결과, 2023-06-27",
+     "url": "https://www.spo.go.kr/common/board/Download.do?bcIdx=1038827&cbIdx=1403&streFileNm=1703bac1-031f-4123-b747-4dfea760f3e4.pdf"
+    },
+    {
+     "title": "뉴시스, 2024-02-13 추가 기소 보도",
+     "url": "https://mobile.newsis.com/view/NISX20240213_0002625359"
+    },
+    {
+     "title": "감사원 발간물 서지·목차, 디지털집현전",
+     "url": "https://k-knowledge.kr/srch/read.jsp?id=287565589"
+    },
+    {
+     "title": "뉴시스, 감사 결과 보도, 2024-08-13",
+     "url": "https://www.newsis.com/view/NISX20240807_0002841686"
     }
    ],
    "caveat": "",
@@ -1171,8 +1235,20 @@
    "text": "- 보증금 반환은 다음 세입자나 대출에 기대는 경우가 많다. 그래서 차액이 작은 집은 반환 책임이 더 불안한 새 임대인에게 넘어갈 수 있다 (jeonse-return-funding-and-refinancing-dependency).\n- 매매와 전세 계약을 같은 시기에 진행하거나, 계약 직후 집주인이 바뀐다는 설명을 듣는 경우\n- 분양 담당자, 등기부 소유자, 중개 담당자가 서로 다르고 각자 역할을 설명하지 않는 경우\n- 보증금 증액을 권하면서 중개인이 이익을 요구하는 경우, 또는 \"보증보험 되니까 괜찮다\"만 강조하는 경우 (업계 의견: industry-jeonse-risk-signals-and-evidence-limits)\n- 상담한 사람과 계약서에 적힌 중개사가 다른 경우 (무등록 중개·등록증 대여)\n이 신호들 대부분은 공개 데이터로 자동 판별할 수 없다. 서류와 사람의 역할을 확인해야 하는 부분이며, Agent는 확인을 안내할 수 있을 뿐 판정할 수는 없다.",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "윤성진·이슬, 보증금 반환 지연 및 미반환 구조 연구, 본문 21쪽·주석",
+     "url": "https://www.krihs.re.kr/boardDownload.es?bid=0008&list_no=386964&seq=3"
+    },
+    {
+     "title": "한국형사·법무정책연구원, 전세사기의 예방 및 피해회복 방안, 본문 59쪽",
+     "url": "https://kicj.re.kr/boardDownload.es?bid=0029&list_no=14161&seq=1"
+    },
+    {
+     "title": "한국공인중개사협회, 전세사기 피해예방",
+     "url": "https://www.kar.or.kr/consult_new/menu1.html"
+    },
+    {
+     "title": "이주원, 대한법무사협회 『법무사』 2022년 10월호 38쪽",
+     "url": "https://ebook.kabl.kr/magazine/ebooks/202210/38/"
     }
    ],
    "caveat": "",
@@ -1367,8 +1443,8 @@
    "text": "사용자 가설은 \"매매가와 전세가가 너무 차이 나도 위험하지 않을까\"이다. 이 가설을 다섯 방향으로 나눠 근거를 정리했다. 각 줄의 근거는 링크된 노트에 있다.\n- 수도권 보증계약 453,122건 연구의 사고 건수를 구간별 계약 수로 나눈 값이다(의장 계산). 부채비율은 (선순위채권 + 보증금) ÷ 주택가격이다 (jeonse-debt-band-denominator-audit).\n| 부채비율 | 사고 건수 / 계약 수 | 비율 |\n|---|---|---|\n| 60% 미만 | 232 / 104,733 | 0.22% |\n| 60~70% | 257 / 63,385 | 0.41% |\n| 70~80% | 639 / 81,857 | 0.78% |\n| 80~90% | 1,799 / 91,449 | 1.97% |\n| 90% 이상 | 19,674 / 111,698 | 17.6% |",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "안선영·이상엽, 연구 범위·표 6·회귀분석 원문",
+     "url": "https://www.e-hfr.org/archive/view_article?pid=hfr-9-2-47"
     }
    ],
    "caveat": "",
@@ -1383,8 +1459,20 @@
    "text": "- 같은 연구에서 주택 유형별로 보면 다세대 13.4%, 연립 8.4%, 오피스텔 6.5%, 아파트 1.1%, 단독·다가구 0.4%다. 이 표는 부채비율 구간과 따로 집계됐다.\n- 한계:\n- 표본이 보증에 가입한 계약뿐이다.\n- 만기가 오지 않은 계약은 빠졌다.\n- 상관관계이지 인과관계가 아니다.\n- 지역 단위 연구에서는 유형·모형에 따라 유의성이 달랐다 (jeonse-ratio-accident-panel-evidence).\n- 80%·90%는 개별 매물의 사고 확률 기준선이 아니다. 90%는 HUG 심사 기준이다 (jeonse-regional-ratio-threshold-boundaries).\n- 분모(매매가)를 높게 잡으면 전세가율이 낮아 보인다.\n- 2022-07~2023-07 특별단속에서 시세를 고의로 높게 감정한 혐의로 감정평가사 22명이 검거됐다.\n- HUG는 2023년에 감정가 인정 방식을 바꿨다 (jeonse-inflated-price-denominator-history).",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "김성민·우명제, 논문 원문과 분석표",
+     "url": "https://www.ejhuf.org/archive/view_article?pid=jhuf-11-1-45"
+    },
+    {
+     "title": "경상남도 공공포털의 부동산테크 지표·사고율 안내",
+     "url": "https://gis.gyeongnam.go.kr/srp/preventRateSearch.do"
+    },
+    {
+     "title": "서울 연립·다세대 보증요건 변화 연구 원문",
+     "url": "https://www.kpaj.or.kr/_PR/view/?aidx=45636&bidx=4132"
+    },
+    {
+     "title": "HUG 전세보증 심사기준 변경 안내",
+     "url": "https://www.khug.or.kr/khmb/m/cc/nn/ccnn000002.jsp?idx=31499&tabIdx=1"
     }
    ],
    "caveat": "",
@@ -1399,8 +1487,20 @@
    "text": "- 즉 \"차이가 크니 안전하다\"는 착시가 생길 수 있다. 신축 빌라처럼 비교할 실거래가 없을 때 특히 그렇다.\n- 차이가 커도 그 차액이 모두 내 보증금의 여유는 아니다. 선순위 근저당과 다른 세입자 보증금이 먼저 빠진다 (jeonse-gap-indicator-blind-spots).\n- 비싼 전세: 비교는 할 수 있다. 하지만 \"몇 % 비싸면 사기\"라는 공개 기준은 확인되지 않았다 (jeonse-local-high-rent-screening-boundaries).\n- 싼 전세: 미끼 광고로 쓰인 사례는 확인됐다.\n- 2023-06 발표, 신축 빌라 광고 5,966건을 낸 관련자 48명을 수사의뢰했다.\n- 다만 싼 전세 자체의 미반환 위험이 높다는 통계는 없다 (jeonse-cheap-listing-bait-evidence).\n- 위험 신호는 '싸다'가 아니라 '광고와 실제 매물·조건이 다르다'이다.",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "한국부동산원 전국주택가격동향조사 조사방법·용어해설",
+     "url": "https://www.reb.or.kr/reb/cm/cntnts/cntntsView.do?cntntsId=1033&mi=10333&statId=S234820263"
+    },
+    {
+     "title": "국회입법조사처의 보증 인정가격 변경 분석",
+     "url": "https://www.nars.go.kr/news/view.do?brdSeq=44946&cmsCode=CM0026"
+    },
+    {
+     "title": "HUG 보증한도와 선순위채권 안내",
+     "url": "https://m.khug.or.kr/hug/web/ig/dr/igdr000001.jsp?tabMenu=Y"
+    },
+    {
+     "title": "정부업무평가 공개 자료의 이상거래 선별 고도화 계획",
+     "url": "https://www.evaluation.go.kr/upload2/atch/eval/20250508092732377.pdf"
     }
    ],
    "caveat": "",
@@ -1415,24 +1515,16 @@
    "text": "- 한국은행 추정(2023-04, 신고 자료 기준)으로 남아 있는 순수 전세계약 중 역전세 위험이 52.4%(102.6만호), 깡통전세 위험이 8.3%(16.3만호)였다.\n- 이 수치는 실제 미반환율이 아니다 (jeonse-reverse-rent-bok-estimation).\n- 반환은 임대인의 현금, 다음 세입자의 보증금, 매각 대금에 달려 있다. 그래서 가격만으로는 반환 여부를 확정할 수 없다 (jeonse-return-funding-and-refinancing-dependency).\n| 가격 모양 | 위험과의 관계 | FitHome이 데이터로 잡을 수 있나 |\n| 빚 비율 높음 (90%↑) | 강한 상관 | 근저당·선순위를 사용자가 입력해야 정확함 |\n| 매매가 부풀림 (비율이 낮아 보임) | 수사로 확인된 수법 | 같은 평형 실거래와 비교 가능. 신축·실거래 없음이면 불가 |\n| 동네보다 비싼 전세 | 비교만 가능, 공식 기준 없음 | 구·평형 중앙값 비교 (지금 높은 쪽만) |",
    "sources": [
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
-    }
-   ],
-   "caveat": "",
-   "date": "2026-11-08",
-   "confidence": "high"
-  },
-  {
-   "id": "jeonse-price-gap-risk-map#5",
-   "slug": "jeonse-price-gap-risk-map",
-   "title": "매매가·전세가 괴리와 전세 위험: 무엇이 근거 있고 무엇이 아닌가",
-   "summary": "빚 비율이 90%를 넘는 구간에서 사고가 크게 몰리지만, 매매가가 부풀려지면 비율이 낮아 보이고, 차이가 크다는 사실만으로는 안전도 위험도 증명되지 않는다",
-   "text": "| 동네보다 싼 전세 | 미끼 광고 사례 | 가격 비교는 가능, 매물이 실제로 있는지는 불가 |\n| 하락 추세 (역전세) | 반환 부담 증가 | 실거래 추이로 가능 (지금 방향은 안 봄) |\n코드가 지금 어디까지 잡는지는 price-signal-code-coverage-ratio-sale-district에 있다.",
-   "sources": [
+     "title": "한국은행 2023년 5월 경제전망보고서, 국내경제 BOX 3·각주 56~61",
+     "url": "https://www.bok.or.kr/portal/bbs/P0002359/view.do?menuNo=200443&nttId=10077626"
+    },
     {
-     "title": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md",
-     "url": "orchestra/runs/2026-11-08-jeonse-price-gap-causes/decision.md"
+     "title": "윤성진·이슬, 보증금 반환 지연 및 미반환 구조 연구, 본문 21쪽·주석",
+     "url": "https://www.krihs.re.kr/boardDownload.es?bid=0008&list_no=386964&seq=3"
+    },
+    {
+     "title": "한국형사·법무정책연구원, 전세사기의 예방 및 피해회복 방안, 본문 59쪽",
+     "url": "https://kicj.re.kr/boardDownload.es?bid=0029&list_no=14161&seq=1"
     }
    ],
    "caveat": "",

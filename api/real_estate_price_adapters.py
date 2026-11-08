@@ -262,6 +262,29 @@ def record_dong_conflicts(apartment: dict[str, Any], record: dict[str, Any]) -> 
     return record_dong not in str(apartment.get("address") or "")
 
 
+def record_road_conflicts(apartment: dict[str, Any], record: dict[str, Any]) -> bool:
+    """단지 주소와 레코드가 같은 도로명인데 건물번호(본번·부번)가 다르면 다른 단지다.
+
+    이름이 같아도(동일로 10의 "OO아파트" ↔ 동일로 999의 "OO아파트") 주소가 명시적으로 어긋나면 거부한다.
+    단지 주소에서 도로명 바로 뒤 번호만 읽는다("동일로1길 23"의 1은 도로명 일부라 건물번호가 아니다).
+    """
+    road_name = str(record.get("roadName") or "").strip()
+    try:
+        record_main = int(str(record.get("roadMainNo") or "0"))
+        record_sub = int(str(record.get("roadSubNo") or "0"))
+    except ValueError:
+        return False
+    if not road_name or not record_main:
+        return False
+    match = re.search(
+        rf"(?<![0-9가-힣]){re.escape(road_name)}\s*(\d+)(?:-(\d+))?(?![\d길가])",
+        str(apartment.get("address") or ""),
+    )
+    if not match:
+        return False
+    return (int(match.group(1)), int(match.group(2) or 0)) != (record_main, record_sub)
+
+
 def series_number(name: str) -> int:
     """단지명 끝의 N차를 읽는다. 차수 표기가 없으면 1차로 본다."""
     match = re.search(r"(\d+)차", normalize_name(name))
@@ -277,6 +300,19 @@ def apartment_record_matches(apartment: dict[str, Any], record: dict[str, Any]) 
     if record_dong_conflicts(apartment, record):
         return False
     if series_number(apartment.get("name", "")) != series_number(record_name):
+        return False
+    if record_road_conflicts(apartment, record):
+        return False
+    # 단지 지번을 알고 있으면 지번이 다른 기록도 다른 단지다(재점검 Astra-08). 지금 스냅샷엔 지번이 없지만 들어오면 바로 쓴다.
+    # 지번 필드가 없어도 주소가 지번 주소("성수동1가 656-234")면 그 번호를 쓴다(재점검 Astra-08).
+    lot_text = str(apartment.get("jibun") or "")
+    if not lot_text:
+        # 지번 뒤에 "(한빛아파트)" 같은 괄호 설명이 붙어도 읽는다(최종 재점검 Astra-08).
+        lot_match = re.search(r"(?:동|가|리)\s*(\d+(?:-\d+)?)\s*(?:\([^)]*\))?\s*$", str(apartment.get("address") or ""))
+        lot_text = lot_match.group(1) if lot_match else ""
+    apartment_jibun = extract_address_numbers(lot_text)
+    record_jibun = extract_address_numbers(str(record.get("jibun") or ""))
+    if apartment_jibun[0] and record_jibun[0] and not same_number_pair(apartment_jibun, record_jibun):
         return False
 
     if apt_name_matches(apartment, record_name):
@@ -307,6 +343,7 @@ def parse_trade_item(item: ET.Element) -> dict[str, Any]:
         "dealYear": text_of(item, "dealYear", "년"),
         "dealMonth": text_of(item, "dealMonth", "월"),
         "dealDay": text_of(item, "dealDay", "일"),
+        **cancel_fields(item),
         **lot_fields(item),
         "sourceMode": "molit_trade_api",
     }
@@ -328,9 +365,18 @@ def parse_rent_item(item: ET.Element) -> dict[str, Any]:
         "dealYear": text_of(item, "dealYear", "년"),
         "dealMonth": text_of(item, "dealMonth", "월"),
         "dealDay": text_of(item, "dealDay", "일"),
+        **cancel_fields(item),
         **lot_fields(item),
         "sourceMode": "molit_rent_api",
     }
+
+
+def cancel_fields(item: ET.Element) -> dict[str, Any]:
+    """해제(취소) 거래 표시. 국토부는 해제된 거래도 cdealType="O"·cdealDay(해제사유 발생일)를 달아 그대로 내려준다.
+    해제 거래는 실제로 성사되지 않았으므로 가격·중앙값·추이 계산에서 뺀다(month_items에서 거른다)."""
+    cancel_type = text_of(item, "cdealType", "해제여부").upper()
+    cancel_day = text_of(item, "cdealDay", "해제사유발생일")
+    return {"cancelled": cancel_type in {"O", "Y"} or bool(cancel_day), "cancelDay": cancel_day}
 
 
 def lot_fields(item: ET.Element) -> dict[str, str]:
@@ -347,39 +393,85 @@ def lot_fields(item: ET.Element) -> dict[str, str]:
 # 한 구(LAWD)의 한 달치 거래는 단지마다 다시 받을 이유가 없다. 상세 화면 한 번에 24번(12개월 × 매매·전월세)
 # 호출하던 것을, 같은 구 안에서는 처음 한 번만 받는다. 실거래 신고는 한 달 단위로 쌓이므로 6시간이면 충분히 새롭다.
 MONTH_CACHE_SECONDS = 6 * 3600
-_MONTH_CACHE: dict[tuple[str, str, str], tuple[float, list[dict[str, Any]]]] = {}
+# 실패·불완전(페이지 일부 실패, 페이지 상한 도달) 결과는 짧게만 캐시한다. 같은 달을 몇 초 사이에 다시
+# 두드리지 않게 하되, 일시 장애가 6시간 동안 "거래 없음"으로 굳지 않게 한다.
+MONTH_FAILURE_CACHE_SECONDS = 5 * 60
+MOLIT_PAGE_SIZE = 1000
+MOLIT_MAX_PAGES = 10
+# 키 → (저장 시각, TTL, 거래, 오류, 불완전 여부)
+_MONTH_CACHE: dict[tuple[str, str, str], tuple[float, float, list[dict[str, Any]], str, bool]] = {}
+_MONTH_INFLIGHT: dict[tuple[str, str, str], threading.Event] = {}
 _MONTH_LOCK = threading.Lock()
 
 
-def month_items(endpoint: str, service_key: str, lawd_code: str, deal_ym: str, parser) -> tuple[list[dict[str, Any]], str]:
-    """한 구·한 달의 전체 거래(매칭 전). 성공한 응답만 캐시한다."""
+def _fetch_month_pages(endpoint: str, service_key: str, lawd_code: str, deal_ym: str, parser) -> tuple[list[dict[str, Any]], str, bool]:
+    """totalCount만큼 페이지를 넘겨 받는다. 첫 페이지가 실패하면 오류, 뒤 페이지 실패·상한 도달은 불완전으로 표시."""
+    items: list[dict[str, Any]] = []
+    total = 0
+    for page in range(1, MOLIT_MAX_PAGES + 1):
+        params = {"serviceKey": service_key, "LAWD_CD": lawd_code, "DEAL_YMD": deal_ym,
+                  "pageNo": str(page), "numOfRows": str(MOLIT_PAGE_SIZE)}
+        try:
+            root = request_xml(endpoint, params)
+            error = response_error(root)
+        except Exception as exc:  # noqa: BLE001 - live adapter must not break prototype.
+            error = str(exc)
+        if error:
+            return (items, error, True) if page > 1 else ([], error, False)
+        page_items = root.findall(".//item")
+        try:
+            total = int(text_of(root, ".//totalCount") or 0)
+        except ValueError:
+            total = 0
+        items.extend(parser(item) for item in page_items)
+        if not page_items or len(page_items) < MOLIT_PAGE_SIZE or (total and page * MOLIT_PAGE_SIZE >= total):
+            return items, "", False
+    return items, "", True  # 상한까지 받고도 남았다
+
+
+def month_items(endpoint: str, service_key: str, lawd_code: str, deal_ym: str, parser) -> tuple[list[dict[str, Any]], str, bool]:
+    """한 구·한 달의 전체 거래(매칭 전, 해제 거래 제외). (거래, 오류, 불완전 여부)를 돌려준다.
+
+    완전한 성공은 6시간, 실패·불완전은 5분 캐시한다. 같은 키를 동시에 요청하면 한 스레드만 API를 부르고
+    나머지는 그 결과를 기다려 함께 쓴다.
+    """
     key = (endpoint, lawd_code, deal_ym)
-    with _MONTH_LOCK:
-        hit = _MONTH_CACHE.get(key)
-    if hit and time.time() - hit[0] < MONTH_CACHE_SECONDS:
-        return hit[1], ""
-    params = {"serviceKey": service_key, "LAWD_CD": lawd_code, "DEAL_YMD": deal_ym, "pageNo": "1", "numOfRows": "1000"}
+    while True:
+        with _MONTH_LOCK:
+            hit = _MONTH_CACHE.get(key)
+            if hit and time.time() - hit[0] < hit[1]:
+                return hit[2], hit[3], hit[4]
+            waiter = _MONTH_INFLIGHT.get(key)
+            if waiter is None:
+                _MONTH_INFLIGHT[key] = threading.Event()
+                break
+        # 다른 스레드가 같은 달을 받는 중이다. 끝나면 캐시를 다시 본다(그 스레드가 죽었으면 이쪽이 받는다).
+        waiter.wait(timeout=MOLIT_REQUEST_TIMEOUT_SECONDS * (MOLIT_MAX_PAGES + 1))
+
     try:
-        root = request_xml(endpoint, params)
-    except Exception as exc:  # noqa: BLE001 - live adapter must not break prototype.
-        return [], str(exc)
-    error = response_error(root)
-    if error:
-        return [], error
-    items = [parsed for parsed in (parser(item) for item in root.findall(".//item"))
-             if parsed.get("amount10k") or parsed.get("deposit10k")]
-    with _MONTH_LOCK:
-        _MONTH_CACHE[key] = (time.time(), items)
-    return items, ""
+        raw, error, incomplete = _fetch_month_pages(endpoint, service_key, lawd_code, deal_ym, parser)
+        items = [parsed for parsed in raw
+                 if (parsed.get("amount10k") or parsed.get("deposit10k")) and not parsed.get("cancelled")]
+        ttl = MONTH_CACHE_SECONDS if not error and not incomplete else MONTH_FAILURE_CACHE_SECONDS
+        with _MONTH_LOCK:
+            _MONTH_CACHE[key] = (time.time(), ttl, items, error, incomplete)
+        return items, error, incomplete
+    finally:
+        with _MONTH_LOCK:
+            event = _MONTH_INFLIGHT.pop(key, None)
+        if event:
+            event.set()
 
 
-def district_items(endpoint: str, service_key: str, lawd_code: str, parser, months: int = 12) -> list[dict[str, Any]]:
-    """같은 구의 최근 거래 전체(캐시에서). 주변 시세 비교에 쓴다."""
+def district_items(endpoint: str, service_key: str, lawd_code: str, parser, months: int = 12) -> tuple[list[dict[str, Any]], bool]:
+    """같은 구의 최근 거래 전체(캐시에서)와 불완전 여부(실패한 달·잘린 달이 있으면 True). 주변 시세 비교에 쓴다."""
     rows: list[dict[str, Any]] = []
+    incomplete = False
     for deal_ym in recent_deal_months(months):
-        items, _ = month_items(endpoint, service_key, lawd_code, deal_ym, parser)
+        items, error, partial = month_items(endpoint, service_key, lawd_code, deal_ym, parser)
         rows.extend(items)
-    return rows
+        incomplete = incomplete or bool(error) or partial
+    return rows, incomplete
 
 
 def _record_key(record: dict[str, Any]) -> tuple[str, str, str]:
@@ -486,36 +578,36 @@ def fetch_molit_records(
     parser,
     apartment: dict[str, Any],
     months: int = 12,
-) -> tuple[list[dict[str, Any]], str]:
+) -> tuple[list[dict[str, Any]], str, bool]:
+    """(매칭된 기록, 마지막 오류, 불완전 여부). 실패한 달·잘린 달이 하나라도 있으면 불완전이다."""
     records: list[dict[str, Any]] = []
     last_error = ""
+    incomplete = False
     deal_months = recent_deal_months(months)
 
-    def fetch_month(deal_ym: str) -> tuple[str, list[dict[str, Any]], str]:
-        items, error = month_items(endpoint, service_key, lawd_code, deal_ym, parser)
-        if error:
-            return deal_ym, [], error
+    def fetch_month(deal_ym: str) -> tuple[list[dict[str, Any]], str, bool]:
+        items, error, partial = month_items(endpoint, service_key, lawd_code, deal_ym, parser)
         month_records = []
         for parsed in items:
             parsed = dict(parsed)  # 캐시 원본에 matchMethod가 섞이지 않게 복사
             if apartment_record_matches(apartment, parsed):
                 month_records.append(parsed)
-        return deal_ym, month_records, ""
+        return month_records, error, partial
 
     with ThreadPoolExecutor(max_workers=min(MOLIT_FETCH_WORKERS, len(deal_months))) as executor:
         futures = [executor.submit(fetch_month, deal_ym) for deal_ym in deal_months]
         for future in as_completed(futures):
-            _, month_records, error = future.result()
+            month_records, error, partial = future.result()
             if error:
                 last_error = error
-                continue
+            incomplete = incomplete or bool(error) or partial
             records.extend(month_records)
 
     records.sort(
         key=lambda item: (item.get("dealYear", ""), item.get("dealMonth", ""), item.get("dealDay", "")),
         reverse=True,
     )
-    return records, last_error
+    return records, last_error, incomplete
 
 
 def pnu_from_address(address: str) -> tuple[str, str]:
@@ -671,13 +763,13 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
         },
     }
 
-    trade_records, trade_error = (
+    trade_records, trade_error, trade_incomplete = (
         fetch_molit_records(MOLIT_TRADE_ENDPOINT, trade_key, lawd_code, parse_trade_item, apartment)
-        if trade_key and lawd_code else ([], "")
+        if trade_key and lawd_code else ([], "", False)
     )
-    rent_records, rent_error = (
+    rent_records, rent_error, rent_incomplete = (
         fetch_molit_records(MOLIT_RENT_ENDPOINT, rent_key, lawd_code, parse_rent_item, apartment)
-        if rent_key and lawd_code else ([], "")
+        if rent_key and lawd_code else ([], "", False)
     )
     trade_records, rent_records, complex_info = select_complex(apartment, trade_records, rent_records)
     market["complexMatch"] = complex_info
@@ -705,6 +797,8 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
                 "mode": "live_api" if trade_records else "no_matching_record",
                 "recordCount": len(trade_records),
                 "error": trade_error,
+                # 실패한 달·페이지 상한에 걸린 달이 있어 12개월 전체를 다 받지 못했다(건수·중앙값이 덜 모였을 수 있음).
+                "incomplete": trade_incomplete,
                 "note": "단지명/주소 매칭 실거래가를 상세 가격에 반영했습니다." if trade_records else "최근 12개월 내 단지명/주소 매칭 매매 실거래가가 없습니다.",
             }
         )
@@ -724,6 +818,7 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
                 "mode": "live_api" if rent_records else "no_matching_record",
                 "recordCount": len(rent_records),
                 "error": rent_error,
+                "incomplete": rent_incomplete,
                 "note": "단지명/주소 매칭 전월세 실거래가를 상세 가격에 반영했습니다." if rent_records else "최근 12개월 내 단지명/주소 매칭 전월세 실거래가가 없습니다.",
             }
         )
@@ -735,9 +830,10 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
             # 같은 구·비슷한 평형(±10%)의 다른 단지 전세 중앙값. 추정 생활권 평균 대신 실거래로 비교한다.
             ref_area = float(recent.get("exclusiveM2") or 0)
             own = normalize_name(recent.get("name", ""))
+            district_rows, district_incomplete = district_items(MOLIT_RENT_ENDPOINT, rent_key, lawd_code, parse_rent_item)
             peers = [
                 float(r["deposit10k"])
-                for r in district_items(MOLIT_RENT_ENDPOINT, rent_key, lawd_code, parse_rent_item)
+                for r in district_rows
                 if not r.get("monthlyRent10k") and ref_area
                 and abs(float(r.get("exclusiveM2") or 0) - ref_area) <= ref_area * 0.1
                 and normalize_name(r.get("name", "")) != own
@@ -746,6 +842,7 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
                 market["districtJeonseMedian10k"] = round(statistics.median(peers))
                 market["districtJeonseCount"] = len(peers)
                 market["districtJeonseBasis"] = f"같은 구 전용 {ref_area:.0f}㎡ ±10% 전세 실거래 {len(peers)}건 중앙값(최근 12개월)"
+                market["districtJeonseIncomplete"] = district_incomplete
         recent = latest(monthly_records)
         if recent:
             market["monthlyDeposit10k"] = recent["deposit10k"]

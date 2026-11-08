@@ -4411,3 +4411,28 @@ th {
 .leaflet-tooltip {
   font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }
+
+/* 전체 QA Q3 (2026-11-08): 좁은 화면에서 단지 상세가 열리면 지도 모드 버튼·AI 버튼이 상세 탭을 덮어
+   '전세 위험' 탭을 누를 수 없었다. 상세가 열린 동안 지도 모드 버튼은 숨기고 AI 버튼은 아래로 내리며,
+   탭은 줄바꿈 없이 가로로 넘겨 보게 한다. */
+@media (max-width: 860px) {
+  body:has(.workspace.has-subpanel) .map-mode-control,
+  body:has(.workspace.has-subpanel) .sunlight-time-control {
+    display: none;
+  }
+
+  body:has(.workspace.has-subpanel) .agent-launcher {
+    top: auto;
+    bottom: 20px;
+  }
+
+  .subpanel-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .subpanel-tab {
+    flex: 0 0 auto;
+    padding: 0 10px;
+  }
+}

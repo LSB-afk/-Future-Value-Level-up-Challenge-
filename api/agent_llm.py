@@ -69,7 +69,7 @@ SYSTEM_PROMPT = """당신은 국토교통 데이터 기반 주거 매칭 서비�
 
 ## 판단 기준
 - 깡통전세 판정은 실무 기준 80%를 씁니다: (보증금 + 대출)이 집값의 80%를 넘으면 깡통전세로 봅니다. 법정 기준은 아니며, HUG 전세보증 가입 한도는 90%입니다.
-- 대항력은 전입신고 다음날 0시에 생기지만 근저당은 접수 당일 효력이 생깁니다. 이 하루의 공백이 핵심 위험입니다.
+- 대항력은 주택 인도(이사)와 전입신고를 모두 마친 다음 날 0시에 생기지만, 근저당은 등기가 완료되면 접수한 때부터 효력이 생깁니다. 이 하루의 공백이 핵심 위험입니다. 확정일자는 대항력이 아니라 우선변제를 위한 요건입니다.
 - 위험 신호 점검 결과는 법적 판정이 아니라 계약 전 확인 항목을 좁히는 체크리스트입니다.
 
 ## 전세사기 지식 사용 규칙
@@ -104,8 +104,25 @@ REASSURANCE_PHRASES = [
 ]
 
 
+# 어미가 바뀐 변형("안전해요", "깡통이 아니에요", "계약하셔도 돼요")도 잡는다(전체 QA Astra-11).
+REASSURANCE_PATTERNS = [
+    r"안전(합니다|해요|하다고|한 편|한 집|해 보입니다|하게 계약)",
+    r"깡통(전세|주택)?(은|이|가)? ?아(닙니다|니에요|니다)",
+    r"계약(해도|하셔도|하시면) ?(됩니다|돼요|괜찮)",
+    r"문제(없|가 없)",
+    r"걱정 ?(하지 않으셔도|안 하셔도|마세요|없으)",
+    r"안심(하셔도|해도|하세요)",
+]
+
+
 def reassurance_in(answer: str) -> list[str]:
-    return [phrase for phrase in REASSURANCE_PHRASES if phrase in (answer or "")]
+    text = answer or ""
+    found = [phrase for phrase in REASSURANCE_PHRASES if phrase in text]
+    for pattern in REASSURANCE_PATTERNS:
+        match = re.search(pattern, text)
+        if match and not any(match.group(0) in f or f in match.group(0) for f in found):
+            found.append(match.group(0))
+    return found
 
 
 # 2026-11-08 평가에서 qwen2.5:7b가 답 중간부터 중국어로 쓰거나("[参考知识 K1]…"),
@@ -113,6 +130,11 @@ def reassurance_in(answer: str) -> list[str]:
 HAN_RE = re.compile(r"[一-鿿]")
 RAW_TOOL_RE = re.compile(r"\b[a-z]+_[a-z_]+\s*\{\s*\"")
 DISCLAIMER = "\n\n※ FitHome은 안전 여부를 판정하지 않습니다. 등기부·임대인 체납·보증 가입 여부를 직접 확인하세요."
+SAFE_FALLBACK = (
+    "FitHome은 등기부·임대인 체납·보증 가입 여부를 직접 보지 못해 안전 여부를 판정하지 않습니다. "
+    "계약 전에 ① 등기부(갑구 소유자·신탁·압류, 을구 근저당)를 직접 열람하고 ② 임대인에게 납세증명서와 확정일자 부여현황을 요청하고 "
+    "③ 보증보험 가입이 가능한지 확인하세요. 금액을 알려 주시면 집값 대비 빚 비율을 계산해 드릴 수 있습니다."
+)
 FAILED_ANSWER = "답을 제대로 만들지 못했습니다. 질문을 조금 바꿔 다시 물어봐 주세요. 급하면 전세피해 및 예방지원센터 상담을 이용하세요."
 
 
@@ -140,13 +162,64 @@ def rewrite_request(found: list[str]) -> str:
     return "방금 답을 고쳐 다시 써 주세요. " + " ".join(asks) + " 인용 번호 [K번호]는 유지하세요."
 
 
-def finalize_answer(question: str, answer: str, remaining: list[str]) -> str:
+def strip_problem_sentences(answer: str) -> str:
+    """안심 단정이나 한자가 든 문장을 뺀다. 문장은 줄바꿈·마침표·물음표·느낌표로 나눈다."""
+    parts = re.split(r"(?<=[.!?。])\s+|\n+", answer or "")
+    kept = [p for p in parts if p.strip() and not reassurance_in(p) and len(HAN_RE.findall(p)) <= 1]
+    return "\n".join(kept).strip()
+
+
+AMOUNT_PATTERN = r"\d[\d,]*(?:\.\d+)?\s*(?:억|천만|천|백만|만)(?:\s*\d[\d,]*\s*(?:천만|천|백만|만))*\s*원?|\d[\d,]{6,}\s*원"
+
+
+def _amount_after(label: str, text: str) -> str:
+    match = re.search(rf"{label}[^0-9]{{0,10}}({AMOUNT_PATTERN})", text)
+    return match.group(1) if match else ""
+
+
+def auto_facts(question: str, context: str, facts: dict, trace: list | None = None) -> None:
+    """금액이 든 질문인데 모델이 계산 도구를 안 불렀으면 서버가 직접 계산해 facts에 넣는다.
+
+    2026-11-08 평가에서 qwen2.5:7b가 '서울 소액임차인 상한 7,500만원'처럼 근거를 잘못 읽고 도구를 부르지 않았다(S17).
+    계산 결과는 답 끝 '[FitHome 계산 결과]'로 붙는다. 모델 문장이 틀려도 사용자는 맞는 숫자를 본다."""
+    text = question or ""
+    deposit = _amount_after("보증금", text) or (re.search(AMOUNT_PATTERN, text).group(0) if re.search(AMOUNT_PATTERN, text) else "")
+    if not deposit or parse_money_10k(deposit) is None:
+        return
+    apartment = re.search(r"id:\s*([A-Za-z0-9_-]+)", context or "")
+    apartment_id = apartment.group(1) if apartment else ""
+    mortgage = _amount_after("근저당", text)
+    try:
+        calls = []
+        if re.search(r"소액임차|최우선변제", text) and "deposit_priority" not in facts:
+            calls.append(("deposit_priority", {"deposit": deposit, "region": "서울" if "서울" in text else "",
+                                               "apartment_id": apartment_id,
+                                               "mortgage_max": mortgage or ("없음" if "근저당 없" in text else "")}))
+        if re.search(r"근저당|깡통|빚|LTV", text) and apartment_id and "jeonse_verdict_check" not in facts:
+            calls.append(("jeonse_verdict_check", {"deposit": deposit, "mortgage_max": mortgage, "apartment_id": apartment_id}))
+        for name, payload in calls:
+            data = json.loads(_run_tool(name, payload))
+            if "error" not in data:
+                facts[name] = data
+                # 서버가 대신 부른 계산도 '조회한 데이터'에 남긴다(사용자·평가가 근거를 볼 수 있게).
+                if trace is not None:
+                    trace.append({"name": name, "input": payload, "auto": True})
+    except Exception:  # noqa: BLE001 - 보조 계산이 실패해도 답은 나가야 한다.
+        return
+
+
+def finalize_answer(question: str, answer: str, remaining: list[str], facts: dict | None = None) -> str:
     """다시 쓰게 한 뒤에도 문제가 남았을 때의 마지막 처리. 숨기지 않고 고지를 붙이거나, 못 쓸 답이면 바꾼다."""
     if "도구 호출 문자열" in remaining or not (answer or "").strip():
         answer = FAILED_ANSWER
-    elif any(p in REASSURANCE_PHRASES for p in remaining):
+    elif any(p not in {"외국어(한자) 문장"} for p in remaining):
+        # 다시 쓰게 해도 안심 단정이 남으면 그 문장(과 한자 문장)을 빼고 나머지만 내보낸다. 고지만 붙이면 단정이 남고(Astra-11),
+        # 답 전체를 고정 안내로 바꾸면 '재열람' 같은 질문별 핵심 안내까지 사라진다(2026-11-08 시나리오 S4·S8).
+        kept = strip_problem_sentences(answer)
+        answer = (kept + DISCLAIMER) if len(kept) >= 40 else SAFE_FALLBACK
+    elif remaining:
         answer += DISCLAIMER
-    return finish_answer(question, answer)
+    return finish_answer(question, answer) + facts_block(facts or {})
 
 
 # 사람(전세피해 및 예방지원센터)에게 넘겨야 하는 상황의 신호. 질문에 이런 말이 있는데 답에 상담 안내가 없으면
@@ -161,7 +234,8 @@ HANDOFF_WORDS = ["센터", "상담", "변호사", "법률", "전문가", "법무
 HANDOFF_NOTE = (
     "\n\n혼자 판단하기 어려운 상황이면 계약금을 보내기 전에 전세피해 및 예방지원센터 상담을 받아 보세요. "
     "계약 예정자도 등기부 권리관계 분석과 계약서 문구 검토를 상담받을 수 있습니다. "
-    "(예약: https://www.khug.or.kr/jeonse/web/s04/s040604.jsp)"
+    "(서울센터는 온라인 예약 https://www.khug.or.kr/jeonse/web/s04/s040604.jsp , 그 밖의 센터는 전화 예약: "
+    "https://www.khug.or.kr/jeonse/web/s04/s040005.jsp)"
 )
 
 
@@ -390,9 +464,17 @@ def parse_money_10k(value) -> float | None:
     if isinstance(value, (int, float)):
         return float(value) if math.isfinite(value) and value >= 0 else None
     text = str(value).replace(",", "").replace(" ", "")
+    # "60,000,000원"처럼 단위 글자 없이 '원'으로 끝나면 원 단위다. 만원으로 읽으면 1만 배가 된다(전체 QA Astra-06).
+    won = re.fullmatch(r"(\d+(?:\.\d+)?)원", text)
+    if won:
+        return float(won.group(1)) / 10000
     text = re.sub(r"원$", "", text)
     if not text or re.search(r"[~\-–]", text):
         return None
+    # 단위 없는 큰 숫자(1천만 이상)는 만원 단위로 보면 1,000억이 넘으므로 원 단위로 쓴 것으로 본다.
+    # 정수든 소수든 같은 규칙을 쓴다. "10000000"과 "10000000.0"이 1만 배 다르게 읽혔다(재점검 Astra N1).
+    if re.fullmatch(r"\d{8,}(\.\d+)?", text):
+        return float(text) / 10000
     if re.fullmatch(r"\d+(\.\d+)?만?", text):
         return float(text.rstrip("만"))
     units = {"억": 10000, "천만": 1000, "백만": 100, "십만": 10, "만": 1, "천": 1000, "백": 100, "십": 10}
@@ -488,7 +570,7 @@ def tool_jeonse_verdict_check(
             "ifPriceDrops": f"집값(매매가)이 {ltv['stressDropPct']}% 내리면 {ltv['stressRatioPct']}%" + (" 이상" if ltv["isLowerBound"] else "") + " (가정 계산, 판정 기준 아님)",
             "formula": f"(근저당 {money(ltv['mortgage10k'])} + 선순위 보증금 {money(ltv['prior10k'])} + 내 보증금 {money(ltv['deposit10k'])}) ÷ 집값 {money(ltv['price10k'])}",
             "priceBasis": f"{ltv['priceLabel']} ({ltv['priceSourceLabel']})",
-            "lines": "70% 주의 시작(실무 권고) · 80% 깡통전세 실무 경계(법정 기준 아님) · 90% HUG 보증 한도",
+            "lines": "70% 주의 시작(FitHome 자체 기준) · 80% 깡통전세 실무 경계(법정 기준 아님) · 90% HUG 보증 한도(HUG 인정가격 기준)",
             "reasons": [f"{c['label']}: {c['value']} ({c['result']})" for c in result["reasons"]],
             "nextChecks": [q["title"] for q in result["requests"]],
             "notice": result["notice"] + " 집값이 추정이면 '안심' 등급을 주지 않습니다.",
@@ -532,12 +614,19 @@ def tool_deposit_priority(
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
     region_key = {"서울": "seoul", "seoul": "seoul", "과밀억제권역": "overcrowded", "광역시": "metro", "그 밖": "other", "기타": "other"}.get(
         str(region or "").strip(), None) or region_from_address(address)
-    mortgage = parse_money_10k(mortgage_max)
-    mortgages = [{"amount10k": mortgage, "registered": mortgage_date}] if mortgage else []
+    mortgage_text = str(mortgage_max or "").strip()
+    mortgage = parse_money_10k(mortgage_text)
+    if mortgage_text in {"없음", "0", "없어요", "none", "no"} or mortgage == 0:
+        mortgages, status = [], "none"
+    elif mortgage:
+        mortgages, status = [{"amount10k": mortgage, "registered": mortgage_date}], "known"
+    else:
+        # 비었거나 "모름"이면 '없음'이 아니라 '모름'이다(전체 QA Astra-05).
+        mortgages, status = [], "unknown"
     prior = parse_money_10k(prior_deposits)
     try:
         result = repayment_priority(deposit_10k, price_10k, region_key, move_in_date or None, fixed_date or None,
-                                    mortgages, prior, str(tax_arrears or "unknown"))
+                                    mortgages, prior, str(tax_arrears or "unknown"), mortgage_status=status)
     except ValueError as exc:
         return json.dumps({"error": str(exc)}, ensure_ascii=False)
     result["housePriceBasis"] = price_note
@@ -624,7 +713,7 @@ TOOL_SCHEMAS = [
                 "region": {"type": "string", "enum": ["서울", "과밀억제권역", "광역시", "그 밖"], "description": "주택 소재 지역 구분"},
                 "move_in_date": {"type": "string", "description": "전입(이사+전입신고) 날짜 YYYY-MM-DD"},
                 "fixed_date": {"type": "string", "description": "확정일자 받은 날 YYYY-MM-DD"},
-                "mortgage_max": {"type": "string", "description": "근저당 채권최고액"},
+                "mortgage_max": {"type": "string", "description": "근저당 채권최고액. 등기부에 없으면 '없음', 모르면 비워 두세요"},
                 "mortgage_date": {"type": "string", "description": "근저당 등기일 YYYY-MM-DD"},
                 "prior_deposits": {"type": "string", "description": "내 앞 세입자 보증금 합계(다가구)"},
                 "tax_arrears": {"type": "string", "description": "임대인 체납 yes/no/unknown"},
@@ -731,14 +820,43 @@ REPEAT_TOOL_ERROR = (
 )
 
 
-def run_tool_once(name: str, payload: dict, seen: set) -> str:
+FACT_TOOLS = {"jeonse_verdict_check", "deposit_priority"}
+
+
+def facts_block(facts: dict) -> str:
+    """계산 도구 결과를 답 끝에 그대로 붙인다. 작은 모델이 '15.8%인데 70%에 가깝다'처럼 결과를 거꾸로 읽어도
+    사용자가 정확한 숫자를 볼 수 있게 한다(전체 QA Q2)."""
+    lines = []
+    verdict = facts.get("jeonse_verdict_check") or {}
+    if verdict.get("grade"):
+        lines.append(f"- 판정: {verdict['grade']} · 집값 대비 빚 {verdict.get('debtRatio')} · {verdict.get('ifPriceDrops', '')}".rstrip(" ·"))
+        if verdict.get("formula"):
+            lines.append(f"- 계산식: {verdict['formula']} ({verdict.get('priceBasis', '')})")
+    priority = facts.get("deposit_priority") or {}
+    if priority.get("minSalePriceLabel"):
+        small = (priority.get("smallTenant") or {}).get("note")
+        lines.append(f"- 반환 순위: {priority['minSalePriceLabel']}")
+        if small:
+            lines.append(f"- 소액임차인: {small}")
+    return ("\n\n[FitHome 계산 결과 — 위 설명과 다르면 이 값이 맞습니다]\n" + "\n".join(lines)) if lines else ""
+
+
+def run_tool_once(name: str, payload: dict, seen: set, facts: dict | None = None) -> str:
     """같은 (도구, 인자) 반복 호출을 막는다. 2026-11-08 평가에서 qwen2.5:7b가 보증금 없이
     jeonse_verdict_check를 7번 연달아 불러 턴 상한에 걸렸다(S2)."""
     key = (name, json.dumps(payload, ensure_ascii=False, sort_keys=True))
     if key in seen:
         return json.dumps({"error": REPEAT_TOOL_ERROR}, ensure_ascii=False)
     seen.add(key)
-    return _run_tool(name, payload)
+    output = _run_tool(name, payload)
+    if facts is not None and name in FACT_TOOLS:
+        try:
+            data = json.loads(output)
+        except json.JSONDecodeError:
+            data = {}
+        if isinstance(data, dict) and "error" not in data:
+            facts[name] = data
+    return output
 
 
 def _web_search_count(usage) -> int:
@@ -784,6 +902,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
 
     tool_trace: list[dict] = []
     seen_calls: set = set()
+    facts: dict = {}
     sources: list[dict] = []
     web_searches = 0
     rewrote: list[str] | bool = False
@@ -822,7 +941,8 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
             return {
                 "guard": {"rewroteFor": rewrote or [], "remaining": found, "handoffAdded": needs_handoff(last_user_text(messages), text)},
                 "ok": True,
-                "answer": finalize_answer(last_user_text(messages), text, found),
+                "answer": (auto_facts(last_user_text(messages), context, facts, tool_trace)
+                           or finalize_answer(last_user_text(messages), text, found, facts)),
                 "toolTrace": tool_trace,
                 "sources": cited_sources(text, hits) + sources,
                 "model": response.model,
@@ -835,7 +955,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
 
         results = []
         for block in tool_uses:
-            output = run_tool_once(block.name, dict(block.input), seen_calls)
+            output = run_tool_once(block.name, dict(block.input), seen_calls, facts)
             tool_trace.append({"name": block.name, "input": dict(block.input)})
             results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
         # 웹 검색과 우리 도구가 같은 턴에 병렬로 불리면 stop_reason이 tool_use로 오고 검색은
@@ -881,7 +1001,9 @@ if __name__ == "__main__":
                           "2억 7,248만원": 27248, "500만": 500, "": None, "모름": None,
                           "2억5000": 25000, "1억 2천 3백 4십만": 12340, "3억원": 30000, "5000만원": 5000,
                           "1.5억": 15000, "3억5": None, "3억~4억": None, "-1억": None, "약 3억": None,
-                          float("nan"): None, -5: None, True: None}.items():
+                          float("nan"): None, -5: None, True: None,
+                          "60,000,000원": 6000, "60000000": 6000, "5만원": 5,
+                          "10000000": 1000, "10000000.0": 1000}.items():
         assert parse_money_10k(raw) == expected, (raw, parse_money_10k(raw))
     # 사용자 금액으로 판정: 집값 10억에 보증금 3억 + 근저당 6억 = 90% → 주의(90% 초과부터 위험)
     verdict = json.loads(tool_jeonse_verdict_check("3억", mortgage_max="6억", house_price="10억"))
@@ -896,6 +1018,29 @@ if __name__ == "__main__":
                                                 mortgage_date="2024-05-01", move_in_date="2026-03-02", fixed_date="2026-03-02"))
     assert priority["smallTenant"]["eligible"] is True and priority["minSalePriceForFullReturn10k"] == 18000, priority
     assert json.loads(tool_deposit_priority("3억", apartment_id=apartment_id))["smallTenant"]["eligible"] is False
+    # 전체 QA: 안심 단정 변형, 근저당 '모름'≠'없음', 계산 결과 고정 블록
+    for text in ["이 집은 안전해요.", "깡통이 아니에요", "계약하셔도 돼요", "걱정 마세요"]:
+        assert reassurance_in(text), text
+    assert not reassurance_in("안전 여부는 판정하지 않습니다. 등기부를 확인하세요.")
+    unknown = json.loads(tool_deposit_priority("6천만", house_price="3억", region="서울", mortgage_max="모름"))
+    assert unknown["smallTenant"]["eligible"] is None and unknown["minSalePriceIsLowerBound"], unknown["smallTenant"]
+    none = json.loads(tool_deposit_priority("6천만", house_price="3억", region="서울", mortgage_max="없음"))
+    assert none["smallTenant"]["eligible"] is True, none["smallTenant"]
+    facts: dict = {}
+    run_tool_once("jeonse_verdict_check", {"deposit": "5억", "mortgage_max": "3억", "house_price": "50억"}, set(), facts)
+    block = facts_block(facts)
+    assert "16.0%" in block and "계산 결과" in block, block
+    assert finalize_answer("깡통이야?", "이 집은 안전해요.", ["안전해요"]).startswith("FitHome은 등기부")
+    kept = finalize_answer("q", "이 집은 안전해요. 6개월 전 등기부라 잔금 직전에 다시 열람해 근저당이 새로 잡혔는지 확인하세요.", ["안전해요"])
+    assert "안전해요" not in kept and "다시 열람" in kept and "판정하지 않습니다" in kept, kept
+    assert finalize_answer("q", "안전합니다. 契約安全確認事項", ["안전합니다", "외국어(한자) 문장"]).startswith("FitHome은 등기부")
+    # 금액 질문인데 도구를 안 불렀어도 서버가 계산해 붙인다
+    auto: dict = {}
+    auto_facts("서울에서 보증금 6천만 원인데 소액임차인 최우선변제 받을 수 있어?", "", auto)
+    assert "1억 6,500만원" in auto["deposit_priority"]["smallTenant"]["note"], auto
+    auto = {}
+    auto_facts("보증금 5억에 근저당 3억이면 깡통이야?", f"현재 단지 (id: {apartment_id})", auto)
+    assert auto.get("jeonse_verdict_check", {}).get("formula", "").startswith("(근저당 3억원"), auto
     knowledge = json.loads(tool_search_jeonse_knowledge("신탁등기 수탁자 동의"))
     assert knowledge["results"] and knowledge["results"][0]["sources"], knowledge
 

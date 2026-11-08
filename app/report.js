@@ -214,9 +214,8 @@
       if (overlay()?.hidden || !st.base) return;
       try {
         if (await loadFeedback()) {
-          await evaluate();
-          render();
-          toast("새 제보가 반영됐어요");
+          // 자동 갱신도 실패하면 이전 판정을 지우는 같은 경로를 쓴다(재점검 Astra-12).
+          if (await rerender()) toast("새 제보가 반영됐어요");
         }
       } catch {
         /* 다음 주기에 다시 시도 */
@@ -261,12 +260,21 @@
       x > 0 ? `<div class="${cls}" style="width:${(pct(x) / scale) * 100}%" title="${esc(label)} ${esc(money(x))}">${pct(x) / scale > 0.1 ? esc(label) : ""}</div>` : "";
     const h80 = l.headroom10k["80"];
     const h90 = l.headroom10k["90"];
+    // 근저당·선순위 보증금을 모르면(하한) 남은 여유를 확정처럼 말하지 않는다(전체 QA Astra-04).
     const headroom =
-      h80 > 0
-        ? ["safe", `근저당이 <b>${esc(money(h80))}</b> 더 잡혀도 80% 아래예요. HUG 보증 한도(90%)까지 ${esc(money(h90))} 남았어요.`]
-        : h90 > 0
-          ? ["caution", `이미 깡통전세 경계(80%)를 넘었어요. HUG 보증 한도(90%)까지 ${esc(money(h90))}만 남았어요.`]
-          : ["danger", `HUG 보증 한도(90%)를 <b>${esc(money(-h90))}</b> 넘었어요. 전세보증보험 가입이 안 되는 수준이에요.`];
+      h80 > 0 && l.isLowerBound
+        ? ["caution", `입력한 값만으로는 80%까지 ${esc(money(h80))} 남아요. 근저당·선순위 보증금을 아직 모르는 계산이라 실제 여유는 이보다 적을 수 있어요.`]
+        : h80 > 0
+        ? ["safe", `근저당이 <b>${esc(money(h80))}</b> 더 잡혀도 80% 아래예요. 입력한 집값의 90%까지는 ${esc(money(h90))} 남았어요.`]
+        : h90 >= 0
+          ? ["caution", h90 > 0 ? `이미 깡통전세 경계(80%)를 넘었어요. 입력한 집값의 90%까지 ${esc(money(h90))}만 남았어요.` : `이미 깡통전세 경계(80%)를 넘었고 입력한 집값의 90%에 딱 닿았어요.`]
+          : ["danger", `입력한 집값의 90%를 <b>${esc(money(-h90))}</b> 넘었어요. 전세보증보험 가입이 어려울 수 있는 수준이에요.`];
+    // HUG 한도는 HUG가 인정한 주택가격 기준이라 입력한 집값과 다를 수 있다(재점검 Sol V06).
+    headroom[1] += " HUG 보증 한도는 HUG가 인정한 주택가격 × 90%에서 선순위채권을 뺀 금액이라 이 계산과 다를 수 있어요.";
+    // 근저당·선순위를 모르는 하한 계산이면 어느 단계든 남은 금액이 실제보다 많게 보일 수 있다(재점검 Astra-04).
+    if (l.isLowerBound && headroom[0] !== "danger" && !(h80 > 0)) {
+      headroom[1] += " 근저당·선순위 보증금을 모르는 계산이라 실제 남은 금액은 이보다 적을 수 있어요.";
+    }
     return `
       <section class="fh-card">
         <div class="fh-card-head">
@@ -362,6 +370,8 @@
 
   function renderRegistryTab() {
     const e = store.get(`${st.base.key}.edits`, {});
+    const o = store.get(`${st.base.key}.overrides`, {});
+    const shown = (field, editField) => shownValue(e, o, field, editField) || "unknown";
     const priceBasis = e.priceBasis || "estimate";
     const field = (label, control, hint = "") => `<label class="fh-field"><span>${label}</span>${control}${hint ? `<small>${hint}</small>` : ""}</label>`;
     const numInput = (name, value, placeholder) =>
@@ -374,7 +384,7 @@
           <div class="fh-field"><span>집값 기준</span>${seg("priceBasis", [["estimate", "추정 시세"], ["market", "직접 입력"], ["official", "공시가격×140%"]], priceBasis)}</div>
           ${priceBasis === "market" ? field("시세·감정가 (만원)", numInput("priceValue10k", e.priceValue10k, "")) : ""}
           ${field("공시가격 (만원)", numInput("official10k", e.official10k, `현재 ${st.base.price.official10k ?? ""} (추정)`), "부동산공시가격알리미에서 확인")}
-          ${field("등기부 열람일", `<input type="date" name="issuedAt" value="${esc(e.issuedAt || "")}">`)}
+          ${field("등기부 열람일", `<input type="date" name="issuedAt" value="${esc(normValue(e.issuedAt) || normValue(o.registryIssuedAt))}">`)}
           ${field(
             "근저당 채권최고액 합계 (만원)",
             `${numInput("mortgageMax10k", e.mortgageMax10k, "을구 금액 합계")}<label class="fh-inline"><input type="checkbox" name="mortgageUnknown" ${e.mortgageUnknown ? "checked" : ""}>모름</label>`
@@ -383,10 +393,10 @@
           <div class="fh-field"><span>압류·가압류 (갑구)</span>${seg("seizure", TRI, e.seizure || "unknown")}</div>
           <div class="fh-field"><span>경매개시결정</span>${seg("auction", TRI, e.auction || "unknown")}</div>
           <div class="fh-field"><span>임차권등기 (을구)</span>${seg("leaseRegistration", TRI, e.leaseRegistration || "unknown")}</div>
-          <div class="fh-field"><span>등기부 소유자 = 계약 상대</span>${seg("ownerMatches", [["yes", "같음"], ["no", "다름"], ["unknown", "모름"]], e.ownerMatches || "unknown")}</div>
+          <div class="fh-field"><span>등기부 소유자 = 계약 상대</span>${seg("ownerMatches", [["yes", "같음"], ["no", "다름"], ["unknown", "모름"]], shown("ownerMatches", "ownerMatches"))}</div>
           ${field("최근 소유권 이전일", `<input type="date" name="lastOwnershipChange" value="${esc(e.lastOwnershipChange || "")}">`, "갑구 마지막 '소유권 이전' 날짜")}
-          <div class="fh-field"><span>임대인 세금 체납</span>${seg("taxArrears", TRI, e.taxArrears || "unknown")}</div>
-          <div class="fh-field"><span>전세보증보험 가입</span>${seg("guaranteeEligible", [["yes", "가능"], ["no", "불가"], ["unknown", "모름"]], e.guaranteeEligible || "unknown")}</div>
+          <div class="fh-field"><span>임대인 세금 체납</span>${seg("taxArrears", TRI, shown("taxArrears", "taxArrears"))}</div>
+          <div class="fh-field"><span>전세보증보험 가입</span>${seg("guaranteeEligible", [["yes", "가능"], ["no", "불가"], ["unknown", "모름"]], shown("guaranteeEligible", "guaranteeEligible"))}</div>
           <div class="fh-field"><span>위반건축물</span>${seg("violation", TRI, e.violation || "unknown")}</div>
         </div>
         <div class="fh-form-actions">
@@ -503,7 +513,7 @@
                 .join("")
             : `<p class="fh-sub">아직 제보가 없어요.</p>`
         }</div>
-        <form class="fh-feedback-form" data-action="feedback">
+        ${window.FITHOME_STATIC ? `<p class="fh-sub">정적 데모(GitHub Pages)에서는 제보를 저장하지 않아요. 서버 버전에서 이용해 주세요.</p>` : `<form class="fh-feedback-form" data-action="feedback">
           <select name="category" aria-label="제보 종류">
             <option value="info">정보가 달라요</option><option value="condition">집 상태 문제 (누수·곰팡이 등)</option>
             <option value="landlord">임대인·중개사 문제</option><option value="other">기타</option>
@@ -513,7 +523,7 @@
           </select>
           <textarea name="text" maxlength="500" placeholder="예) 욕실 천장에 누수 자국이 있어요" aria-label="제보 내용"></textarea>
           <button class="fh-btn primary" type="submit">제보 보내기</button>
-        </form>
+        </form>`}
       </div>`;
   }
 
@@ -548,9 +558,53 @@
     if (nextScroller) nextScroller.scrollTop = keepScroll;
   }
 
+  // 재판정이 실패하면 이전 판정을 남기지 않는다. 입력이 바뀌었는데 예전 '안심'이 보이면 안 된다(전체 QA Astra-12).
   async function rerender() {
-    await evaluate();
-    render();
+    // 다시 판정하는 동안 이전 판정(특히 '안심')을 그대로 보여 주지 않는다(재점검 Astra-12).
+    st.verdict = null;
+    const pendingSheet = overlay()?.querySelector(".fh-report-sheet");
+    if (pendingSheet) pendingSheet.innerHTML = `<div class="fh-report-loading">입력값으로 다시 판정하고 있어요…</div>`;
+    try {
+      await evaluate();
+      render();
+      return true;
+    } catch (error) {
+      st.verdict = null;
+      const sheet = overlay()?.querySelector(".fh-report-sheet");
+      if (sheet) {
+        sheet.innerHTML = `<div class="fh-report-loading">다시 판정하지 못했어요: ${esc(error.message)}<br>이전 판정은 지웠어요. 입력값을 확인한 뒤 다시 시도해 주세요.
+          <button type="button" class="fh-btn" data-action="retry">다시 시도</button> <button type="button" class="fh-btn" data-action="reset-edits">입력 초기화</button> <button type="button" class="fh-btn" data-action="close">닫기</button></div>`;
+      }
+      return false;
+    }
+  }
+
+  // 확인 요청에서 받은 값(overrides)과 등기부 입력(edits)이 같은 항목을 가리킬 때의 짝
+  const OVERRIDE_EDIT_FIELDS = { taxArrears: "taxArrears", guaranteeEligible: "guaranteeEligible", ownerMatches: "ownerMatches", registryIssuedAt: "issuedAt" };
+  // 등기부 폼에 보이는 값 = 직접 입력한 값(모름 제외) → 없으면 확인 요청에서 받은 값 → 없으면 모름.
+  const normValue = (v) => (v === undefined || v === null || v === "" || v === "unknown" ? "" : String(v));
+  function shownValue(e, o, field, editField) {
+    return normValue(e[editField]) || normValue(o[field]);
+  }
+  // 폼 저장은 한 곳에서 한다. 사용자가 화면에 보이던 값을 실제로 바꾼 항목만 예전 확인 요청 값보다 앞선다.
+  // 집값 기준을 바꿀 때 폼이 미리 저장돼 변경을 못 알아채던 문제(최종 재점검 N3)와, 받은 값 '없음'에서 '모름'으로
+  // 다시 고른 것을 무시하던 문제(N4)를 함께 막는다.
+  function saveEdits(key, edits) {
+    const prevEdits = store.get(`${key}.edits`, {});
+    const o = store.get(`${key}.overrides`, {});
+    for (const [field, editField] of Object.entries(OVERRIDE_EDIT_FIELDS)) {
+      if (field in o && normValue(edits[editField]) !== shownValue(prevEdits, o, field, editField)) delete o[field];
+    }
+    store.set(`${key}.edits`, edits);
+    store.set(`${key}.overrides`, o);
+  }
+  function dropConflictingEdits(key, fields) {
+    const e = store.get(`${key}.edits`, {});
+    for (const field of fields) {
+      const editField = OVERRIDE_EDIT_FIELDS[field];
+      if (editField) delete e[editField];
+    }
+    store.set(`${key}.edits`, e);
   }
 
   function readEdits(form) {
@@ -592,17 +646,20 @@
       } else if (action === "copy") copyText(t.dataset.text);
       else if (action === "inspect") {
         store.set(`${key}.inspectionRequested`, true);
-        await rerender();
-        toast("핏홈 점검 신청이 접수됐어요 (시연)");
+        if (await rerender()) toast("핏홈 점검 신청이 접수됐어요 (시연)");
       } else if (action === "override-today") {
         const o = store.get(`${key}.overrides`, {});
         o[t.dataset.field] = new Date().toISOString().slice(0, 10);
         store.set(`${key}.overrides`, o);
+        dropConflictingEdits(key, [t.dataset.field]);
         await rerender();
       } else if (action === "reset-edits") {
+        // 입력을 지우면 확인 요청 화면에서 받은 값(덮어쓰기)도 함께 지운다(Astra-10).
         store.set(`${key}.edits`, {});
+        store.set(`${key}.overrides`, {});
+        if (await rerender()) toast("입력값을 지웠어요");
+      } else if (action === "retry") {
         await rerender();
-        toast("입력값을 지웠어요");
       }
     });
 
@@ -614,12 +671,12 @@
         const requests = store.get(`${key}.requests`, {});
         requests[t.dataset.id] = t.value;
         store.set(`${key}.requests`, requests);
-        await rerender();
-        toast(t.value === "refused" || t.value === "noResponse" ? "거절·무응답을 위험 신호로 반영했어요" : "요청 상태를 기록했어요");
+        if (await rerender()) toast(t.value === "refused" || t.value === "noResponse" ? "거절·무응답을 위험 신호로 반영했어요" : "요청 상태를 기록했어요");
       } else if (action === "override") {
         const o = store.get(`${key}.overrides`, {});
         o[t.dataset.field] = t.value;
         store.set(`${key}.overrides`, o);
+        dropConflictingEdits(key, [t.dataset.field]);
         await rerender();
       } else if (action === "stage") {
         const done = new Set(store.get(`${key}.stages`, []));
@@ -627,7 +684,7 @@
         store.set(`${key}.stages`, [...done]);
         render();
       } else if (t.form?.dataset.action === "edits" && t.name === "priceBasis") {
-        store.set(`${key}.edits`, { ...store.get(`${key}.edits`, {}), ...readEdits(t.form), priceBasis: t.value });
+        saveEdits(key, { ...store.get(`${key}.edits`, {}), ...readEdits(t.form), priceBasis: t.value });
         render();
       }
     });
@@ -645,10 +702,9 @@
       const form = event.target;
       const key = st.base?.key;
       if (form.dataset.action === "edits") {
-        store.set(`${key}.edits`, readEdits(form));
+        saveEdits(key, readEdits(form));
         st.tab = "detail";
-        await rerender();
-        toast("입력값으로 다시 판정했어요");
+        if (await rerender()) toast("입력값으로 다시 판정했어요");
       } else if (form.dataset.action === "feedback") {
         const data = new FormData(form);
         try {
@@ -657,8 +713,7 @@
             body: JSON.stringify({ key, category: data.get("category"), role: data.get("role"), text: data.get("text") }),
           });
           await loadFeedback();
-          await rerender();
-          toast("제보가 접수됐어요. 확인 전까지 '미검증'으로 표시돼요");
+          if (await rerender()) toast("제보가 접수됐어요. 확인 전까지 '미검증'으로 표시돼요");
         } catch (error) {
           toast(error.message);
         }

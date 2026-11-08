@@ -1409,7 +1409,8 @@ function requestLocationSuggestions(query, target = "main") {
       const payload = await fetchJson(`/api/location-suggestions?query=${encodeURIComponent(value)}&limit=30`);
       if (requestId !== state.locationSearch.requestId) return;
       state.locationSearch.items = Array.isArray(payload.suggestions) ? payload.suggestions : [];
-      state.locationSearch.error = "";
+      // 후보가 없을 때 서버가 이유(hint)를 주면 보여 준다. 빈 목록만 보이면 사용자가 왜 안 되는지 모른다.
+      state.locationSearch.error = state.locationSearch.items.length ? "" : (payload.hint || "");
     } catch (error) {
       if (requestId !== state.locationSearch.requestId) return;
       state.locationSearch.items = fallbackLocationSuggestions(value);
@@ -3054,6 +3055,10 @@ function liveSocCategoryDisplayData(selected, category) {
   const live = liveInfrastructureDataFor(selected);
   const data = live?.categories?.[category];
   if (!data) return null;
+  // 조회에 실패한 항목(count null, status "failed")은 0개가 아니라 '정보 없음'이다(전체 QA Astra-14).
+  if (data.count === null || data.status === "failed" || data.ok === false) {
+    return { count: 0, hasValue: false, nearest: null, samples: [] };
+  }
   return {
     count: Number(data.count || 0),
     hasValue: true,
@@ -3129,6 +3134,10 @@ function liveSafetyCategoryDisplayData(selected, category) {
   const live = liveSafetyDataFor(selected);
   const data = live?.categories?.[category];
   if (!data) return null;
+  // 조회에 실패한 항목(count null, status "failed")은 0개가 아니라 '정보 없음'이다(전체 QA Astra-14).
+  if (data.count === null || data.status === "failed" || data.ok === false) {
+    return { count: 0, hasValue: false, nearest: null, samples: [] };
+  }
   return {
     count: Number(data.count || 0),
     hasValue: true,
@@ -4287,23 +4296,15 @@ function buildRuleBasedAiSummary(selected, detail) {
     }
   }
 
-  const liveStatus = price.liveStatus || {};
-  const records = livePriceRecords(price);
-  if (
-    isLiveStatus(liveStatus.molitTrade)
-    && isLiveStatus(liveStatus.molitRent)
-    && records.trade
-    && records.jeonse
-  ) {
-    const sale = Number(records.trade.amount10k || 0);
-    const jeonse = Number(records.jeonse.deposit10k || 0);
-    if (sale > 0 && jeonse > 0) {
-      const ratio = (jeonse / sale) * 100;
-      if (ratio < 80) {
-        strengths.push(`전세가율은 ${formatPercent(ratio)}로, 깡통주택 위험 기준인 80%보다 낮습니다.`);
-      } else {
-        cautions.push(`전세가율은 ${formatPercent(ratio)}로, 깡통주택 위험 기준인 80% 이상입니다. 계약 전 추가 확인이 필요합니다.`);
-      }
+  // 전세가율은 서버가 같은 평형 12개월 중앙값으로 계산한 값만 쓴다. 화면이 최근 1건끼리 따로 나누면
+  // 위험 탭·리포트와 숫자가 달라지고, 부풀린 매매 한 건이 '장점'으로 보였다(전체 QA Astra-09).
+  const serverRatio = Number(price.jeonseRatio || 0);
+  if (price.saleLive && price.jeonseLive && price.areaMatched && serverRatio > 0) {
+    const basis = price.jeonseRatioBasis ? ` (${price.jeonseRatioBasis})` : "";
+    if (serverRatio < 80) {
+      neutral.push(`전세가율은 ${formatPercent(serverRatio)}${basis}로 깡통전세 실무 기준 80%보다 낮지만, 근저당·선순위 보증금을 더한 실제 빚 비율은 등기부로 확인해야 합니다.`);
+    } else {
+      cautions.push(`전세가율은 ${formatPercent(serverRatio)}${basis}로 깡통전세 실무 기준 80% 이상입니다. 계약 전 추가 확인이 필요합니다.`);
     }
   }
 
@@ -5315,9 +5316,9 @@ function renderJeonseRiskPanel() {
       ${section("계약 전 확인 체크리스트", renderContractChecklist(risk))}
       ${section("정보 사각지대", `
         ${renderBlindSpots(safeguard)}
-        <h5 class="safeguard-subtitle">임대인 동의 없이 지금 확인할 수 있는 것</h5>
+        <h5 class="safeguard-subtitle">임차인이 직접 확인할 수 있는 것 (다가구 확정일자 정보는 계약 전엔 임대인 동의 필요)</h5>
         ${renderSelfServeChecks(safeguard)}
-        <h5 class="safeguard-subtitle">임대인 동의가 필요한 것 · 거부당했을 때</h5>
+        <h5 class="safeguard-subtitle">계약 전엔 임대인 동의가 필요한 것 · 거부당했을 때 (계약 후 임차인 예외 있음)</h5>
         ${renderConsentChecks(safeguard)}`)}
       ${section("대항력 확보 타임라인과 특약", `
         ${renderTenancyTimeline(safeguard)}

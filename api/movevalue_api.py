@@ -154,7 +154,8 @@ def deposit_priority_response(payload: dict) -> dict:
     if not isinstance(mortgages, list) or not all(isinstance(m, dict) for m in mortgages):
         raise ValueError("mortgages는 [{amount10k, registered}] 배열이어야 합니다.")
     mortgages = [
-        {"amount10k": money_value(m.get("amount10k"), "mortgages.amount10k") or 0,
+        # 금액이 비어 있으면 0이 아니라 '모름'(None)이다. 0으로 바꾸면 근저당이 없는 것처럼 계산된다(전체 QA Astra-05).
+        {"amount10k": money_value(m.get("amount10k"), "mortgages.amount10k"),
          "registered": m.get("registered") if isinstance(m.get("registered"), str) else None}
         for m in mortgages
     ]
@@ -170,6 +171,7 @@ def deposit_priority_response(payload: dict) -> dict:
         mortgages,
         money_value(payload.get("priorTenants10k"), "priorTenants10k"),
         text_value("taxArrears") or "unknown",
+        mortgage_status="none" if payload.get("noMortgage") is True else "auto",
     )
 
 
@@ -213,6 +215,19 @@ def verify_trade_price(payload: dict) -> dict:
                 and price.get("basis") != "official"):
             price.pop("official10k")
             notes.append("추정 공시가격 제외")
+        # 집값 기준을 '공시가격 × 140%'로 골랐는데 그 공시가격이 서버의 추정값 그대로면 추정 집값이다.
+        # 매매 실거래 출처가 그대로 따라가 '안심'이 나오던 경로를 막는다(재점검 Astra-02).
+        if price.get("basis") == "official":
+            official_is_estimate = (not server_price.get("officialPriceLive")
+                                    and number(price.get("official10k"), -1) == number(server_price.get("officialPrice10k"), -2))
+            if official_is_estimate:
+                price["source"] = "estimate"
+                notes.append("추정 공시가격 기준→추정")
+            elif price.get("source") == "trade":
+                price["source"] = "input"
+                notes.append("공시가격 기준→입력값")
+    elif price.get("basis") == "official" and price.get("source") == "trade":
+        price["source"] = "input"
     # 건물 용도를 '공공데이터'로 보냈으면 서버가 건축물대장으로 확인한 값만 인정한다.
     # 대장을 조회하지 못했으면(키 없음·지번 모름·매물 키) '주거용 통과'가 아니라 '미확인'이다.
     building = dict(payload.get("building") or {})
@@ -865,10 +880,19 @@ def location_suggestions_response(raw: dict[str, list[str]]) -> dict:
         seen.add(key)
         deduped.append(item)
 
+    # 후보가 없으면 왜 없는지 알려 준다. 키 없이는 역·회사 이름을 찾지 못해 사용자가 멈췄다(전체 QA Q4).
+    hint = ""
+    if not deduped and compact_query:
+        if not credential_status().get("kakao"):
+            hint = ("역·회사 이름 검색은 지도 검색(카카오) 연결이 필요해 지금은 찾지 못했어요. "
+                    "근처 동 이름(예: 역삼동, 서초동)이나 '구 + 동'으로 입력해 주세요.")
+        else:
+            hint = "검색 결과가 없어요. 서울특별시 안의 '구 + 동'이나 도로명 주소로 입력해 주세요."
     return {
         "ok": True,
         "query": query,
         "requires": "서울특별시 + 구 + 동",
+        "hint": hint,
         "suggestions": deduped[:limit],
         "integrations": credential_status(),
     }
@@ -1290,6 +1314,21 @@ class Handler(BaseHTTPRequestHandler):
                         result["sourceDowngraded"] = payload["sourceDowngraded"]
                     self.send_json(HTTPStatus.OK, result)
                 else:
+                    # 같은 사이트에서 온 요청만, 실제 있는 단지 키만 받는다(재점검 Astra-17). 매물(listing:) 키는 시연용이라 형식만 본다.
+                    origin = self.headers.get("Origin") or ""
+                    host = self.headers.get("Host") or ""
+                    if origin and urlparse(origin).netloc != host:
+                        raise ValueError("다른 사이트에서 보낸 제보는 받지 않습니다.")
+                    # 앞뒤 공백을 지운 뒤 검사한다(" apt:MADEUP"이 단지 검사를 건너뛰던 문제, 재점검 Astra-17).
+                    feedback_key = str(payload.get("key") or "").strip()
+                    payload["key"] = feedback_key
+                    if feedback_key.startswith("apt:"):
+                        try:
+                            exists = property_detail_response({"id": [feedback_key[4:]]})["detail"].get("id") == feedback_key[4:]
+                        except (ValueError, KeyError):
+                            exists = False
+                        if not exists:
+                            raise ValueError("없는 단지에는 제보할 수 없습니다.")
                     item = add_feedback(
                         str(payload.get("key") or ""),
                         str(payload.get("category") or ""),
@@ -1299,6 +1338,9 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(HTTPStatus.OK, {"ok": True, "item": item})
             except (ValueError, json.JSONDecodeError) as exc:
                 self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            except OSError:
+                # 제보 저장 등 디스크 오류는 사용자 입력 문제가 아니므로 500으로 알린다(전체 QA Astra-15).
+                self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": "서버에 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요."})
             except (TypeError, OverflowError, AttributeError) as exc:
                 # 검증이 놓친 이상한 형식이라도 연결을 끊지 말고 400으로 알린다.
                 self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"요청 형식이 올바르지 않습니다: {type(exc).__name__}"})

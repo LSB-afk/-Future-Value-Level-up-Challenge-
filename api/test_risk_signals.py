@@ -59,6 +59,12 @@ def test_reference_signals_are_not_scored() -> None:
     assert all(s["status"] == "info" for s in noisy["signals"] if "(참고)" in s["label"])
 
 
+def test_incomplete_collection_is_not_low() -> None:
+    # 재점검 Astra-13: 실거래를 다 받지 못한 달이 있으면 전세가율을 '정상'으로 두지 않고 등급도 '낮음'이 아니다
+    risk = build_risk(APT, live_market(liveStatus={"molitRent": {"incomplete": True}}))
+    assert signal(risk, "매매가 대비 전세가율")["status"] == "unknown" and risk["levelKey"] == "unknown", risk["level"]
+
+
 def test_same_month_deposit_over_sale_warns() -> None:
     risk = build_risk(APT, live_market(depositOverSaleMonths=["2026.03"]))
     assert signal(risk, "같은 달 보증금 ≥ 매매가")["status"] == "warning" and risk["levelKey"] == "warning"
@@ -71,4 +77,5 @@ if __name__ == "__main__":
     test_official_126_rule_only_for_non_apartments()
     test_reference_signals_are_not_scored()
     test_same_month_deposit_over_sale_warns()
+    test_incomplete_collection_is_not_low()
     print("risk signals test OK")

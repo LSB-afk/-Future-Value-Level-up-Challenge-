@@ -6,10 +6,11 @@ K Car 진단 대시보드처럼 항목마다 "기준 · 이 집 값 · 결과 ·
 
 모르는 값은 0으로 계산하되 결과를 "하한"으로 표시하고, 등급은 "주의"를 넘지 못한다.
 기준선 근거:
-- 70%: 주의 시작 (실무 권고)
+- 70%: 주의 시작 (FitHome 자체 기준, 공식 기준 아님)
 - 80%: 깡통전세 실무 경계 (법정 기준 아님)
-- 90%: HUG 전세보증 가입 한도 (보증금 + 선순위채권 ≤ 주택가격 × 90%)
-- 공시가격 × 140%: HUG가 비아파트 주택가격을 잡는 방식, 보증금 상한은 공시가격의 126%
+- 90%: HUG 전세보증 한도 (보증금 + 선순위채권 ≤ HUG 인정 주택가격 × 90%). 입력한 집값과 HUG 인정가격은 다를 수 있다.
+- 공시가격 × 140%: HUG가 공시가격 환산액을 먼저 쓰는 주택(연립·다세대·다가구 등)의 주택가격 산정 방식.
+  이때 (보증금 + 선순위채권) 상한이 공시가격의 126%가 된다. 아파트·오피스텔은 시세가 먼저다.
 """
 
 from __future__ import annotations
@@ -18,12 +19,14 @@ import math
 from datetime import date, datetime
 
 LINES = [
-    {"pct": 70, "label": "주의 시작", "basis": "실무 권고"},
+    # 70%는 공식 기준을 찾지 못한 FitHome 자체 주의선이다(전체 QA Sol V01).
+    {"pct": 70, "label": "주의 시작", "basis": "FitHome 자체 기준(공식 기준 아님)"},
     {"pct": 80, "label": "깡통전세 경계", "basis": "실무 기준(법정 기준 아님)"},
-    {"pct": 90, "label": "HUG 보증 한도", "basis": "HUG 전세보증금반환보증 가입 요건"},
+    # HUG 한도는 HUG 인정 주택가격 기준이라, 입력한 집값으로 그린 이 선을 'HUG 한도'라고 단정하지 않는다(최종 재점검 Sol V06).
+    {"pct": 90, "label": "90% 선", "basis": "HUG 반환보증 한도는 HUG 인정가격 × 90% − 선순위채권 (입력한 집값과 다를 수 있음)"},
 ]
-OFFICIAL_TO_PRICE = 1.4  # HUG: 비아파트 주택가격 = 공시가격 × 140%
-HUG_DEPOSIT_CAP = 1.26  # 140% × 90%
+OFFICIAL_TO_PRICE = 1.4  # HUG 공시가격 환산 방식(연립·다세대 등): 주택가격 = 공시가격 × 140%
+HUG_DEPOSIT_CAP = 1.26  # 140% × 90%. (보증금 + 선순위채권) 기준이며 공시가격 환산 주택에만 맞다
 STRESS_DROP = 0.10  # 집값 하락 가정. 판정에는 쓰지 않고 보여 주기만 한다.
 RECENT_OWNERSHIP_DAYS = 90
 REGISTRY_FRESH_DAYS = 30
@@ -94,6 +97,13 @@ def validate_input(inp, today: date | None = None) -> dict:
             raise ValueError(f"{label}는 0 이상이어야 합니다.")
         if number > MAX_MONEY_10K:
             raise ValueError(f"{label}가 너무 큽니다. 만원 단위인지 확인하세요.")
+    # 보증금이 없으면 0으로 계산돼 LTV 0%·'안심'이 나왔다(전체 QA Astra-01). 판정에는 보증금이 꼭 필요하다.
+    if not _num(inp.get("deposit10k")):
+        raise ValueError("보증금(deposit10k, 만원)을 0보다 큰 값으로 입력해야 판정할 수 있습니다.")
+    # 판정 기준일은 서버가 정한다. 화면이 과거 asOf를 보내 오래된 등기부를 '최신'으로 만들 수 있었다(Astra-03).
+    # 시연용 예외도 두지 않는다. isDemo 문자열 "false"가 참으로 읽혀 과거 기준일이 통과했다(재점검 Astra-03).
+    if "asOf" in inp:
+        inp = {k: v for k, v in inp.items() if k != "asOf"}
     price = inp.get("price") or {}
     if _num(price.get("value10k")) == 0 and price.get("basis", "market") != "official":
         raise ValueError("집값(price.value10k)은 0보다 커야 합니다.")
@@ -176,7 +186,7 @@ def house_price(price: dict) -> tuple[float | None, str, str]:
     if basis == "official":
         if official is None:
             return None, "공시가격 미입력", "none"
-        return official * OFFICIAL_TO_PRICE, f"공시가격 {money(official)} × 140% (HUG 방식)", source
+        return official * OFFICIAL_TO_PRICE, f"공시가격 {money(official)} × 140% (HUG 공시가격 환산 방식)", source
     if value is None:
         return None, "집값 미입력", "none"
     label = {"market": "시세·감정가", "trade": "실거래가"}.get(basis, "시세")
@@ -294,7 +304,7 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         checks.append(_check("ratio", "ltv", "집값 대비 빚 비율(LTV)",
                              "근저당 + 선순위 보증금 + 내 보증금이 집값의 70% 미만일 것",
                              value, result, ltv["priceSource"],
-                             f"90%를 넘으면 HUG 전세보증 가입이 안 됩니다. 집값(매매가)이 {ltv['stressDropPct']}% 내리면 "
+                             f"HUG 보증 한도는 HUG가 인정한 주택가격 × 90%에서 선순위채권을 뺀 금액입니다. 입력한 집값과 HUG 인정가격은 다를 수 있으니, 90% 근처라면 HUG에서 한도를 따로 확인하세요. 집값(매매가)이 {ltv['stressDropPct']}% 내리면 "
                              f"{ltv['stressRatioPct']}%{' 이상' if ltv['isLowerBound'] else ''}가 됩니다(가정 계산)."))
     mortgage = _num(registry.get("mortgageMax10k"))
     checks.append(_check("ratio", "mortgage", "근저당 채권최고액", "등기부 을구의 근저당 합계를 확인할 것",
@@ -305,16 +315,21 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          ltv["priceLabel"],
                          "unknown" if price_source == "none" else "caution" if price_source == "estimate" else "pass",
                          price_source))
+    # 126% = 공시가격 × 140% × 90%. HUG가 공시가격 환산액을 먼저 쓰는 연립·다세대·다가구 등에만 맞는 계산이고,
+    # 선순위채권은 빼야 한다. 아파트·오피스텔은 HUG가 시세를 먼저 쓰므로 이 점검을 하지 않는다(전체 QA Sol V04·V05).
     official = _num(price.get("official10k"))
     deposit = _num(inp.get("deposit10k")) or 0
-    if official:
-        over = deposit > official * HUG_DEPOSIT_CAP
-        checks.append(_check("ratio", "hug126", "공시가격 대비 보증금", "보증금이 공시가격의 126% 이하일 것 (HUG 보증 기준)",
-                             f"{round(deposit / official * 100, 1)}%", "caution" if over else "pass", price_source,
-                             "넘으면 HUG 전세보증 가입이 어렵습니다." if over else ""))
+    standard = "보증금 + 선순위채권이 공시가격의 126% 이하일 것 (HUG 공시가격 환산 방식)"
+    if housing in {"apartment", "officetel"}:
+        pass
+    elif official:
+        debt_ahead = (_num(registry.get("mortgageMax10k")) or 0) + (_num(landlord.get("priorDeposits10k")) or 0)
+        over = deposit + debt_ahead > official * HUG_DEPOSIT_CAP
+        checks.append(_check("ratio", "hug126", "공시가격 대비 보증금", standard,
+                             f"{round((deposit + debt_ahead) / official * 100, 1)}%", "caution" if over else "pass", price_source,
+                             "넘으면 HUG 반환보증 한도를 넘어 가입이 어려울 수 있습니다(최종은 HUG 심사)." if over else ""))
     else:
-        checks.append(_check("ratio", "hug126", "공시가격 대비 보증금", "보증금이 공시가격의 126% 이하일 것 (HUG 보증 기준)",
-                             "공시가격 미입력", "unknown", "none"))
+        checks.append(_check("ratio", "hug126", "공시가격 대비 보증금", standard, "공시가격 미입력", "unknown", "none"))
 
     # 임대인
     prior = _num(landlord.get("priorDeposits10k"))
@@ -323,7 +338,7 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                              "건물 전체에서 내 앞 순위 보증금 합계를 확인할 것",
                              money(prior), "pass" if prior is not None else "unknown",
                              land_source if prior is not None else "none",
-                             "다가구는 한 등기부를 여러 세대가 나눠 써서, 앞 세대 보증금이 내 보증금보다 먼저 배당됩니다."))
+                             "다가구는 한 등기부를 여러 세대가 나눠 써서, 나보다 먼저 대항요건·확정일자를 갖춘 세대의 보증금이 먼저 배당될 수 있습니다(소액임차인 최우선변제는 따로)."))
     else:
         checks.append(_check("landlord", "priorDeposits", "선순위 보증금", "이 호실의 기존 임차인 보증금을 확인할 것",
                              money(prior) if prior is not None else "해당 없음(개별 등기)", "pass",
@@ -333,7 +348,7 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          {"yes": "체납 있음", "no": "체납 없음", "unknown": "미확인"}[tax],
                          {"yes": "danger", "no": "pass", "unknown": "unknown"}[tax],
                          land_source if tax != "unknown" else "none",
-                         "당해세는 확정일자보다 먼저 배당될 수 있습니다."))
+                         "법정기일이 내 확정일자보다 빠른 세금은 보증금보다 먼저 배당될 수 있습니다. 그 집에 붙는 당해세라도, 내가 대항요건을 갖추고 확정일자를 그 세금의 법정기일보다 먼저 받았다면 2023년 개정 특례로 그 세금에 배분될 금액 한도에서 보증금이 먼저 배분됩니다(선순위 저당권 몫은 그대로)."))
     guarantee = _tri(landlord.get("guaranteeEligible"))
     checks.append(_check("landlord", "guaranteeEligible", "전세보증보험 가입", "HUG 등 반환보증 가입이 가능할 것",
                          {"yes": "가능", "no": "불가", "unknown": "미확인"}[guarantee],
@@ -406,10 +421,10 @@ def build_requests(inp: dict, checks_by_id: dict) -> list[dict]:
         "주택임대차보호법 제3조의7(임대인 정보 제시 의무)",
         housing == "multi" or checks_by_id["priorDeposits"]["result"] == "unknown")
     add("taxCert", "임대인", "체납 세금이 내 보증금보다 먼저 배당되는지 확인합니다.",
-        "주택임대차보호법 제3조의7, 국세징수법 제109조",
+        "주택임대차보호법 제3조의7(정보 제시), 국세징수법 제108조·지방세징수법 제5조(납세증명서)",
         checks_by_id["taxArrears"]["result"] == "unknown")
     add("moveIn", "임대인·중개사", "이미 전입한 세대가 있는지 확인합니다.",
-        "주민등록법 시행규칙(전입세대 열람, 임대인 동의 필요)", housing == "multi")
+        "주민등록법 제29조의2(전입세대확인서). 계약 전에는 소유자 위임·협조가 필요하고, 계약 후 임차인은 직접 신청할 수 있습니다", housing == "multi")
     add("registryLatest", "직접 열람(인터넷등기소, 700원)", "그사이 근저당·압류가 새로 잡혔는지 확인합니다.",
         "부동산등기법 제19조(누구나 열람 가능)",
         checks_by_id["registryFresh"]["result"] in {"unknown", "caution"})
@@ -441,10 +456,10 @@ def build_stages(checks_by_id: dict, ltv: dict) -> list[dict]:
         {"id": "beforeBalance", "label": "잔금 직전", "items": [
             {"id": "registryAgain", "text": "등기부 다시 열람 — 그사이 새 근저당·소유권 이전이 없는지"},
             *([{"id": "release", "text": f"근저당({money(mortgage)}) 말소 접수 확인"}] if mortgage else []),
-            {"id": "guarantee", "text": "전세보증보험 가입 신청"},
+            {"id": "guarantee", "text": "보증보험 가입 가능 여부·사전 한도 확인 (본심사·가입은 입주·전입신고 뒤)"},
         ]},
         {"id": "moveInDay", "label": "전입 당일", "items": [
-            {"id": "moveIn", "text": "전입신고와 확정일자를 같은 날 받기 (대항력은 다음 날 0시부터)"},
+            {"id": "moveIn", "text": "이사(주택 인도)와 전입신고를 마치고 확정일자도 받기. 대항력은 인도·전입을 모두 마친 다음 날 0시부터, 우선변제는 확정일자까지 갖춰야 생깁니다"},
             {"id": "registryNextDay", "text": "다음 날 등기부를 한 번 더 열람해 당일 새 근저당이 없는지 확인"},
         ]},
     ]
@@ -454,24 +469,25 @@ def build_clauses(inp: dict, checks_by_id: dict, ltv: dict) -> list[dict]:
     housing = (inp.get("property") or {}).get("housingType") or "villa"
     clauses = [
         {"title": "권리 변동 금지",
-         "text": "임대인은 잔금 지급일 다음 날까지 소유권 이전, 근저당권 설정 등 임차인의 권리를 해치는 일체의 행위를 하지 않는다. 위반 시 임차인은 계약을 해제할 수 있으며 임대인은 받은 금액 전부를 즉시 반환한다.",
-         "reason": "대항력은 전입 다음 날 0시에 생기지만 근저당은 접수 당일 효력이 생깁니다.", "basis": "표준임대차계약서 특약 권고"},
+         "text": "임대인은 임차인의 전입신고 예정일 다음 날까지 근저당권 등 담보권을 설정하지 않으며, 소유권 이전 등 임차인의 권리를 해치는 행위를 하지 않는다. 위반 시 임차인은 계약을 해제할 수 있으며 임대인은 받은 금액 전부를 즉시 반환한다.",
+         "reason": "대항력은 주택 인도와 전입신고를 마친 다음 날 0시에 생기지만, 근저당은 등기가 완료되면 접수한 때부터 효력이 생깁니다.",
+         "basis": "주택임대차표준계약서 권고 특약(전입신고 다음 날까지 담보권 설정 금지). 소유권 이전 금지는 FitHome 추가 예시"},
         {"title": "제시 정보와 다를 때 해제",
          "text": "임대인이 제시한 선순위 보증금·체납 정보가 사실과 다른 경우 임차인은 계약을 해제할 수 있고, 임대인은 받은 금액 전부를 반환한다.",
-         "reason": "임대인 정보 제시 의무는 위반해도 벌칙이 없어 특약으로 보완합니다.", "basis": "주택임대차표준계약서(2023)"},
+         "reason": "제시받은 정보가 사실과 다를 때 계약을 풀 수 있도록 특약으로 정해 둡니다.", "basis": "주택임대차표준계약서(2023) 권고 특약"},
     ]
     if (ltv.get("mortgage10k") or 0) > 0:
         clauses.append({"title": "근저당 말소",
                         "text": f"임대인은 잔금 지급과 동시에 등기부 을구의 근저당권(채권최고액 {money(ltv['mortgage10k'])})을 말소 신청하고, 말소 접수증을 임차인에게 교부한다.",
-                        "reason": "선순위 근저당이 남아 있으면 경매 시 내 보증금보다 먼저 배당됩니다.", "basis": "실무 권고"})
+                        "reason": "내 대항요건·확정일자보다 먼저 등기된 근저당이 남아 있으면 경매 때 내 보증금보다 먼저 배당됩니다(소액임차인 최우선변제 보호액은 예외). 말소 신청 뒤 실제로 말소됐는지도 등기부로 확인하세요.", "basis": "실무 권고(당사자 합의 특약)"})
     if checks_by_id["guaranteeEligible"]["result"] != "pass":
         clauses.append({"title": "보증보험 가입 불가 시 해제",
                         "text": "임차인이 전세보증금반환보증에 가입할 수 없는 경우 계약을 해제할 수 있으며, 임대인은 받은 금액 전부를 반환한다.",
-                        "reason": "보증보험이 안 되는 집은 보증금을 돌려받을 안전판이 없습니다.", "basis": "실무 권고(표준계약서 공식 조항 아님)"})
+                        "reason": "보증보험이 안 되면 반환보증이라는 안전판을 쓸 수 없습니다(대항력·우선변제권은 법정 요건대로 남습니다). 가입 불가만으로 법률상 해제권이 생기지는 않아 특약으로 정합니다.", "basis": "실무 권고(표준계약서 공식 조항 아님)"})
     if housing == "multi":
         clauses.append({"title": "선순위 보증금 고지",
                         "text": "임대인은 계약일 현재 이 건물의 선순위 임대차보증금 총액을 고지하며, 고지 금액과 다른 사실이 확인되면 임차인은 계약을 해제할 수 있다.",
-                        "reason": "다가구는 앞 세대 보증금이 먼저 배당됩니다.", "basis": "실무 권고"})
+                        "reason": "다가구는 나보다 먼저 대항요건·확정일자를 갖춘 세대의 보증금이 먼저 배당될 수 있습니다.", "basis": "실무 권고(당사자 합의 특약)"})
     return clauses
 
 
@@ -514,7 +530,11 @@ def evaluate(inp: dict, today: date | None = None) -> dict:
         tags.append(f"LTV {ltv['ratioPct']}%" + (" 이상" if ltv["isLowerBound"] else ""))
     head80 = ltv["headroom10k"]["80"]
     if head80 is not None:
-        tags.append(f"근저당 여유 {money(head80)}" if head80 > 0 else "80% 기준 초과")
+        # 근저당·선순위를 모르는 하한 계산이면 '여유'를 확정처럼 보이지 않게 한다(전체 QA Astra-04).
+        if head80 > 0 and ltv["isLowerBound"]:
+            tags.append(f"80%까지 {money(head80)} (근저당 미확인)")
+        else:
+            tags.append(f"근저당 여유 {money(head80)}" if head80 > 0 else "80% 기준 초과")
     for key, label in (("trust", "신탁"), ("seizure", "압류"), ("leaseRegistration", "임차권등기")):
         c = by_id[key]
         tags.append(f"{label} {c['value']}")
@@ -582,6 +602,9 @@ if __name__ == "__main__":
 
     assert rejects([]) and rejects({"property": "x"}) and rejects({"requests": "x"}) and rejects({"history": "x"})
     assert rejects({**clean, "deposit10k": -50000})
+    # 전체 QA Astra-01·03: 보증금 없음은 400, 화면이 보낸 과거 기준일은 버린다
+    assert rejects({k: v for k, v in clean.items() if k != "deposit10k"}) and rejects({**clean, "deposit10k": None})
+    assert "asOf" not in validate_input({**clean, "asOf": "2019-01-01"}, today)
     assert rejects({**clean, "price": {**clean["price"], "value10k": -1}})
     assert rejects({**clean, "price": {**clean["price"], "value10k": 0}})
     assert rejects({**clean, "registry": {**clean["registry"], "mortgageMax10k": "abc"}})
