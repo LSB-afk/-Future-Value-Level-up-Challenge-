@@ -4,21 +4,58 @@
     {
       "name": "movevalue",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["api/movevalue_api.py", "--port", "5173"],
+      "runtimeArgs": [
+        "api/movevalue_api.py",
+        "--port",
+        "5173"
+      ],
       "port": 5173,
+      "autoPort": false
+    },
+    {
+      "name": "moodoo",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "/Users/leeseungbo/Desktop/공모전/2026년 공모전/국토교통-moodoo/api/movevalue_api.py",
+        "--port",
+        "5174"
+      ],
+      "port": 5174,
       "autoPort": false
     },
     {
       "name": "movevalue-static",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8788", "-d", "site"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8788",
+        "-d",
+        "site"
+      ],
       "port": 8788
     },
     {
-      "name": "moodoo",
+      "name": "bm-image",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["api/movevalue_api.py", "--port", "5174"],
-      "port": 5174,
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8797",
+        "-d",
+        "/Users/leeseungbo/Downloads/팀빌딩_신청서_자료"
+      ],
+      "port": 8797
+    },
+    {
+      "name": "fithome-plus",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "/Users/leeseungbo/Desktop/공모전/2026년 공모전/국토교통-fithome/api/movevalue_api.py",
+        "--port",
+        "5176"
+      ],
+      "port": 5176,
       "autoPort": false
     }
   ]
