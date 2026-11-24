@@ -4,7 +4,7 @@
 K Car 진단 대시보드처럼 항목마다 "기준 · 이 집 값 · 결과 · 출처"를 남겨서,
 등급이 어떤 근거로 나왔는지 화면에서 그대로 보여줄 수 있게 한다.
 
-모르는 값은 0으로 계산하되 결과를 "하한"으로 표시하고, 등급은 "주의"를 넘지 못한다.
+다가구의 선순위 보증금은 제출 서류에서 확인한 합계만 사용한다. 미확인이면 금액 판정을 보류한다.
 기준선 근거:
 - 70%: 주의 시작 (실무 권고)
 - 80%: 깡통전세 실무 경계 (법정 기준 아님)
@@ -15,8 +15,12 @@ K Car 진단 대시보드처럼 항목마다 "기준 · 이 집 값 · 결과 ·
 from __future__ import annotations
 
 from datetime import date, datetime
+from math import isfinite
 
-from jeonse_guide import aftercare, deposit_guide, documents, guarantees, market_gap_check, repayment
+from jeonse_guide import (
+    DEPOSIT_MISSING_LABEL, MORTGAGE_PENDING_LABEL, PRIOR_PENDING_LABEL, aftercare, deposit_guide,
+    documents, guarantees, market_gap_check, pending_senior_reason, repayment,
+)
 
 LINES = [
     {"pct": 70, "label": "주의 시작", "basis": "실무 권고"},
@@ -31,6 +35,8 @@ REGISTRY_FRESH_DAYS = 30
 HOUSING_LABELS = {"apartment": "아파트", "villa": "빌라·다세대", "multi": "다가구", "officetel": "오피스텔"}
 SOURCE_LABELS = {
     "inspected": "핏홈 점검",
+    "submitted": "제출 서류",
+    "reviewedPdf": "사용자가 원문 대조",
     "trade": "실거래",
     "public": "공공데이터",
     "registry": "등기부",
@@ -55,12 +61,17 @@ def _num(value) -> float | None:
         return None
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return None
 
 
 def _tri(value) -> str:
     return value if value in {"yes", "no"} else "unknown"
+
+
+def _amount(value) -> float | None:
+    amount = _num(value)
+    return amount if not isinstance(value, bool) and amount is not None and isfinite(amount) and amount >= 0 else None
 
 
 def _date(value) -> date | None:
@@ -104,35 +115,45 @@ def _check(area, check_id, label, standard, value, result, source, note=""):
 def house_price(price: dict) -> tuple[float | None, str, str]:
     """(주택가격 만원, 산정 근거 문구, 출처)."""
     basis = price.get("basis") or "market"
-    value = _num(price.get("value10k"))
-    official = _num(price.get("official10k"))
+    value = _amount(price.get("value10k"))
+    official = _amount(price.get("official10k"))
     source = price.get("source") or "input"
     if basis == "official":
-        if official is None:
+        if not official:
             return None, "공시가격 미입력", "none"
         return official * OFFICIAL_TO_PRICE, f"공시가격 {money(official)} × 140% (HUG 방식)", source
-    if value is None:
+    if not value:
         return None, "집값 미입력", "none"
     label = {"market": "시세·감정가", "trade": "실거래가"}.get(basis, "시세")
     return value, f"{label} {money(value)}", source
 
 
-def ltv_block(inp: dict) -> dict:
+def ltv_block(inp: dict, *, confirmed_prior_deposits10k=None, today: date | None = None) -> dict:
     housing = inp.get("property", {}).get("housingType") or "villa"
-    deposit = _num(inp.get("deposit10k")) or 0
-    price, price_label, price_source = house_price(inp.get("price") or {})
+    deposit = _amount(inp.get("deposit10k"))
+    price_input = inp.get("price") or {}
+    price, price_label, price_source = house_price(price_input)
+    market_basis = (price_input.get("basis") or "market") in {"market", "trade"}
+    rent_ratio = round(deposit / price * 100, 1) if market_basis and price and price_source != "none" and deposit is not None else None
     registry = inp.get("registry") or {}
     landlord = inp.get("landlord") or {}
-    mortgage = _num(registry.get("mortgageMax10k"))
-    prior = _num(landlord.get("priorDeposits10k"))
-    if prior is None and housing != "multi":
-        prior_effective, prior_known = 0.0, True  # 개별 등기 주택은 이 호실의 선순위 임차인만 해당
+    mortgage = _amount(registry.get("mortgageMax10k"))
+    if registry.get("issuedAt"):
+        issued = _date(registry["issuedAt"])
+        if issued is None or not 0 <= ((today or date.today()) - issued).days <= REGISTRY_FRESH_DAYS:
+            mortgage = None
+    if housing == "multi":
+        # Only the caller that resolves submitted evidence can provide this value.
+        prior = _amount(confirmed_prior_deposits10k)
     else:
-        prior_effective, prior_known = (prior or 0.0), prior is not None
-    debt = (mortgage or 0.0) + prior_effective + deposit
-    ratio = round(debt / price * 100, 1) if price else None
+        prior_value = landlord.get("priorDeposits10k")
+        prior = 0.0 if prior_value in (None, "") else _amount(prior_value)
+    pending = prior is None
+    debt = None if pending or mortgage is None or deposit is None else mortgage + prior + deposit
+    can_price = bool(price) and debt is not None
+    ratio = round(debt / price * 100, 1) if can_price else None
     headroom = {
-        str(line["pct"]): (round(price * line["pct"] / 100 - debt) if price else None) for line in LINES
+        str(line["pct"]): (round(price * line["pct"] / 100 - debt) if can_price else None) for line in LINES
     }
     return {
         "price10k": round(price) if price else None,
@@ -140,11 +161,14 @@ def ltv_block(inp: dict) -> dict:
         "priceSource": price_source,
         "priceSourceLabel": SOURCE_LABELS.get(price_source, price_source),
         "mortgage10k": mortgage,
-        "prior10k": prior_effective if prior_known else None,
+        "mortgagePending": mortgage is None,
+        "rentToMarketPct": rent_ratio,
+        "prior10k": prior,
+        "priorDepositPending": pending,
         "deposit10k": deposit,
-        "debt10k": round(debt),
+        "debt10k": round(debt) if debt is not None else None,
         "ratioPct": ratio,
-        "isLowerBound": mortgage is None or not prior_known,
+        "isLowerBound": mortgage is None or pending,
         "lines": LINES,
         "headroom10k": headroom,
     }
@@ -204,46 +228,56 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
     issued = _date(registry.get("issuedAt"))
     if issued is None:
         checks.append(_check("rights", "registryFresh", "등기부 열람일", f"열람 후 {REGISTRY_FRESH_DAYS}일 이내일 것",
-                             "미열람", "unknown", "none"))
+                             "열람일 확인 필요" if registry.get("issuedAt") else "미열람", "unknown", "none"))
     else:
         age = (today - issued).days
         checks.append(_check(
             "rights", "registryFresh", "등기부 열람일", f"열람 후 {REGISTRY_FRESH_DAYS}일 이내일 것",
-            f"{issued.isoformat()} ({age}일 전)", "pass" if age <= REGISTRY_FRESH_DAYS else "caution", reg_source,
+            f"{issued.isoformat()} ({age}일 전)" if age >= 0 else f"{issued.isoformat()} (미래 날짜)",
+            "pass" if 0 <= age <= REGISTRY_FRESH_DAYS else "caution", registry.get("dateSource") or reg_source,
             "근저당은 언제든 새로 잡힐 수 있어 계약 직전과 잔금 직전에 다시 열람해야 합니다.",
         ))
 
     # 가격·비율
     ratio = ltv["ratioPct"]
-    if ratio is None:
+    deposit = ltv["deposit10k"]
+    pending_reason = pending_senior_reason(ltv)
+    if pending_reason or deposit is None:
+        price_value = ltv["price10k"]
+        known_debt = (deposit or 0) + (ltv["mortgage10k"] or 0) + (ltv["prior10k"] or 0)
+        already_excessive = price_value and known_debt > price_value * 0.90
+        missing = pending_reason or DEPOSIT_MISSING_LABEL
+        checks.append(_check("ratio", "ltv", "집값 대비 빚 비율(LTV)", "근저당·선순위 보증금·계약 보증금 확인 후 계산",
+                             missing, "danger" if already_excessive else "unknown", "none",
+                             "확인된 보증금과 근저당만으로 이미 90%를 초과합니다." if already_excessive else ""))
+    elif ratio is None:
         checks.append(_check("ratio", "ltv", "집값 대비 빚 비율(LTV)", "근저당 + 선순위 보증금 + 내 보증금이 집값의 70% 미만일 것",
                              "집값 미입력", "unknown", "none"))
     else:
         result = "pass" if ratio < 70 else "caution" if ratio <= 90 else "danger"
-        value = f"{ratio}%" + (" 이상 (모르는 값은 0으로 계산한 하한)" if ltv["isLowerBound"] else "")
+        value = f"{ratio}%"
         checks.append(_check("ratio", "ltv", "집값 대비 빚 비율(LTV)",
                              "근저당 + 선순위 보증금 + 내 보증금이 집값의 70% 미만일 것",
                              value, result, ltv["priceSource"],
                              "90%를 넘으면 HUG 전세보증 가입이 안 됩니다."))
-    mortgage = _num(registry.get("mortgageMax10k"))
+    mortgage = ltv["mortgage10k"]
     checks.append(_check("ratio", "mortgage", "근저당 채권최고액", "등기부 을구의 근저당 합계를 확인할 것",
                          money(mortgage), "pass" if mortgage is not None else "unknown",
-                         reg_source if mortgage is not None else "none"))
+                         (registry.get("mortgageSource") or reg_source) if mortgage is not None else "none"))
     price_source = ltv["priceSource"]
     checks.append(_check("ratio", "priceBasis", "집값 근거", "집값이 확인된 값일 것(추정 아님)",
                          ltv["priceLabel"],
                          "unknown" if price_source == "none" else "caution" if price_source == "estimate" else "pass",
                          price_source))
-    official = _num(price.get("official10k"))
-    deposit = _num(inp.get("deposit10k")) or 0
-    if official:
+    official = _amount(price.get("official10k"))
+    if official and deposit is not None:
         over = deposit > official * HUG_DEPOSIT_CAP
         checks.append(_check("ratio", "hug126", "공시가격 대비 보증금", "보증금이 공시가격의 126% 이하일 것 (HUG 보증 기준)",
                              f"{round(deposit / official * 100, 1)}%", "caution" if over else "pass", price_source,
                              "넘으면 HUG 전세보증 가입이 어렵습니다." if over else ""))
     else:
         checks.append(_check("ratio", "hug126", "공시가격 대비 보증금", "보증금이 공시가격의 126% 이하일 것 (HUG 보증 기준)",
-                             "공시가격 미입력", "unknown", "none"))
+                             DEPOSIT_MISSING_LABEL if deposit is None else "공시가격 미입력", "unknown", "none"))
 
     gap_result, gap_value = market_gap_check(inp, deposit)
     checks.append(_check("ratio", "marketGap", "시세 대비 보증금", "보증금이 주변 전세 시세보다 10% 넘게 비싸지 않을 것",
@@ -251,17 +285,19 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          "시세보다 비싼 전세는 집값이 떨어지면 바로 깡통전세가 됩니다." if gap_result == "caution" else ""))
 
     # 임대인
-    prior = _num(landlord.get("priorDeposits10k"))
     if housing == "multi":
+        prior = ltv["prior10k"]
         checks.append(_check("landlord", "priorDeposits", "선순위 보증금(다가구)",
                              "건물 전체에서 내 앞 순위 보증금 합계를 확인할 것",
                              money(prior), "pass" if prior is not None else "unknown",
-                             land_source if prior is not None else "none",
+                             "submitted" if prior is not None else "none",
                              "다가구는 한 등기부를 여러 세대가 나눠 써서, 앞 세대 보증금이 내 보증금보다 먼저 배당됩니다."))
     else:
+        prior_value = landlord.get("priorDeposits10k")
+        prior = ltv["prior10k"]
         checks.append(_check("landlord", "priorDeposits", "선순위 보증금", "이 호실의 기존 임차인 보증금을 확인할 것",
-                             money(prior) if prior is not None else "해당 없음(개별 등기)", "pass",
-                             land_source if prior is not None else "input"))
+                             "해당 없음(개별 등기)" if prior_value in (None, "") else money(prior),
+                             "pass" if prior is not None else "unknown", land_source if prior is not None else "none"))
     tax = _tri(landlord.get("taxArrears"))
     checks.append(_check("landlord", "taxArrears", "임대인 세금 체납", "국세·지방세 체납이 없을 것",
                          {"yes": "체납 있음", "no": "체납 없음", "unknown": "미확인"}[tax],
@@ -269,6 +305,8 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          land_source if tax != "unknown" else "none",
                          "당해세는 확정일자보다 먼저 배당될 수 있습니다."))
     guarantee = _tri(landlord.get("guaranteeEligible"))
+    if (pending_reason or deposit is None) and guarantee == "yes":
+        guarantee = "unknown"
     checks.append(_check("landlord", "guaranteeEligible", "전세보증보험 가입", "HUG 등 반환보증 가입이 가능할 것",
                          {"yes": "가능", "no": "불가", "unknown": "미확인"}[guarantee],
                          {"yes": "pass", "no": "caution", "unknown": "unknown"}[guarantee],
@@ -287,10 +325,14 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          bld_source if use in {"residential", "nonresidential"} else "none",
                          "근린생활시설을 주택으로 개조한 집은 보증보험과 전세대출이 막힐 수 있습니다." if use == "nonresidential" else ""))
     violation = _tri(building.get("violation"))
+    violation_source = building.get("violationSource") or bld_source
+    # The PDF reader can identify an explicit violation; absence of that mark cannot confirm a clean building.
+    if violation_source == "reviewedPdf" and violation != "yes":
+        violation = "unknown"
     checks.append(_check("building", "violation", "위반건축물", "건축물대장에 위반건축물 표시가 없을 것",
                          {"yes": "위반건축물", "no": "해당 없음", "unknown": "미확인"}[violation],
                          {"yes": "caution", "no": "pass", "unknown": "unknown"}[violation],
-                         bld_source if violation != "unknown" else "none"))
+                         violation_source if violation != "unknown" else "none"))
 
     # 제보
     reports = int(_num(inp.get("feedbackCount")) or 0)
@@ -418,9 +460,9 @@ def history_summary(events: list[dict]) -> dict:
     }
 
 
-def evaluate(inp: dict, today: date | None = None) -> dict:
+def evaluate(inp: dict, today: date | None = None, *, confirmed_prior_deposits10k=None) -> dict:
     today = today or _date(inp.get("asOf")) or date.today()
-    ltv = ltv_block(inp)
+    ltv = ltv_block(inp, confirmed_prior_deposits10k=confirmed_prior_deposits10k, today=today)
     checks = build_checks(inp, ltv, today)
     by_id = {c["id"]: c for c in checks}
     counts = {k: sum(1 for c in checks if c["result"] == k) for k in ("pass", "caution", "danger", "unknown")}
@@ -440,8 +482,16 @@ def evaluate(inp: dict, today: date | None = None) -> dict:
     }[grade]
 
     tags = []
+    if ltv["priorDepositPending"]:
+        tags.append(PRIOR_PENDING_LABEL)
+        if grade == "caution" and (inp.get("property") or {}).get("housingType") == "multi":
+            headline = "선순위 보증금 미확인 · 집주인이 제출한 서류에서 합계를 확인해야 합니다."
+    if ltv["mortgagePending"]:
+        tags.append(MORTGAGE_PENDING_LABEL)
+    if ltv["deposit10k"] is None:
+        tags.append(DEPOSIT_MISSING_LABEL)
     if ltv["ratioPct"] is not None:
-        tags.append(f"LTV {ltv['ratioPct']}%" + (" 이상" if ltv["isLowerBound"] else ""))
+        tags.append(f"LTV {ltv['ratioPct']}%")
     head80 = ltv["headroom10k"]["80"]
     if head80 is not None:
         tags.append(f"근저당 여유 {money(head80)}" if head80 > 0 else "80% 기준 초과")

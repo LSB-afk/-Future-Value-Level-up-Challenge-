@@ -17,8 +17,8 @@
   const KIND_FILTER = { ownership: ["ownership"], mortgage: ["mortgage", "mortgageRelease"], caution: ["trust", "seizure", "auction", "leaseRegistration", "report"] };
   const TABS = [
     ["detail", "상세 판정"],
+    ["intake", "서류·인증"],
     ["registry", "정보 입력"],
-    ["docs", "서류 체크리스트"],
     ["contract", "계약 일정"],
     ["support", "보증·지원 제도"],
     ["history", "이력·제보"],
@@ -98,7 +98,8 @@
 
   function baseInput(detail, opts = {}) {
     const price = detail.price || {};
-    const live = String(price.sourceMode || "").startsWith("molit");
+    const saleIsTrade = price.recentSale10k > 0 && price.molitLatestTradeRecord?.amount10k === price.recentSale10k;
+    const rentIsTrade = price.recentJeonse10k > 0 && price.molitLatestJeonseRecord?.deposit10k === price.recentJeonse10k;
     const listing = opts.listing || null;
     return {
       key: listing ? `listing:${listing.id}` : `apt:${detail.id}`,
@@ -107,13 +108,13 @@
         address: detail.address,
         housingType: "apartment",
       },
-      deposit10k: opts.deposit10k ?? price.recentJeonse10k ?? null,
-      price: { basis: "market", value10k: price.recentSale10k ?? null, official10k: price.officialPrice10k ?? null, source: live ? "trade" : "estimate" },
+      deposit10k: opts.deposit10k ?? null,
+      price: { basis: "market", value10k: price.recentSale10k ?? null, official10k: price.officialPrice10k ?? null, officialSource: price.liveStatus?.publicPrice?.mode === "live_api" ? "public" : "estimate", source: saleIsTrade ? "trade" : "estimate" },
       market: {
         jeonse10k: price.recentJeonse10k ?? null,
         surroundingJeonse10k: price.surroundingAverageJeonse10k ?? null,
-        source: live ? "trade" : "estimate",
-        sourceLabel: price.sourceLabel || "",
+        source: rentIsTrade ? "trade" : "estimate",
+        sourceLabel: rentIsTrade ? "국토교통부 전세 실거래" : "추정 전세 시세",
       },
       center: detail.safeguard?.center || null,
       listing: listing ? { source: "핏홈 매물(시연)", url: "" } : {},
@@ -129,6 +130,40 @@
     };
   }
 
+  // 선택 단지와 다른 주소의 가격·권리·서류가 서로 섞이지 않게 주소별 리포트를 분리한다.
+  function cleanAddress(value) {
+    const address = String(value || "").normalize("NFC").trim().replace(/\s+/g, " ");
+    if (address.length < 4 || address.length > 220) throw new Error("점검할 주택의 전체 주소를 입력해 주세요.");
+    return address;
+  }
+
+  function setReportAddress(address, housingType) {
+    const original = st.original;
+    const choices = store.get("addressReports", []);
+    const normalized = cleanAddress(address);
+    const isOriginal = housingType === original.property.housingType && normalized === original.property.address.normalize("NFC").trim().replace(/\s+/g, " ");
+    let match = choices.find((row) => row.address === normalized);
+    if (!isOriginal && !match) {
+      match = store.get(original.key + ".addresses", []).find(row => row.address === normalized);
+      if (!match) {
+        const random = Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, "0")).join("");
+        match = { address: normalized, key: "address:" + random };
+      }
+      store.set("addressReports", [...choices, match]);
+    }
+    st.base = structuredClone(original);
+    if (!isOriginal) {
+      Object.assign(st.base, {
+        key: match.key, property: { label: normalized, address: normalized, housingType },
+        price: {}, market: {}, deposit10k: null, listing: {}, center: null, history: [],
+        building: { use: "unknown", violation: "unknown", source: "none" },
+      });
+    }
+    const edits = store.get(st.base.key + ".edits", {});
+    store.set(st.base.key + ".edits", { ...edits, housingType });
+    st.feedback = [];
+  }
+
   function currentInput() {
     const base = st.base;
     const key = base.key;
@@ -137,7 +172,7 @@
     const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
     if (num(e.deposit10k) !== null) next.deposit10k = num(e.deposit10k);
     if (e.priceBasis === "market" && num(e.priceValue10k) !== null) next.price = { ...next.price, basis: "market", value10k: num(e.priceValue10k), source: "input" };
-    if (e.priceBasis === "official") next.price = { ...next.price, basis: "official", source: num(e.official10k) !== null ? "input" : next.price.source };
+    if (e.priceBasis === "official") next.price = { ...next.price, basis: "official", source: num(e.official10k) !== null ? "input" : next.price.officialSource || "none" };
     if (num(e.official10k) !== null) next.price.official10k = num(e.official10k);
 
     const reg = next.registry;
@@ -162,13 +197,21 @@
       if (reg.mortgageMax10k > 0) next.history.push({ date: e.issuedAt || "", kind: "mortgage", title: "근저당 (열람 기준)", detail: `채권최고액 합계 ${money(reg.mortgageMax10k)}` });
       touched = true;
     }
-    if (touched) reg.source = "registry";
+    if (touched) reg.source = "input";
+    if (intake.registryEvidence()) {
+      reg.mortgageSource = "registry";
+      reg.dateSource = "registry";
+    }
     if (e.taxArrears && e.taxArrears !== "unknown") next.landlord.taxArrears = e.taxArrears;
     if (e.guaranteeEligible && e.guaranteeEligible !== "unknown") next.landlord.guaranteeEligible = e.guaranteeEligible;
     if (e.violation && e.violation !== "unknown") next.building.violation = e.violation;
     if (e.use) next.building.use = e.use;
     if (e.housingType) next.property.housingType = e.housingType;
-    if (num(e.priorDeposits10k) !== null) next.landlord.priorDeposits10k = num(e.priorDeposits10k);
+    if (next.property.housingType !== "multi" && num(e.priorDeposits10k) !== null) next.landlord.priorDeposits10k = num(e.priorDeposits10k);
+    const documentRequest = store.get(key + ".documentRequest", null);
+    if (next.property.housingType === "multi" && documentRequest?.address === next.property.address) {
+      next.documentOwnerToken = documentRequest.ownerToken;
+    }
     if (e.listingSource || e.listingUrl) next.listing = { source: e.listingSource || "", url: e.listingUrl || "" };
     next.schedule = { contractDate: e.contractDate || "", moveInDate: e.moveInDate || "", endDate: e.endDate || "" };
     if (num(e.auctionRatePct) !== null) next.auction = { ratePct: num(e.auctionRatePct) };
@@ -179,19 +222,29 @@
     if (o.taxArrears) next.landlord.taxArrears = o.taxArrears;
     if (o.guaranteeEligible) next.landlord.guaranteeEligible = o.guaranteeEligible;
     if (o.ownerMatches) next.registry.ownerMatches = o.ownerMatches;
-    if (o.registryIssuedAt) {
-      next.registry.issuedAt = o.registryIssuedAt;
-      next.registry.source = "registry";
+    if (intake.confirmedBuildingViolation()) {
+      next.building.violation = "yes";
+      next.building.violationSource = "reviewedPdf";
+    } else if (e.violation && e.violation !== "unknown") {
+      next.building.violationSource = "input";
     }
-    if (store.get(`${key}.inspectionRequested`, false)) next.inspection = { status: "requested" };
     return next;
   }
 
+  let evaluation = 0;
   async function evaluate() {
-    st.verdict = await api("/api/jeonse-verdict", { method: "POST", body: JSON.stringify(currentInput()) });
+    const request = ++evaluation;
+    const input = currentInput();
+    const result = await api("/api/jeonse-verdict", { method: "POST", body: JSON.stringify(input) });
+    if (request === evaluation) {
+      st.verdict = result;
+      st.depositKnown = input.deposit10k !== null && input.deposit10k !== undefined;
+    }
   }
   async function loadFeedback() {
-    const payload = await api(`/api/property-feedback?key=${encodeURIComponent(st.base.key)}`);
+    const key = st.base.key;
+    const payload = await api(`/api/property-feedback?key=${encodeURIComponent(key)}`);
+    if (st.base.key !== key) return false;
     const changed = payload.items.length !== st.feedback.length;
     st.feedback = payload.items;
     return changed;
@@ -199,28 +252,70 @@
 
   // ---------- 열고 닫기 ----------
 
-  async function open({ id, deposit10k = null, listing = null } = {}) {
+  let opening = 0;
+  async function open({ id, deposit10k = null, listing = null, address, housingType } = {}) {
     const node = overlay();
-    if (!node || !id) return;
+    if (!node || (!id && !address)) return;
+    const session = ++opening;
+    clearInterval(st.poll);
     node.hidden = false;
     node.innerHTML = `<div class="fh-report-backdrop" data-action="close"></div><div class="fh-report-sheet"><div class="fh-report-loading">판정 리포트를 준비하고 있어요…</div></div>`;
     try {
-      const payload = await api(`/api/property-detail?id=${encodeURIComponent(id)}`);
-      st.detail = payload.detail;
-      st.base = baseInput(st.detail, { deposit10k, listing });
+      if (address) {
+        st.original = baseInput({ id: "address-intake", name: "", address: "" });
+        setReportAddress(address, housingType);
+        st.tab = "intake";
+        intake.select(housingType === "multi" ? "landlord" : "registry");
+      } else {
+        const payload = await api(`/api/property-detail?id=${encodeURIComponent(id)}`);
+        if (session !== opening) return;
+        st.detail = payload.detail;
+        st.original = baseInput(st.detail, { deposit10k, listing });
+        st.base = st.original;
+        st.tab = "detail";
+      }
+      st.openArgs = id ? { id, deposit10k, listing: listing ? { id: listing.id, title: listing.title } : null } : null;
       st.feedback = [];
-      st.tab = "detail";
       st.filter = "all";
-      await loadFeedback();
-      await evaluate();
+      await Promise.all([loadFeedback(), evaluate()]);
+      if (session !== opening) return;
+      await intake.poll();
+      if (session !== opening) return;
       render();
+      if (address) node.querySelector(`[data-intake-panel="${housingType === "multi" ? "landlord" : "registry"}"]`)?.scrollIntoView({ block: "start" });
       startPolling();
     } catch (error) {
+      if (session !== opening) return;
+      if (address) { close(); throw error; }
       node.querySelector(".fh-report-sheet").innerHTML = `<div class="fh-report-loading">리포트를 불러오지 못했어요: ${esc(error.message)} <button type="button" class="fh-btn" data-action="close">닫기</button></div>`;
     }
   }
 
+  function openAddress(address, housingType) {
+    if (!HOUSING.some(([key]) => key === housingType)) throw new Error("점검할 주택 유형을 선택하세요.");
+    return open({ address: cleanAddress(address), housingType });
+  }
+
+  function identityReturnContext() {
+    if (!st.base || overlay()?.hidden) return null;
+    if (st.openArgs && st.base.key === st.original.key) return structuredClone(st.openArgs);
+    return { address: st.base.property.address, housingType: st.verdict?.property.housingType || st.base.property.housingType };
+  }
+
+  async function resumeIdentity(context) {
+    if (context?.id) await open(context);
+    else if (context?.address) await openAddress(context.address, context.housingType);
+    else return false;
+    if (overlay()?.hidden || !overlay()?.querySelector(".fh-report-body")) return false;
+    st.tab = "intake";
+    intake.select("identity");
+    render();
+    overlay()?.querySelector("[data-identity-host]")?.scrollIntoView({ block: "start" });
+    return true;
+  }
+
   function close() {
+    opening += 1;
     const node = overlay();
     if (node) node.hidden = true;
     clearInterval(st.poll);
@@ -231,10 +326,11 @@
     st.poll = setInterval(async () => {
       if (overlay()?.hidden || !st.base) return;
       try {
-        if (await loadFeedback()) {
+        const docChanged = await intake.poll();
+        if (docChanged || await loadFeedback()) {
           await evaluate();
           render();
-          toast("새 제보가 반영됐어요");
+          toast(docChanged ? "요청한 서류가 업데이트됐어요" : "새 제보가 반영됐어요");
         }
       } catch {
         /* 다음 주기에 다시 시도 */
@@ -245,35 +341,42 @@
   // ---------- 렌더링 ----------
 
   function renderSummary(v) {
-    const inspection = v.inspection || {};
-    const registryEmpty = v.rights.filter((c) => c.result === "unknown").length >= 4;
-    const inspectBox =
-      inspection.status === "done"
-        ? `<div class="fh-inspect done"><strong>✓ 핏홈 점검 완료</strong><p>${esc(inspection.by || "")} · ${esc(inspection.date || "")}</p></div>`
-        : inspection.status === "requested"
-          ? `<div class="fh-inspect"><strong>핏홈 점검 신청됨</strong><p>시연 단계라 실제 점검 연결은 준비 중이에요.</p></div>`
-          : `<div class="fh-inspect"><strong>핏홈 점검 전</strong><p>지금은 공개 정보와 입력값 기준이에요. 핏홈이 등기부·현장·서류를 직접 대조하면 '핏홈 점검'으로 바뀝니다.</p>
-               <button type="button" class="fh-btn" data-action="inspect">핏홈 점검 신청</button></div>`;
+    const original = intake.registryEvidence();
+    const needsRegistry = v.ltv.mortgagePending;
+    const landlordStatus = v.property.housingType === "multi" ? intake.requestStatus() : "";
+    const registryStatus = original
+      ? `${original.source === "hyphen" ? "연동 등기부" : original.source === "uploaded_pdf" ? "제출 PDF" : "등기부"} 원문 대조 · 열람일 ${original.issuedAt}`
+      : needsRegistry ? "등기부 미확인" : "근저당 직접 입력 · 원문 미확인";
     return `
       <section class="fh-card fh-summary grade-${v.grade}">
         <div class="fh-grade">
           <div class="fh-grade-badge"><span>${esc(v.gradeLabel)}</span><small>판정 등급</small></div>
           <div class="fh-grade-text">
             <h3>${esc(GRADE_COPY[v.grade])}</h3>
-            <p class="fh-meta">${esc(v.property.label)} · 보증금 ${esc(money(v.ltv.deposit10k))} · ${esc(v.asOf)} 기준</p>
+            <p class="fh-meta">보증금 ${st.depositKnown ? esc(money(v.ltv.deposit10k)) : "미입력"} · ${esc(v.asOf)} 기준</p>
             <p class="fh-headline">${esc(v.headline)}</p>
+            ${intake.confirmedBuildingViolation() ? `<p class="fh-sub is-danger-text">제출한 건축물대장에서 위반건축물 표기를 확인했습니다.
+              <button type="button" class="fh-btn" data-action="intake-tab" data-target="building">건축물대장 근거 보기</button></p>` : ""}
+            ${v.property.housingType === "multi" && !v.ltv.priorDepositPending ? `<p class="fh-sub">선순위 보증금 ${esc(intake.amountLabel(v.ltv.prior10k))} · ${esc(intake.confirmedSource())} 기준</p>` : ""}
             <div class="fh-tags">${v.tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>
-            <p class="fh-merit">핏홈이 한 번에 정리했어요 · 판정 ${v.checks.length}항목 · 서류 ${v.documents.length}종 1:1 안내 · 반환 순위 계산 · 계약 후 할 일 ${v.aftercare.items.length}개</p>
-            ${registryEmpty ? `<button type="button" class="fh-btn primary" data-action="tab" data-tab="registry">등기부 값 입력하고 다시 판정</button>` : ""}
           </div>
         </div>
-        ${inspectBox}
+        <aside class="fh-inspect" aria-label="계약 전 서류 확인">
+          <strong>계약 전 서류 확인</strong>
+          <p>${esc(registryStatus)}${original && needsRegistry ? " · 최신본 필요" : ""}</p>
+          ${!needsRegistry ? `<p>근저당 채권최고액 ${esc(intake.amountLabel(v.ltv.mortgage10k))}</p>` : ""}
+          <button type="button" class="fh-btn primary" data-action="intake-tab" data-target="registry">${original && !needsRegistry ? "등기부 원문 근거 보기" : "이 매물 등기부 확인"}</button>
+          ${landlordStatus ? `<p>${v.ltv.priorDepositPending ? "선순위 보증금 미확인" : "선순위 보증금 확인"} · ${esc(landlordStatus)}</p>
+            <button type="button" class="fh-btn" data-action="intake-tab" data-target="landlord">${landlordStatus === "요청 전" || landlordStatus === "요청 만료" ? "집주인에게 남은 서류 한 번에 요청" : "집주인 서류 접수함"}</button>` : ""}
+          <button type="button" class="fh-btn" data-action="intake-tab" data-target="hub">서류·인증 한눈에 보기</button>
+        </aside>
       </section>`;
   }
 
   function renderLtv(v) {
     const l = v.ltv;
-    if (!l.price10k) return `<section class="fh-card"><h3>집값 대비 빚</h3><p class="fh-sub">집값이 없어 비율을 계산하지 못했어요. 등기부 입력 탭에서 집값을 넣어주세요.</p></section>`;
+    if (l.mortgagePending || l.priorDepositPending || !st.depositKnown) return "";
+    if (!l.price10k) return `<section class="fh-card"><h3>집값 대비 빚</h3><p class="fh-sub">집값이 없어 비율을 계산하지 못했어요. 정보 입력에서 집값을 입력하세요.</p></section>`;
     const scale = Math.max(100, (l.ratioPct || 0) + 8);
     const pct = (x) => ((x || 0) / l.price10k) * 100;
     const seg = (cls, x, label) =>
@@ -282,10 +385,10 @@
     const h90 = l.headroom10k["90"];
     const headroom =
       h80 > 0
-        ? ["safe", `근저당이 <b>${esc(money(h80))}</b> 더 잡혀도 80% 아래예요. HUG 보증 한도(90%)까지 ${esc(money(h90))} 남았어요.`]
+        ? ["safe", `현재 입력값은 집값의 80% 기준보다 <b>${esc(money(h80))}</b> 낮아요.`]
         : h90 > 0
-          ? ["caution", `이미 깡통전세 경계(80%)를 넘었어요. HUG 보증 한도(90%)까지 ${esc(money(h90))}만 남았어요.`]
-          : ["danger", `HUG 보증 한도(90%)를 <b>${esc(money(-h90))}</b> 넘었어요. 전세보증보험 가입이 안 되는 수준이에요.`];
+          ? ["caution", `집값의 80% 이상이에요. 90% 기준까지 ${esc(money(h90))} 남았어요.`]
+          : ["danger", `현재 입력값이 집값의 90% 이상이에요. 보증 가입 조건을 확인하세요.`];
     return `
       <section class="fh-card">
         <div class="fh-card-head">
@@ -313,7 +416,6 @@
           <div><dt>내 보증금</dt><dd>${esc(money(l.deposit10k))}</dd></div>
         </dl>
         <p class="fh-headroom is-${headroom[0]}">${headroom[1]}</p>
-        ${l.isLowerBound ? `<p class="fh-sub">모르는 값은 0으로 계산했어요. 실제 비율은 이보다 높을 수 있어요.</p>` : ""}
       </section>`;
   }
 
@@ -327,7 +429,7 @@
   function renderResults(v) {
     const c = v.counts;
     const cell = (result, label, n) =>
-      `<button type="button" class="fh-count is-${result}" data-action="tab" data-tab="${result === "unknown" ? "docs" : "detail"}">
+      `<button type="button" class="fh-count is-${result}" data-action="tab" data-tab="${result === "unknown" ? "intake" : "detail"}">
         <span>${label}</span><strong>${n}</strong><small>${areaBreakdown(v.checks, result) || "없음"}</small>
       </button>`;
     return `
@@ -384,7 +486,7 @@
     const priceBasis = e.priceBasis || "estimate";
     const field = (label, control, hint = "") => `<label class="fh-field"><span>${label}</span>${control}${hint ? `<small>${hint}</small>` : ""}</label>`;
     const numInput = (name, value, placeholder) =>
-      `<input type="number" min="0" inputmode="numeric" name="${name}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" data-money>`;
+      `<input type="number" min="0" step="0.0001" inputmode="decimal" name="${name}" value="${esc(value ?? "")}" placeholder="${esc(placeholder)}" data-money>`;
     const hint = (name) => `<span data-money-hint="${name}">${e[name] ? esc(money(e[name])) : ""}</span>`;
     const housing = e.housingType || st.base.property.housingType;
     return `
@@ -405,7 +507,7 @@
         </div>
         <h4 class="fh-group">등기부</h4>
         <div class="fh-form-grid">
-          ${field("등기부 열람일", `<input type="date" name="issuedAt" value="${esc(e.issuedAt || "")}">`, "인터넷등기소 열람 700원")}
+          ${field("등기부 열람일", `<input type="date" name="issuedAt" value="${esc(e.issuedAt || "")}">`, "등기부에 적힌 발급·열람일")}
           ${field(
             "근저당 채권최고액 합계 (만원)",
             `${numInput("mortgageMax10k", e.mortgageMax10k, "을구 금액 합계")}<label class="fh-inline"><input type="checkbox" name="mortgageUnknown" ${e.mortgageUnknown ? "checked" : ""}>모름</label>`
@@ -419,10 +521,10 @@
         </div>
         <h4 class="fh-group">임대인·건물</h4>
         <div class="fh-form-grid">
-          ${field("선순위 보증금 합계 (만원)", numInput("priorDeposits10k", e.priorDeposits10k, "확정일자 부여현황 기준"), `${hint("priorDeposits10k")} 다가구·기존 세입자가 있을 때`)}
+          ${housing === "multi" ? `<div class="fh-field"><span>선순위 보증금 합계</span><strong>${esc(money(st.verdict.ltv.prior10k))}</strong><button class="fh-btn" type="button" data-action="intake-tab" data-target="landlord">집주인 서류 확인</button></div>` : field("선순위 보증금 합계 (만원)", numInput("priorDeposits10k", e.priorDeposits10k, "확정일자 부여현황 기준"), hint("priorDeposits10k"))}
           <div class="fh-field"><span>임대인 세금 체납</span>${seg("taxArrears", TRI, e.taxArrears || "unknown")}</div>
           <div class="fh-field"><span>전세보증보험 가입</span>${seg("guaranteeEligible", [["yes", "가능"], ["no", "불가"], ["unknown", "모름"]], e.guaranteeEligible || "unknown")}</div>
-          <div class="fh-field"><span>건축물 용도</span>${seg("use", [["residential", "주거용"], ["nonresidential", "근생 등 비주거"]], e.use || "residential")}</div>
+          <div class="fh-field"><span>건축물 용도</span>${seg("use", [["residential", "주거용"], ["nonresidential", "근생 등 비주거"], ["unknown", "모름"]], e.use || st.base.building.use || "unknown")}</div>
           <div class="fh-field"><span>위반건축물</span>${seg("violation", TRI, e.violation || "unknown")}<small>건축물대장 첫 장 상단에 '위반건축물' 표시가 있는지 보세요 (정부24 무료)</small></div>
         </div>
         <h4 class="fh-group">계약 일정 · 계산 가정</h4>
@@ -452,27 +554,27 @@
         return radios("guaranteeEligible", [["yes", "가입 가능"], ["no", "가입 불가"]]);
       case "ownerId":
         return radios("ownerMatches", [["yes", "소유자 일치"], ["no", "불일치"]]);
-      case "registryLatest":
-        return `<button class="fh-btn" type="button" data-action="override-today" data-field="registryIssuedAt">오늘 열람함으로 기록</button>`;
       default:
         return "";
     }
   }
 
-  function renderDocsTab(v) {
+  function renderChecklist(kinds) {
+    const selected = Array.isArray(kinds) ? kinds : [kinds];
+    const documents = st.verdict.documents.filter(doc => selected.includes(doc.id));
     const done = new Set(store.get(`${st.base.key}.docs`, []));
-    const total = v.documents.reduce((n, d) => n + d.items.length, 0);
-    const checked = v.documents.reduce((n, d) => n + d.items.filter((i) => done.has(i.id)).length, 0);
+    const total = documents.reduce((n, d) => n + d.items.length, 0);
+    const checked = documents.reduce((n, d) => n + d.items.filter((i) => done.has(i.id)).length, 0);
     const statuses = [["none", "요청 전"], ["requested", "요청함"], ["received", "받음"], ["refused", "거절"], ["noResponse", "무응답"]];
     return `
-      <div class="fh-card-head"><p class="fh-sub">체크리스트 한 줄마다 <b>어느 서류의 어디를 보면 되는지</b> 붙였어요. 서류를 보며 체크하세요. 집주인 동의가 필요한 서류는 요청문을 보내고 결과를 기록하면 판정에 반영돼요.</p><span class="src-chip">${checked}/${total} 확인</span></div>
-      <div class="fh-progress"><div style="width:${total ? (checked / total) * 100 : 0}%"></div></div>
-      <div class="fh-docs">${v.documents
+      <div class="fh-card-head" data-checklist="${esc(kinds.toString())}"><span class="src-chip">직접 확인 ${checked}/${total}</span></div>
+      <div class="fh-docs">${documents
         .map((d) => {
           const q = d.request;
+          const handledHere = ["registry", "building", "fixedDate", "moveIn", "tax"].includes(d.id);
           return `<article class="fh-doc is-${d.status}">
             <header class="fh-row">
-              <div><strong>${esc(d.title)}</strong><small>${esc(d.cost)}${d.consent ? " · 동의 필요" : ""}</small></div>
+              <div><strong>${esc(d.title)}</strong><small>${esc(d.id === "registry" ? "등기부 발급·열람" : d.cost)}${d.consent ? " · 동의 필요" : ""}</small></div>
               ${chip(d.status)}
             </header>
             <ul>${d.items
@@ -483,9 +585,9 @@
               )
               .join("")}</ul>
             <footer class="fh-actions">
-              ${d.links.map((l) => `<a class="fh-btn" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join("")}
+              ${!handledHere ? d.links.map((l) => `<a class="fh-btn" href="${esc(l.url)}" target="_blank" rel="noopener">${esc(l.label)} ↗</a>`).join("") : ""}
               ${q ? `<select data-action="req-status" data-id="${esc(q.id)}" aria-label="${esc(q.title)} 요청 상태">${statuses.map(([value, label]) => `<option value="${value}" ${q.status === value ? "selected" : ""}>${label}</option>`).join("")}</select>
-                     <button class="fh-btn" type="button" data-action="copy" data-text="${esc(q.template)}">요청문 복사</button>
+                     ${!handledHere ? `<button class="fh-btn" type="button" data-action="copy" data-text="${esc(q.template)}">요청문 복사</button>` : ""}
                      ${q.status === "received" ? receivedInput(q) : ""}` : ""}
             </footer>
           </article>`;
@@ -523,14 +625,14 @@
     return `
       <div class="fh-card-head"><h4 class="fh-group">계약 후 관리</h4>
         ${a.hasDates ? `<button class="fh-btn" type="button" data-action="ics">휴대폰 일정으로 저장</button>` : `<button class="fh-btn" type="button" data-action="tab" data-tab="registry">계약일·입주일 넣기</button>`}</div>
-      <p class="fh-sub">${a.hasDates ? "넣은 날짜로 할 일을 계산했어요. 일정 파일(.ics)로 저장하면 알림을 받을 수 있어요." : "정보 입력 탭에 계약일·입주일을 넣으면 날짜가 계산돼요."} 공공 사이트는 자동으로 조회하지 않고 바로 갈 수 있게 연결만 해요.</p>
+      <p class="fh-sub">${a.hasDates ? "넣은 날짜로 할 일을 계산했어요. 일정 파일(.ics)로 저장하면 알림을 받을 수 있어요." : "정보 입력 탭에 계약일·입주일을 넣으면 날짜가 계산돼요."} </p>
       <ol class="fh-after">${a.items
         .map(
           (i) => `<li class="ph-${esc(i.phase)}">
             <time>${esc(i.date || i.when || "")}</time>
             <div><strong>${esc(i.title)}</strong><span class="fh-phase">${esc(PHASE[i.phase] || "")}</span>
               <p>${esc(i.detail)}</p>
-              <small>${i.basis ? `${esc(i.basis)} · ` : ""}${i.link ? `<a href="${esc(i.link.url)}" target="_blank" rel="noopener">${esc(i.link.label)} ↗</a>` : ""}</small></div>
+              <small>${i.basis ? `${esc(i.basis)} · ` : ""}${["registryBalance", "registryNext"].includes(i.id) ? '<button type="button" class="fh-btn" data-action="intake-tab" data-target="registry">이 매물 등기부 확인</button>' : i.link ? `<a href="${esc(i.link.url)}" target="_blank" rel="noopener">${esc(i.link.label)} ↗</a>` : ""}</small></div>
           </li>`
         )
         .join("")}</ol>`;
@@ -543,7 +645,7 @@
       <div class="fh-guarantee is-${cls}">
         <div class="fh-row"><strong>전세보증금 반환보증 가입 가능성</strong>${chip(cls === "pass" ? "pass" : cls)}</div>
         <p class="fh-big">${esc(g.statusLabel)}</p>
-        <p>보증보험 가입선(최대 보증금): <b>${esc(money(g.hugMax10k))}</b> <small>${esc(g.hugBasis)}</small></p>
+        ${v.ltv.priorDepositPending || v.ltv.mortgagePending || !st.depositKnown ? "<p>보증금과 선순위 채권을 확인하면 예상 한도를 계산해요.</p>" : `<p>보증보험 가입선(최대 보증금): <b>${esc(money(g.hugMax10k))}</b> <small>${esc(g.hugBasis)}</small></p>`}
         ${g.blockers.length ? `<p class="is-danger-text">막히는 이유: ${esc(g.blockers.join(" · "))}</p>` : ""}
         ${g.unknowns.length ? `<p class="fh-sub">확인이 필요한 값: ${esc(g.unknowns.join(", "))}</p>` : ""}
       </div>
@@ -565,18 +667,30 @@
 
   function renderDepositGuide(v) {
     const g = v.depositGuide;
+    const ltv = v.ltv;
+    const missing = [];
+    if (ltv.priorDepositPending) missing.push(["선순위 보증금 미확인", "집주인 서류의 선순위 보증금 총액"]);
+    if (ltv.mortgagePending) missing.push(["근저당 금액 미확인", "등기부의 근저당 금액"]);
+    if (!st.depositKnown) missing.push(["계약 보증금 미입력", "계약할 보증금"]);
+    if (!ltv.price10k) missing.push(["집값 미확인", "집값"]);
+    const pending = missing.length > 0;
+    const priceBasis = { estimate: "추정", input: "입력가 기준", trade: "실거래가 기준" }[ltv.priceSource] || "";
+    const rentRatio = ltv.rentToMarketPct;
     const gap = g.gapPct === null ? "" : `${g.gapPct > 0 ? "+" : ""}${g.gapPct}%`;
     return `
       <section class="fh-card">
-        <div class="fh-card-head"><h3>시세·적정 보증금</h3>${srcChip(g.marketIsEstimate ? "estimate" : "trade", g.marketIsEstimate ? "시세 · 추정" : "시세 · 실거래")}</div>
-        <p class="fh-headroom is-${g.lines[0].fits === false ? "caution" : "safe"}">${esc(g.headline)}</p>
+        <div class="fh-card-head"><h3>${pending ? "시세와 보증금" : "시세·적정 보증금"}</h3>${g.marketJeonse10k || g.nearbyJeonse10k ? srcChip(g.marketIsEstimate ? "estimate" : "trade", g.marketIsEstimate ? "시세 · 추정" : "시세 · 실거래") : srcChip("none", "주변 시세 미확인")}</div>
+        ${pending ? `<div class="fh-evidence-pending"><h4>${esc(missing[0][0])}</h4>
+          <p>${esc(missing.map(item => item[1]).join(" · "))} 확인 후 안전선과 예상 회수액을 계산할 수 있어요.</p></div>`
+          : `<p class="fh-headroom is-${g.lines[0].fits === false ? "caution" : "safe"}">${esc(g.headline)}</p>`}
         <dl class="fh-numbers">
-          <div><dt>이 매물 보증금</dt><dd>${esc(money(g.deposit10k))}</dd><dd class="fh-small">${esc(g.listingSource ? `${g.listingSource}에서 본 가격` : "입력값")}</dd></div>
+          <div><dt>이 매물 보증금</dt><dd>${st.depositKnown ? esc(money(g.deposit10k)) : "미입력"}</dd><dd class="fh-small">${st.depositKnown ? esc(g.listingSource || "입력값") : '<button type="button" class="fh-btn" data-action="tab" data-tab="registry">보증금 입력</button>'}</dd></div>
           <div><dt>주변 전세 시세</dt><dd>${esc(money(g.marketJeonse10k ?? g.nearbyJeonse10k))}</dd><dd class="fh-small ${g.gapPct > 10 ? "is-danger-text" : ""}">${esc(gap ? `이 보증금은 ${gap}` : "비교 불가")}</dd></div>
-          <div><dt>집값</dt><dd>${esc(money(g.price10k))}</dd></div>
-          <div><dt>내 앞 순위 빚</dt><dd>${esc(money(g.senior10k))}</dd><dd class="fh-small">${g.seniorKnown ? "근저당 + 선순위 보증금" : "근저당 미확인 · 0으로 계산"}</dd></div>
+          <div><dt>집값</dt><dd>${esc(money(g.price10k))}</dd><dd class="fh-small">${esc(ltv.priceSourceLabel)}</dd></div>
+          ${Number.isFinite(rentRatio) ? `<div><dt>${esc(priceBasis)} 전세가율</dt><dd>${esc(rentRatio)}%</dd><dd class="fh-small">보증금 ÷ 집값</dd></div>` : ""}
+          ${!pending ? `<div><dt>내 앞 순위 빚</dt><dd>${esc(money(g.senior10k))}</dd><dd class="fh-small">근저당 + 선순위 보증금</dd></div>` : ""}
         </dl>
-        <table class="fh-table">
+        ${!pending ? `<table class="fh-table">
           <thead><tr><th>기준</th><th>최대 보증금</th><th>이 보증금</th></tr></thead>
           <tbody>${g.lines
             .map(
@@ -584,13 +698,14 @@
                 <td>${l.fits === null ? chip("unknown") : l.fits ? chip("pass") : `${chip("caution")}<small>${esc(money(g.deposit10k - l.max10k))} 초과</small>`}</td></tr>`
             )
             .join("")}</tbody>
-        </table>
-        <p class="fh-sub">${esc(g.marketNote)} 다른 플랫폼 가격은 자동으로 가져오지 않아요. 본 가격을 정보 입력 탭에 넣으면 비교해 드려요.</p>
+        </table>` : ""}
+        <p class="fh-sub">${esc(g.marketNote)}</p>
       </section>`;
   }
 
   function renderRepayment(v) {
     const r = v.repayment;
+    if (v.ltv.mortgagePending || v.ltv.priorDepositPending || !st.depositKnown) return "";
     if (!r.available) return `<section class="fh-card"><h3>보증금 반환 순위</h3><p class="fh-sub">${esc(r.note)}</p></section>`;
     const max = Math.max(...r.steps.map((s) => s.claim10k || 0), 1);
     const deposit = v.depositGuide.deposit10k;
@@ -672,25 +787,23 @@
     const node = overlay();
     if (!node || !st.verdict) return;
     const v = st.verdict;
-    const tabBody = { detail: renderDetailTab, registry: renderRegistryTab, docs: renderDocsTab, contract: renderContractTab, support: renderSupportTab, history: renderHistoryTab }[st.tab](v);
+    const openedChecklist = node.querySelector("details[open] [data-checklist]")?.dataset.checklist;
+    const tabBody = { intake: () => intake.render(), detail: renderDetailTab, registry: renderRegistryTab, contract: renderContractTab, support: renderSupportTab, history: renderHistoryTab }[st.tab](v);
     const scroller = node.querySelector(".fh-report-body");
     const keepScroll = scroller ? scroller.scrollTop : 0;
     node.innerHTML = `
       <div class="fh-report-backdrop" data-action="close"></div>
       <div class="fh-report-sheet">
         <header class="fh-report-head">
-          <div><strong>전세 안심 판정 리포트</strong><span>${esc(st.detail.name)} · ${esc(st.detail.address)}</span></div>
+          <div><strong>전세 안심 판정 리포트</strong><span>${esc(v.property.label === v.property.address ? v.property.address : v.property.label + " · " + v.property.address)}</span></div>
           <button type="button" class="fh-icon" data-action="close" aria-label="리포트 닫기">×</button>
         </header>
         <div class="fh-report-body">
           ${renderSummary(v)}
-          ${renderDepositGuide(v)}
-          ${renderLtv(v)}
-          ${renderRepayment(v)}
-          ${renderResults(v)}
+          ${st.tab === "detail" ? renderDepositGuide(v) + renderLtv(v) + renderRepayment(v) + renderResults(v) : ""}
           <section class="fh-card fh-tabcard">
             <nav class="fh-tabs" role="tablist">${TABS.map(
-              ([key, label]) => `<button type="button" role="tab" class="${st.tab === key ? "is-active" : ""}" data-action="tab" data-tab="${key}">${label}${key === "docs" && v.requests.length ? ` <em>${v.requests.length}</em>` : ""}</button>`
+              ([key, label]) => `<button type="button" role="tab" aria-selected="${st.tab === key}" class="${st.tab === key ? "is-active" : ""}" data-action="tab" data-tab="${key}">${label}</button>`
             ).join("")}</nav>
             <div class="fh-tabbody">${tabBody}</div>
           </section>
@@ -698,6 +811,8 @@
         </div>
       </div>`;
     const nextScroller = node.querySelector(".fh-report-body");
+    const nextChecklist = node.querySelector("[data-checklist]");
+    if (nextChecklist && nextChecklist.dataset.checklist === openedChecklist) nextChecklist.closest("details").open = true;
     if (nextScroller) nextScroller.scrollTop = keepScroll;
   }
 
@@ -731,7 +846,6 @@
     const e = {};
     for (const [key, value] of data.entries()) e[key] = String(value).trim();
     e.mortgageUnknown = data.get("mortgageUnknown") === "on";
-    if (e.priceBasis === "estimate") delete e.priceBasis;
     return e;
   }
 
@@ -746,16 +860,19 @@
     const node = overlay();
     if (!node) return;
 
+    intake.bind(node);
     node.addEventListener("click", async (event) => {
       const t = event.target.closest("[data-action]");
       if (!t) return;
       const key = st.base?.key;
       const action = t.dataset.action;
       if (action === "close") close();
-      else if (action === "tab") {
-        st.tab = t.dataset.tab;
+      else if (action === "tab" || action === "intake-tab") {
+        st.tab = action === "intake-tab" ? "intake" : t.dataset.tab;
+        if (st.tab === "intake") intake.select(t.dataset.target || "hub");
         render();
-        node.querySelector(".fh-tabcard")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        const target = action === "intake-tab" ? node.querySelector(`[data-intake-panel="${t.dataset.target}"]`) : null;
+        (target || node.querySelector(".fh-tabcard"))?.scrollIntoView({ behavior: "smooth", block: "start" });
       } else if (action === "rights-tab") {
         st.rightsTab = t.dataset.tab;
         render();
@@ -763,17 +880,8 @@
         st.filter = t.dataset.filter;
         render();
       } else if (action === "copy") copyText(t.dataset.text);
-      else if (action === "ics") downloadIcs(st.verdict.aftercare.items, st.detail.name);
-      else if (action === "inspect") {
-        store.set(`${key}.inspectionRequested`, true);
-        await rerender();
-        toast("핏홈 점검 신청이 접수됐어요 (시연)");
-      } else if (action === "override-today") {
-        const o = store.get(`${key}.overrides`, {});
-        o[t.dataset.field] = new Date().toISOString().slice(0, 10);
-        store.set(`${key}.overrides`, o);
-        await rerender();
-      } else if (action === "reset-edits") {
+      else if (action === "ics") downloadIcs(st.verdict.aftercare.items, st.base.property.label);
+      else if (action === "reset-edits") {
         store.set(`${key}.edits`, {});
         await rerender();
         toast("입력값을 지웠어요");
@@ -805,9 +913,9 @@
         t.checked ? done.add(t.dataset.id) : done.delete(t.dataset.id);
         store.set(`${key}.stages`, [...done]);
         render();
-      } else if (t.form?.dataset.action === "edits" && t.name === "priceBasis") {
-        store.set(`${key}.edits`, { ...store.get(`${key}.edits`, {}), ...readEdits(t.form), priceBasis: t.value });
-        render();
+      } else if (t.form?.dataset.action === "edits" && ["priceBasis", "housingType"].includes(t.name)) {
+        store.set(`${key}.edits`, { ...store.get(`${key}.edits`, {}), ...readEdits(t.form) });
+        await rerender();
       }
     });
 
@@ -845,6 +953,16 @@
     });
   }
 
-  window.FitHomeReport = { open, close };
+  const intake = window.fitHomeDocumentIntake({
+    store, esc, money, copyText, render, toast, renderChecklist, base: () => st.base, verdict: () => st.verdict,
+    saveAddress: async (address, housingType) => {
+      setReportAddress(address, housingType);
+      await loadFeedback();
+      await rerender();
+    },
+    recalculate: rerender,
+  });
+
+  window.FitHomeReport = { open, openAddress, close, identityReturnContext, resumeIdentity };
   document.addEventListener("DOMContentLoaded", bind);
 })();

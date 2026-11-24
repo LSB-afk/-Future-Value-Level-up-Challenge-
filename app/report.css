@@ -509,6 +509,66 @@
 .fh-form .fh-group { margin: 16px 0 8px; }
 .fh-field select, .fh-field input[type="url"] { min-height: 36px; padding: 0 10px; border: 1px solid var(--fh-line); border-radius: 8px; font: inherit; font-size: 13px; }
 
+.fh-document-intake { display: grid; gap: 16px; color: var(--fh-ink); font-size: 14px; }
+.fh-document-intake > form, .fh-doc-intake {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--fh-line);
+  border-radius: 12px;
+  background: #fff;
+}
+.fh-inspect .fh-btn { min-width: 0; max-width: 100%; padding-block: 7px; white-space: normal; text-align: left; }
+.fh-document-intake .fh-service-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.fh-service-list button.fh-service-row {
+  width: 100%; align-content: start; align-items: start; text-align: left; color: var(--fh-ink); font-family: inherit;
+  cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease;
+}
+.fh-service-list button.fh-service-row:hover { border-color: #85c7c0; background: var(--fh-brand-soft); }
+.fh-service-list .fh-service-row .fh-row { flex-wrap: wrap; }
+.fh-document-intake button:focus-visible, .fh-inspect button:focus-visible { outline: 2px solid var(--fh-brand-strong); outline-offset: 2px; }
+.fh-document-intake [data-identity-host] { display: grid; justify-items: start; gap: 8px; }
+.fh-document-intake [data-intake-panel]:focus { outline: none; }
+@media (max-width: 560px) {
+  .fh-document-intake .fh-service-list { grid-template-columns: 1fr; }
+}
+.fh-document-intake .fh-form, .fh-doc-intake { display: grid; gap: 12px; }
+.fh-document-intake .fh-group { margin: 0; font-size: 15px; }
+.fh-document-intake p, .fh-evidence-pending p { margin: 0; line-height: 1.6; overflow-wrap: anywhere; }
+.fh-document-intake input:not([type="checkbox"]), .fh-document-intake select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--fh-line);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+}
+.fh-document-intake input[readonly] { color: var(--fh-brand-strong); background: var(--fh-soft); }
+.fh-document-intake fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.fh-document-intake legend { margin-bottom: 4px; font-size: 13px; font-weight: 600; }
+.fh-document-intake .fh-inline { display: flex; padding: 6px 0; color: #374151; font-size: 13px; }
+.fh-document-intake .fh-inline input { flex: none; accent-color: var(--fh-brand-strong); }
+.fh-document-intake .fh-btn { justify-self: start; min-height: 38px; white-space: normal; }
+.fh-document-intake button:disabled { opacity: 0.65; cursor: wait; }
+.fh-document-intake .fh-item { display: grid; gap: 8px; min-width: 0; }
+.fh-document-intake .fh-numbers { grid-template-columns: 2fr 1fr 1fr; margin: 0; }
+.fh-document-intake .fh-numbers dd { overflow-wrap: anywhere; }
+.fh-evidence-lines { padding: 10px 12px; border-radius: 8px; background: var(--fh-soft); }
+.fh-evidence-lines summary { cursor: pointer; font-size: 13px; font-weight: 600; }
+.fh-evidence-lines ol { display: grid; gap: 8px; padding: 0; margin: 10px 0 0; list-style: none; }
+.fh-evidence-lines small { color: #475569; }
+.fh-evidence-lines blockquote { margin: 3px 0 0; padding: 1px 0 1px 10px; border-left: 2px solid #94b8b4; color: #283a3a; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.fh-document-intake .fh-status { padding: 10px 12px; border-radius: 8px; background: var(--fh-brand-soft); color: var(--fh-brand-strong); font-size: 13px; }
+.fh-evidence-pending { border-color: #e6c993; }
+.fh-evidence-pending p { margin: 8px 0 12px; font-size: 14px; }
+@media (max-width: 540px) {
+  .fh-document-intake .fh-numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fh-document-intake .fh-numbers > :first-child { grid-column: 1 / -1; }
+  .fh-document-intake .fh-row { flex-wrap: wrap; }
+}
+
 @media (max-width: 760px) {
   .fh-summary, .fh-feedback { grid-template-columns: 1fr; }
   .fh-numbers, .fh-counts { grid-template-columns: repeat(2, 1fr); }

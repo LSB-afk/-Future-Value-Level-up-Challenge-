@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'none'; base-uri 'none'">
+  <title>임대인 서류 제출 · FitHome</title>
+  <link rel="stylesheet" href="./landlord.css">
+  <script defer src="./landlord.js"></script>
+</head>
+<body>
+  <main>
+    <header>
+      <span class="brand" lang="en">FitHome</span>
+      <h1>임대인 서류 제출</h1>
+    </header>
+    <noscript>서류를 제출하려면 브라우저에서 자바스크립트를 켜 주세요.</noscript>
+    <div id="notice" role="status">요청 내용을 불러오는 중입니다.</div>
+    <button type="button" id="retry" hidden>다시 불러오기</button>
+    <form id="request" hidden>
+      <section class="property" aria-labelledby="address-title">
+        <h2 id="address-title">요청받은 주택</h2>
+        <p id="address"></p>
+        <p id="expires" class="muted"></p>
+      </section>
+      <section aria-labelledby="documents-title">
+        <div class="section-head">
+          <h2 id="documents-title">제출 서류</h2>
+          <span id="count" class="count"></span>
+        </div>
+        <p class="muted">서류마다 PDF 한 개(최대 4MB)를 선택하세요. 주소와 발급일이 보이는 파일을 사용하고, 주민등록번호 뒷자리 등 점검에 필요 없는 정보는 가려 주세요.</p>
+        <div id="documents"></div>
+      </section>
+      <label class="consent"><input id="consent" type="checkbox" required>
+        <span>선택한 서류를 핏홈에 제출하고, 주소·발급일·금액 등 점검에 필요한 내용과 해당 원문 줄을 요청자에게 공유하는 데 동의합니다.</span>
+      </label>
+      <button id="send" class="primary" type="submit" disabled>선택한 서류 제출</button>
+      <p id="upload-status" role="status" aria-live="polite"></p>
+    </form>
+    <template id="document-template">
+      <div class="document">
+        <div class="section-head"><label></label><span class="badge"></span></div>
+        <p class="hint"></p>
+        <input type="file" accept=".pdf,application/pdf">
+        <p class="error" aria-live="polite"></p>
+      </div>
+    </template>
+  </main>
+</body>
+</html>

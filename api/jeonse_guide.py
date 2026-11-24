@@ -14,6 +14,11 @@ jeonse_verdict.evaluate()가 판정을 낸 뒤 이 모듈을 불러 다섯 덩�
 from __future__ import annotations
 
 from datetime import date, timedelta
+from math import isfinite
+
+MORTGAGE_PENDING_LABEL = "근저당 미확인"
+PRIOR_PENDING_LABEL = "선순위 보증금 미확인"
+DEPOSIT_MISSING_LABEL = "계약 보증금 미입력"
 
 # --- 기준값 ---------------------------------------------------------------------
 
@@ -68,12 +73,13 @@ LINKS = {
 
 
 def _num(value) -> float | None:
-    if value in (None, ""):
+    if value in (None, "") or isinstance(value, bool):
         return None
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return None
+    return number if isfinite(number) and number >= 0 else None
 
 
 def _date(value) -> date | None:
@@ -126,17 +132,26 @@ def is_capital(address: str) -> bool:
 
 # --- 1. 적정 보증금 ---------------------------------------------------------------
 
+def pending_senior_reason(ltv: dict) -> str:
+    if ltv.get("priorDepositPending"):
+        return PRIOR_PENDING_LABEL
+    if ltv["mortgage10k"] is None:
+        return MORTGAGE_PENDING_LABEL
+    return ""
+
+
 def deposit_guide(inp: dict, ltv: dict) -> dict:
-    deposit = ltv["deposit10k"] or 0
+    deposit = ltv["deposit10k"]
     price = ltv["price10k"]
-    senior = (ltv["mortgage10k"] or 0) + (ltv["prior10k"] or 0)
+    pending = pending_senior_reason(ltv)
+    senior = None if pending else ltv["mortgage10k"] + ltv["prior10k"]
     market = inp.get("market") or {}
     jeonse = _num(market.get("jeonse10k"))
     nearby = _num(market.get("surroundingJeonse10k"))
     listing = inp.get("listing") or {}
 
     def cap(pct):
-        return round(price * pct / 100 - senior) if price else None
+        return round(price * pct / 100 - senior) if price and senior is not None and deposit is not None else None
 
     hug = hug_limit(inp, ltv)
     lines = [
@@ -149,7 +164,9 @@ def deposit_guide(inp: dict, ltv: dict) -> dict:
 
     compare = jeonse or nearby
     gap_pct = round((deposit - compare) / compare * 100, 1) if compare and deposit else None
-    if gap_pct is None:
+    if deposit is None:
+        market_note = "계약 보증금을 입력하면 전세 시세와 비교할 수 있어요."
+    elif gap_pct is None:
         market_note = "비교할 전세 시세가 없어요."
     elif gap_pct > 10:
         market_note = f"주변 전세 시세보다 {gap_pct}% 높아요. 시세보다 비싼 전세는 깡통전세로 이어지기 쉬워요."
@@ -159,14 +176,16 @@ def deposit_guide(inp: dict, ltv: dict) -> dict:
         market_note = "주변 전세 시세와 비슷한 수준이에요."
 
     safe_max = lines[0]["max10k"]
-    if safe_max is None:
+    if pending:
+        headline = pending
+    elif deposit is None:
+        headline = DEPOSIT_MISSING_LABEL
+    elif safe_max is None:
         headline = "집값을 알면 적정 보증금을 계산할 수 있어요."
     elif deposit <= safe_max:
         headline = f"이 보증금은 안전선 안이에요. 최대 {money(safe_max)}까지가 안전선이에요."
     else:
         headline = f"안전선보다 {money(deposit - safe_max)} 높아요. 안전선 기준 적정 보증금은 {money(max(safe_max, 0))}이에요."
-    if ltv.get("isLowerBound") and safe_max is not None:
-        headline += " 근저당·선순위를 아직 몰라 실제 적정 보증금은 이보다 낮을 수 있어요."
 
     return {
         "deposit10k": deposit,
@@ -180,7 +199,7 @@ def deposit_guide(inp: dict, ltv: dict) -> dict:
         "marketNote": market_note,
         "price10k": price,
         "senior10k": senior,
-        "seniorKnown": not ltv.get("isLowerBound"),
+        "seniorKnown": senior is not None,
         "lines": lines,
         "headline": headline,
     }
@@ -191,7 +210,6 @@ def hug_limit(inp: dict, ltv: dict) -> dict:
     prop = inp.get("property") or {}
     housing = prop.get("housingType") or "villa"
     official = _num((inp.get("price") or {}).get("official10k"))
-    senior = (ltv["mortgage10k"] or 0) + (ltv["prior10k"] or 0)
     region_cap = HUG_DEPOSIT_CAP10K["capital" if is_capital(prop.get("address")) else "other"]
     if housing != "apartment" and official:
         base = official * HUG_OFFICIAL_MULTIPLIER
@@ -201,6 +219,12 @@ def hug_limit(inp: dict, ltv: dict) -> dict:
         basis = f"주택가격 × 90% − 선순위, 보증금 한도 {money(region_cap)}"
     else:
         return {"max10k": None, "basis": "주택가격이 없어 계산하지 못했어요", "regionCap10k": region_cap, "base10k": None}
+    pending = pending_senior_reason(ltv)
+    if pending:
+        return {"max10k": None, "basis": pending, "regionCap10k": region_cap, "base10k": base}
+    if ltv["deposit10k"] is None:
+        return {"max10k": None, "basis": DEPOSIT_MISSING_LABEL, "regionCap10k": region_cap, "base10k": base}
+    senior = ltv["mortgage10k"] + ltv["prior10k"]
     return {"max10k": round(min(base * HUG_RATIO - senior, region_cap)), "basis": basis, "regionCap10k": region_cap,
             "base10k": base}
 
@@ -208,10 +232,15 @@ def hug_limit(inp: dict, ltv: dict) -> dict:
 # --- 2. 보증금 반환 순위 -------------------------------------------------------------
 
 def repayment(inp: dict, ltv: dict) -> dict:
+    pending = pending_senior_reason(ltv)
+    if pending:
+        return {"available": False, "note": pending}
     prop = inp.get("property") or {}
     housing = prop.get("housingType") or "villa"
     price = ltv["price10k"]
-    deposit = ltv["deposit10k"] or 0
+    deposit = ltv["deposit10k"]
+    if deposit is None:
+        return {"available": False, "note": "계약 보증금을 입력하면 경매 시 배당을 추정할 수 있어요."}
     if not price:
         return {"available": False, "note": "집값이 있어야 경매 시 배당을 추정할 수 있어요."}
 
@@ -223,12 +252,12 @@ def repayment(inp: dict, ltv: dict) -> dict:
     pool = sale
     steps = []
 
-    def pay(label, claim, note, mine=False, known=True):
+    def pay(label, claim, note, mine=False):
         nonlocal pool
         paid = max(0.0, min(claim, pool))
         pool -= paid
         steps.append({"label": label, "claim10k": round(claim), "paid10k": round(paid), "note": note,
-                      "isMine": mine, "known": known})
+                      "isMine": mine, "known": True})
         return paid
 
     pay("경매 집행비용", sale * AUCTION_COST_PCT / 100, f"낙찰가의 약 {AUCTION_COST_PCT:g}% (가정)")
@@ -247,15 +276,10 @@ def repayment(inp: dict, ltv: dict) -> dict:
                       "note": "금액을 몰라 계산에서 뺐어요. 내 확정일자보다 먼저 생긴 체납 세금은 내 순서보다 먼저 빠져나가요.",
                       "isMine": False, "known": False})
 
-    mortgage = ltv["mortgage10k"]
-    pay("선순위 근저당", mortgage or 0,
-        "등기부 을구 채권최고액 (내 확정일자보다 먼저 설정된 것)" if mortgage is not None else "미확인 → 0으로 계산",
-        known=mortgage is not None)
+    pay("선순위 근저당", ltv["mortgage10k"], "등기부 을구 채권최고액 (내 확정일자보다 먼저 설정된 것)")
     prior = ltv["prior10k"]
     if housing == "multi" or prior:
-        pay("선순위 임차보증금", prior or 0,
-            "나보다 먼저 전입·확정일자를 받은 세입자" if prior is not None else "미확인 → 0으로 계산",
-            known=prior is not None)
+        pay("선순위 임차보증금", prior, "나보다 먼저 전입·확정일자를 받은 세입자")
     rest = deposit - my_priority
     pay("내 보증금", rest, "전입신고 + 확정일자를 갖춘 다음 날부터 이 순서", mine=True)
 
@@ -360,17 +384,25 @@ def documents(checks_by_id: dict, requests: list[dict]) -> list[dict]:
 
 def guarantees(inp: dict, ltv: dict, checks_by_id: dict) -> dict:
     prop = inp.get("property") or {}
-    deposit = ltv["deposit10k"] or 0
+    deposit = ltv["deposit10k"]
     hug = hug_limit(inp, ltv)
     blockers, unknowns = [], []
-    if hug["max10k"] is None:
+    if ltv.get("priorDepositPending"):
+        unknowns.append("선순위 보증금")
+    if deposit is None:
+        unknowns.append("계약 보증금")
+    if hug["base10k"] is None:
         unknowns.append("주택가격")
-    elif deposit > hug["max10k"]:
+    if hug["max10k"] is not None and deposit > hug["max10k"]:
         blockers.append(f"보증금이 가입선 {money(hug['max10k'])}보다 {money(deposit - hug['max10k'])} 높아요")
+    if hug["max10k"] is None and deposit is not None and deposit > hug["regionCap10k"]:
+        blockers.append(f"보증금이 지역 한도 {money(hug['regionCap10k'])}를 넘어요")
     housing = prop.get("housingType") or "villa"
     if hug["base10k"]:
         senior = (ltv["mortgage10k"] or 0) + (ltv["prior10k"] or 0)
         limit = HUG_SENIOR_LIMIT["multi" if housing == "multi" else "default"]
+        if hug["max10k"] is None and (deposit or 0) + senior > hug["base10k"] * HUG_RATIO:
+            blockers.append("확인된 보증금과 근저당만으로 보증 한도를 넘어요")
         if senior > hug["base10k"] * limit:
             blockers.append(f"선순위채권이 주택가격의 {round(limit * 100)}%를 넘어요")
     for check_id, label in (("trust", "신탁등기"), ("seizure", "압류·가압류"), ("auction", "경매"),
@@ -467,10 +499,12 @@ def aftercare(inp: dict) -> dict:
                          "endDate": end.isoformat() if end else None}}
 
 
-def market_gap_check(inp: dict, deposit10k: float) -> tuple[str, str]:
+def market_gap_check(inp: dict, deposit10k: float | None) -> tuple[str, str]:
     """(결과, 값 문구). 주변 전세 시세보다 10% 넘게 비싸면 주의."""
     market = inp.get("market") or {}
     compare = _num(market.get("jeonse10k")) or _num(market.get("surroundingJeonse10k"))
+    if deposit10k is None:
+        return "unknown", DEPOSIT_MISSING_LABEL
     if not compare or not deposit10k:
         return "unknown", "비교할 시세 없음"
     gap = round((deposit10k - compare) / compare * 100, 1)

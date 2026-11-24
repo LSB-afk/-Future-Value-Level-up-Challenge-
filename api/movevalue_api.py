@@ -21,6 +21,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
 from jeonse_verdict import evaluate as evaluate_jeonse
 from property_feedback import add_feedback, list_feedback
+import precontract_routes
 from kakao_safety_adapters import kakao_safety_response, kakao_safety_status
 from kakao_soc_adapters import kakao_soc_response, kakao_soc_status
 from property_adapters import property_agent_response, property_detail_response
@@ -1149,7 +1150,8 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        if not precontract_routes.private_api(urlparse(self.path).path):
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -1157,14 +1159,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_OPTIONS(self) -> None:
         self.send_response(HTTPStatus.NO_CONTENT)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        if not precontract_routes.private_api(urlparse(self.path).path):
+            self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
         self.end_headers()
 
-    def read_json_body(self) -> dict:
+    def read_json_body(self, max_bytes: int = 1_000_000) -> dict:
         length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0 or length > 1_000_000:
+        if length <= 0 or length > max_bytes:
             raise ValueError("요청 본문 크기가 올바르지 않습니다.")
         payload = json.loads(self.rfile.read(length).decode("utf-8"))
         if not isinstance(payload, dict):
@@ -1173,13 +1176,25 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path.startswith(precontract_routes.PREFIXES):
+            precontract_routes.handle_post(self, parsed.path)
+            return
         if parsed.path in {"/api/jeonse-verdict", "/api/property-feedback"}:
             try:
+                if parsed.path == "/api/jeonse-verdict" and not precontract_routes.accepts_json(self):
+                    return
                 payload = self.read_json_body()
                 if parsed.path == "/api/jeonse-verdict":
+                    confirmed_prior = None
+                    owner_token = payload.pop("documentOwnerToken", None)
+                    if owner_token:
+                        from document_requests import confirmed_prior as document_prior
+                        prop = payload.get("property")
+                        if isinstance(prop, dict):
+                            confirmed_prior = document_prior(owner_token, prop.get("address", ""))
                     key = str(payload.get("key") or "")
                     payload["feedbackCount"] = len(list_feedback(key)) if key else 0
-                    self.send_json(HTTPStatus.OK, evaluate_jeonse(payload))
+                    self.send_json(HTTPStatus.OK, evaluate_jeonse(payload, confirmed_prior_deposits10k=confirmed_prior))
                 else:
                     item = add_feedback(
                         str(payload.get("key") or ""),
@@ -1202,10 +1217,7 @@ class Handler(BaseHTTPRequestHandler):
         agent_chat = engine.agent_chat
 
         try:
-            length = int(self.headers.get("Content-Length") or 0)
-            if length <= 0 or length > 1_000_000:
-                raise ValueError("요청 본문 크기가 올바르지 않습니다.")
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            payload = self.read_json_body()
             messages = payload.get("messages")
             if not isinstance(messages, list) or not messages:
                 raise ValueError("messages 배열이 필요합니다.")
@@ -1224,7 +1236,8 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith("/api/"):
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            if not precontract_routes.private_api(parsed.path):
+                self.send_header("Access-Control-Allow-Origin", "*")
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             return
@@ -1332,6 +1345,10 @@ class Handler(BaseHTTPRequestHandler):
             content_type += "; charset=utf-8"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
+        if target.name == "landlord.html":
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("Content-Security-Policy", "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

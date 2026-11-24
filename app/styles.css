@@ -4234,6 +4234,10 @@ body.bookmark-panel-open .agent-hint {
     grid-template-columns: 1fr;
   }
 
+  .workspace.has-subpanel .map-stage {
+    isolation: isolate;
+  }
+
   .sidebar-resize-handle {
     display: none;
   }
@@ -4369,6 +4373,18 @@ body.bookmark-panel-open .agent-hint {
 
   .mv-sidebar {
     width: calc(100vw - 20px);
+  }
+
+  .subpanel-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    padding: 0 6px;
+  }
+
+  .subpanel-tab {
+    min-height: 44px;
+    padding: 0 3px;
   }
 
   .route-summary-grid,
