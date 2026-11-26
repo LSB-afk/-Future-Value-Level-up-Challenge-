@@ -98,8 +98,12 @@
 
   function baseInput(detail, opts = {}) {
     const price = detail.price || {};
-    const saleIsTrade = price.recentSale10k > 0 && price.molitLatestTradeRecord?.amount10k === price.recentSale10k;
-    const rentIsTrade = price.recentJeonse10k > 0 && price.molitLatestJeonseRecord?.deposit10k === price.recentJeonse10k;
+    const saleIsTrade = price.recentSale10k > 0 && (price.saleLive ?? (price.molitLatestTradeRecord?.amount10k === price.recentSale10k));
+    const rentIsTrade = price.recentJeonse10k > 0 && (price.jeonseLive ?? (price.molitLatestJeonseRecord?.deposit10k === price.recentJeonse10k));
+    const sale = saleIsTrade ? price.saleMedian10k ?? price.recentSale10k : price.recentSale10k;
+    const rent = rentIsTrade ? price.jeonseMedian10k ?? price.recentJeonse10k : price.recentJeonse10k;
+    const medianLabel = rentIsTrade && price.jeonseMedian10k && price.areaM2
+      ? `국토교통부 전용 ${price.areaM2}㎡ 전세 실거래 중앙값` : "";
     const listing = opts.listing || null;
     return {
       key: listing ? `listing:${listing.id}` : `apt:${detail.id}`,
@@ -109,19 +113,19 @@
         housingType: "apartment",
       },
       deposit10k: opts.deposit10k ?? null,
-      price: { basis: "market", value10k: price.recentSale10k ?? null, official10k: price.officialPrice10k ?? null, officialSource: price.liveStatus?.publicPrice?.mode === "live_api" ? "public" : "estimate", source: saleIsTrade ? "trade" : "estimate" },
+      price: { basis: "market", value10k: sale ?? null, official10k: price.officialPrice10k ?? null, officialSource: price.liveStatus?.publicPrice?.mode === "live_api" ? "public" : "estimate", source: saleIsTrade ? "trade" : "estimate" },
       market: {
-        jeonse10k: price.recentJeonse10k ?? null,
+        jeonse10k: rent ?? null,
         surroundingJeonse10k: price.surroundingAverageJeonse10k ?? null,
         source: rentIsTrade ? "trade" : "estimate",
-        sourceLabel: rentIsTrade ? "국토교통부 전세 실거래" : "추정 전세 시세",
+        sourceLabel: medianLabel || (rentIsTrade ? "국토교통부 전세 실거래" : "추정 전세 시세"),
       },
       center: detail.safeguard?.center || null,
       listing: listing ? { source: "핏홈 매물(시연)", url: "" } : {},
       schedule: {},
       registry: { source: "none", trust: "unknown", seizure: "unknown", auction: "unknown", leaseRegistration: "unknown", ownerMatches: "unknown" },
       landlord: { source: "input", taxArrears: "unknown", guaranteeEligible: "unknown" },
-      building: { source: "public", use: "residential", violation: "unknown" },
+      building: { source: "public", use: detail.buildingLedger?.mode === "live_api" ? detail.buildingLedger.use : "unknown", violation: "unknown" },
       requests: {},
       inspection: { status: "none" },
       history: detail.approvalDate
@@ -202,10 +206,11 @@
       reg.mortgageSource = "registry";
       reg.dateSource = "registry";
     }
-    if (e.taxArrears && e.taxArrears !== "unknown") next.landlord.taxArrears = e.taxArrears;
-    if (e.guaranteeEligible && e.guaranteeEligible !== "unknown") next.landlord.guaranteeEligible = e.guaranteeEligible;
     if (e.violation && e.violation !== "unknown") next.building.violation = e.violation;
-    if (e.use) next.building.use = e.use;
+    if (e.useEdited || e.use === "nonresidential") {
+      next.building.use = e.use;
+      next.building.source = "input";
+    }
     if (e.housingType) next.property.housingType = e.housingType;
     if (next.property.housingType !== "multi" && num(e.priorDeposits10k) !== null) next.landlord.priorDeposits10k = num(e.priorDeposits10k);
     const documentRequest = store.get(key + ".documentRequest", null);
@@ -219,9 +224,9 @@
     // 확인 요청 기록과 받은 값
     next.requests = { ...next.requests, ...store.get(`${key}.requests`, {}) };
     const o = store.get(`${key}.overrides`, {});
-    if (o.taxArrears) next.landlord.taxArrears = o.taxArrears;
-    if (o.guaranteeEligible) next.landlord.guaranteeEligible = o.guaranteeEligible;
-    if (o.ownerMatches) next.registry.ownerMatches = o.ownerMatches;
+    next.landlord.taxArrears = shownValue(e, o, "taxArrears");
+    next.landlord.guaranteeEligible = shownValue(e, o, "guaranteeEligible");
+    next.registry.ownerMatches = shownValue(e, o, "ownerMatches");
     if (intake.confirmedBuildingViolation()) {
       next.building.violation = "yes";
       next.building.violationSource = "reviewedPdf";
@@ -235,10 +240,18 @@
   async function evaluate() {
     const request = ++evaluation;
     const input = currentInput();
-    const result = await api("/api/jeonse-verdict", { method: "POST", body: JSON.stringify(input) });
-    if (request === evaluation) {
+    const base = st.base;
+    const session = opening;
+    const current = () => request === evaluation && session === opening && base === st.base;
+    try {
+      const result = await api("/api/jeonse-verdict", { method: "POST", body: JSON.stringify(input) });
+      if (!current()) return false;
       st.verdict = result;
       st.depositKnown = input.deposit10k !== null && input.deposit10k !== undefined;
+      return true;
+    } catch (error) {
+      if (!current()) return false;
+      throw error;
     }
   }
   async function loadFeedback() {
@@ -326,11 +339,13 @@
     st.poll = setInterval(async () => {
       if (overlay()?.hidden || !st.base) return;
       try {
+        const session = opening;
+        const base = st.base;
         const docChanged = await intake.poll();
-        if (docChanged || await loadFeedback()) {
-          await evaluate();
-          render();
-          toast(docChanged ? "요청한 서류가 업데이트됐어요" : "새 제보가 반영됐어요");
+        if (session !== opening || base !== st.base) return;
+        const feedbackChanged = await loadFeedback();
+        if (session === opening && base === st.base && (docChanged || feedbackChanged)) {
+          if (await rerender()) toast(docChanged ? "요청한 서류가 업데이트됐어요" : "새 제보가 반영됐어요");
         }
       } catch {
         /* 다음 주기에 다시 시도 */
@@ -386,9 +401,10 @@
     const headroom =
       h80 > 0
         ? ["safe", `현재 입력값은 집값의 80% 기준보다 <b>${esc(money(h80))}</b> 낮아요.`]
-        : h90 > 0
-          ? ["caution", `집값의 80% 이상이에요. 90% 기준까지 ${esc(money(h90))} 남았어요.`]
-          : ["danger", `현재 입력값이 집값의 90% 이상이에요. 보증 가입 조건을 확인하세요.`];
+        : h90 >= 0
+          ? ["caution", h90 === 0 ? "현재 입력값은 집값의 90%에 해당해요." : `집값의 80% 이상이에요. 90% 기준까지 ${esc(money(h90))} 남았어요.`]
+          : ["danger", `현재 입력값이 집값의 90%를 <b>${esc(money(-h90))}</b> 넘었어요.`];
+    headroom[1] += " 실제 보증 한도는 보증기관이 인정하는 주택가격과 선순위채권에 따라 달라져요.";
     return `
       <section class="fh-card">
         <div class="fh-card-head">
@@ -483,6 +499,8 @@
 
   function renderRegistryTab() {
     const e = store.get(`${st.base.key}.edits`, {});
+    const o = store.get(`${st.base.key}.overrides`, {});
+    const shown = (field) => shownValue(e, o, field);
     const priceBasis = e.priceBasis || "estimate";
     const field = (label, control, hint = "") => `<label class="fh-field"><span>${label}</span>${control}${hint ? `<small>${hint}</small>` : ""}</label>`;
     const numInput = (name, value, placeholder) =>
@@ -516,15 +534,15 @@
           <div class="fh-field"><span>압류·가압류 (갑구)</span>${seg("seizure", TRI, e.seizure || "unknown")}</div>
           <div class="fh-field"><span>경매개시결정</span>${seg("auction", TRI, e.auction || "unknown")}</div>
           <div class="fh-field"><span>임차권등기 (을구)</span>${seg("leaseRegistration", TRI, e.leaseRegistration || "unknown")}</div>
-          <div class="fh-field"><span>등기부 소유자 = 계약 상대</span>${seg("ownerMatches", [["yes", "같음"], ["no", "다름"], ["unknown", "모름"]], e.ownerMatches || "unknown")}</div>
+          <div class="fh-field"><span>등기부 소유자 = 계약 상대</span>${seg("ownerMatches", [["yes", "같음"], ["no", "다름"], ["unknown", "모름"]], shown("ownerMatches"))}</div>
           ${field("최근 소유권 이전일", `<input type="date" name="lastOwnershipChange" value="${esc(e.lastOwnershipChange || "")}">`, "갑구 마지막 '소유권 이전' 날짜")}
         </div>
         <h4 class="fh-group">임대인·건물</h4>
         <div class="fh-form-grid">
           ${housing === "multi" ? `<div class="fh-field"><span>선순위 보증금 합계</span><strong>${esc(money(st.verdict.ltv.prior10k))}</strong><button class="fh-btn" type="button" data-action="intake-tab" data-target="landlord">집주인 서류 확인</button></div>` : field("선순위 보증금 합계 (만원)", numInput("priorDeposits10k", e.priorDeposits10k, "확정일자 부여현황 기준"), hint("priorDeposits10k"))}
-          <div class="fh-field"><span>임대인 세금 체납</span>${seg("taxArrears", TRI, e.taxArrears || "unknown")}</div>
-          <div class="fh-field"><span>전세보증보험 가입</span>${seg("guaranteeEligible", [["yes", "가능"], ["no", "불가"], ["unknown", "모름"]], e.guaranteeEligible || "unknown")}</div>
-          <div class="fh-field"><span>건축물 용도</span>${seg("use", [["residential", "주거용"], ["nonresidential", "근생 등 비주거"], ["unknown", "모름"]], e.use || st.base.building.use || "unknown")}</div>
+          <div class="fh-field"><span>임대인 세금 체납</span>${seg("taxArrears", TRI, shown("taxArrears"))}</div>
+          <div class="fh-field"><span>전세보증보험 가입</span>${seg("guaranteeEligible", [["yes", "가능"], ["no", "불가"], ["unknown", "모름"]], shown("guaranteeEligible"))}</div>
+          <div class="fh-field"><span>건축물 용도</span>${seg("use", [["residential", "주거용"], ["nonresidential", "근생 등 비주거"], ["unknown", "모름"]], (e.useEdited || e.use === "nonresidential" ? e.use : st.base.building.use) || "unknown")}</div>
           <div class="fh-field"><span>위반건축물</span>${seg("violation", TRI, e.violation || "unknown")}<small>건축물대장 첫 장 상단에 '위반건축물' 표시가 있는지 보세요 (정부24 무료)</small></div>
         </div>
         <h4 class="fh-group">계약 일정 · 계산 가정</h4>
@@ -685,7 +703,7 @@
           : `<p class="fh-headroom is-${g.lines[0].fits === false ? "caution" : "safe"}">${esc(g.headline)}</p>`}
         <dl class="fh-numbers">
           <div><dt>이 매물 보증금</dt><dd>${st.depositKnown ? esc(money(g.deposit10k)) : "미입력"}</dd><dd class="fh-small">${st.depositKnown ? esc(g.listingSource || "입력값") : '<button type="button" class="fh-btn" data-action="tab" data-tab="registry">보증금 입력</button>'}</dd></div>
-          <div><dt>주변 전세 시세</dt><dd>${esc(money(g.marketJeonse10k ?? g.nearbyJeonse10k))}</dd><dd class="fh-small ${g.gapPct > 10 ? "is-danger-text" : ""}">${esc(gap ? `이 보증금은 ${gap}` : "비교 불가")}</dd></div>
+          <div><dt>주변 전세 시세</dt><dd>${esc(money(g.marketJeonse10k ?? g.nearbyJeonse10k))}</dd><dd class="fh-small ${g.gapPct > 10 ? "is-danger-text" : ""}">${esc(gap ? `이 보증금은 ${gap}` : "비교 불가")}</dd>${g.marketSourceLabel ? `<dd class="fh-small">${esc(g.marketSourceLabel)}</dd>` : ""}</div>
           <div><dt>집값</dt><dd>${esc(money(g.price10k))}</dd><dd class="fh-small">${esc(ltv.priceSourceLabel)}</dd></div>
           ${Number.isFinite(rentRatio) ? `<div><dt>${esc(priceBasis)} 전세가율</dt><dd>${esc(rentRatio)}%</dd><dd class="fh-small">보증금 ÷ 집값</dd></div>` : ""}
           ${!pending ? `<div><dt>내 앞 순위 빚</dt><dd>${esc(money(g.senior10k))}</dd><dd class="fh-small">근저당 + 선순위 보증금</dd></div>` : ""}
@@ -769,7 +787,7 @@
                 .join("")
             : `<p class="fh-sub">아직 제보가 없어요.</p>`
         }</div>
-        <form class="fh-feedback-form" data-action="feedback">
+        ${window.FITHOME_STATIC ? `<p class="fh-sub">정적 데모(GitHub Pages)에서는 제보를 저장하지 않아요. 서버 버전에서 이용해 주세요.</p>` : `<form class="fh-feedback-form" data-action="feedback">
           <select name="category" aria-label="제보 종류">
             <option value="info">정보가 달라요</option><option value="condition">집 상태 문제 (누수·곰팡이 등)</option>
             <option value="landlord">임대인·중개사 문제</option><option value="other">기타</option>
@@ -779,18 +797,23 @@
           </select>
           <textarea name="text" maxlength="500" placeholder="예) 욕실 천장에 누수 자국이 있어요" aria-label="제보 내용"></textarea>
           <button class="fh-btn primary" type="submit">제보 보내기</button>
-        </form>
+        </form>`}
       </div>`;
   }
 
-  function render() {
+  function reportPosition(node) {
+    return {
+      keepScroll: node?.querySelector(".fh-report-body")?.scrollTop || 0,
+      openedChecklist: node?.querySelector("details[open] [data-checklist]")?.dataset.checklist,
+    };
+  }
+
+  function render(position = reportPosition(overlay())) {
     const node = overlay();
     if (!node || !st.verdict) return;
     const v = st.verdict;
-    const openedChecklist = node.querySelector("details[open] [data-checklist]")?.dataset.checklist;
+    const { keepScroll, openedChecklist } = position;
     const tabBody = { intake: () => intake.render(), detail: renderDetailTab, registry: renderRegistryTab, contract: renderContractTab, support: renderSupportTab, history: renderHistoryTab }[st.tab](v);
-    const scroller = node.querySelector(".fh-report-body");
-    const keepScroll = scroller ? scroller.scrollTop : 0;
     node.innerHTML = `
       <div class="fh-report-backdrop" data-action="close"></div>
       <div class="fh-report-sheet">
@@ -837,8 +860,40 @@
   }
 
   async function rerender() {
-    await evaluate();
-    render();
+    const position = reportPosition(overlay());
+    st.verdict = null;
+    const pendingSheet = overlay()?.querySelector(".fh-report-sheet");
+    if (pendingSheet) pendingSheet.innerHTML = `<div class="fh-report-loading">입력값으로 다시 판정하고 있어요…</div>`;
+    try {
+      if (!await evaluate()) return false;
+      render(position);
+      return true;
+    } catch (error) {
+      st.verdict = null;
+      const sheet = overlay()?.querySelector(".fh-report-sheet");
+      if (sheet) {
+        sheet.innerHTML = `<div class="fh-report-loading">다시 판정하지 못했어요: ${esc(error.message)}<br>이전 판정은 지웠어요. 입력값을 확인한 뒤 다시 시도해 주세요.
+          <button type="button" class="fh-btn" data-action="retry">다시 시도</button> <button type="button" class="fh-btn" data-action="reset-edits">입력 초기화</button> <button type="button" class="fh-btn" data-action="close">닫기</button></div>`;
+      }
+      return false;
+    }
+  }
+
+  const sharedEditFields = ["taxArrears", "guaranteeEligible", "ownerMatches"];
+
+  function shownValue(edits, overrides, field) {
+    const edit = edits[field];
+    return edit && edit !== "unknown" ? edit : overrides[field] || "unknown";
+  }
+
+  function saveEdits(key, edits) {
+    const previous = store.get(`${key}.edits`, {});
+    const overrides = store.get(`${key}.overrides`, {});
+    for (const field of sharedEditFields) {
+      if (field in edits && field in overrides && edits[field] !== shownValue(previous, overrides, field)) delete overrides[field];
+    }
+    store.set(`${key}.edits`, edits);
+    store.set(`${key}.overrides`, overrides);
   }
 
   function readEdits(form) {
@@ -846,6 +901,7 @@
     const e = {};
     for (const [key, value] of data.entries()) e[key] = String(value).trim();
     e.mortgageUnknown = data.get("mortgageUnknown") === "on";
+    e.useEdited = form.dataset.useEdited === "true" || store.get(st.base.key + ".edits", {}).useEdited === true;
     return e;
   }
 
@@ -883,8 +939,10 @@
       else if (action === "ics") downloadIcs(st.verdict.aftercare.items, st.base.property.label);
       else if (action === "reset-edits") {
         store.set(`${key}.edits`, {});
+        store.set(`${key}.overrides`, {});
+        if (await rerender()) toast("입력값을 지웠어요");
+      } else if (action === "retry") {
         await rerender();
-        toast("입력값을 지웠어요");
       }
     });
 
@@ -896,12 +954,14 @@
         const requests = store.get(`${key}.requests`, {});
         requests[t.dataset.id] = t.value;
         store.set(`${key}.requests`, requests);
-        await rerender();
-        toast(t.value === "refused" || t.value === "noResponse" ? "거절·무응답을 위험 신호로 반영했어요" : "요청 상태를 기록했어요");
+        if (await rerender()) toast(t.value === "refused" || t.value === "noResponse" ? "거절·무응답을 위험 신호로 반영했어요" : "요청 상태를 기록했어요");
       } else if (action === "override") {
         const o = store.get(`${key}.overrides`, {});
         o[t.dataset.field] = t.value;
         store.set(`${key}.overrides`, o);
+        const edits = store.get(`${key}.edits`, {});
+        delete edits[t.dataset.field];
+        store.set(`${key}.edits`, edits);
         await rerender();
       } else if (action === "doc") {
         const done = new Set(store.get(`${key}.docs`, []));
@@ -913,8 +973,10 @@
         t.checked ? done.add(t.dataset.id) : done.delete(t.dataset.id);
         store.set(`${key}.stages`, [...done]);
         render();
+      } else if (t.form?.dataset.action === "edits" && t.name === "use") {
+        t.form.dataset.useEdited = "true";
       } else if (t.form?.dataset.action === "edits" && ["priceBasis", "housingType"].includes(t.name)) {
-        store.set(`${key}.edits`, { ...store.get(`${key}.edits`, {}), ...readEdits(t.form) });
+        saveEdits(key, { ...store.get(`${key}.edits`, {}), ...readEdits(t.form) });
         await rerender();
       }
     });
@@ -932,10 +994,9 @@
       const form = event.target;
       const key = st.base?.key;
       if (form.dataset.action === "edits") {
-        store.set(`${key}.edits`, readEdits(form));
+        saveEdits(key, readEdits(form));
         st.tab = "detail";
-        await rerender();
-        toast("입력값으로 다시 판정했어요");
+        if (await rerender()) toast("입력값으로 다시 판정했어요");
       } else if (form.dataset.action === "feedback") {
         const data = new FormData(form);
         try {
@@ -944,8 +1005,7 @@
             body: JSON.stringify({ key, category: data.get("category"), role: data.get("role"), text: data.get("text") }),
           });
           await loadFeedback();
-          await rerender();
-          toast("제보가 접수됐어요. 확인 전까지 '미검증'으로 표시돼요");
+          if (await rerender()) toast("제보가 접수됐어요. 확인 전까지 '미검증'으로 표시돼요");
         } catch (error) {
           toast(error.message);
         }
@@ -960,7 +1020,9 @@
       await loadFeedback();
       await rerender();
     },
-    recalculate: rerender,
+    recalculate: async () => {
+      if (!await rerender()) throw new Error("판정을 갱신하지 못했어요. 다시 시도해 주세요.");
+    },
   });
 
   window.FitHomeReport = { open, openAddress, close, identityReturnContext, resumeIdentity };

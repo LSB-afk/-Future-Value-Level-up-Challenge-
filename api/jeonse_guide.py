@@ -155,12 +155,17 @@ def deposit_guide(inp: dict, ltv: dict) -> dict:
 
     hug = hug_limit(inp, ltv)
     lines = [
-        {"id": "safe70", "label": "안전선 (70%)", "max10k": cap(70), "note": "주의가 시작되는 실무 권고선"},
+        {"id": "safe70", "label": "핏홈 주의선 (70%)", "max10k": cap(70), "note": "핏홈은 집값 대비 보증금과 선순위채권 합계가 70% 이상이면 주의로 표시해요."},
         {"id": "gaptong80", "label": "깡통전세 경계 (80%)", "max10k": cap(80), "note": "넘으면 깡통전세로 보는 실무 기준"},
-        {"id": "hug", "label": "보증보험 가입선", "max10k": hug["max10k"], "note": hug["basis"]},
+        {"id": "hug", "label": "HUG 보증금 한도 추정", "max10k": hug["max10k"], "note": hug["basis"]},
     ]
     for line in lines:
         line["fits"] = None if line["max10k"] is None else deposit <= line["max10k"]
+    if lines[0]["max10k"] is not None:
+        ratio = ltv.get("ratioPct")
+        if ratio is None:
+            ratio = round((deposit + senior) / price * 100, 1)
+        lines[0]["fits"] = ratio < 70
 
     compare = jeonse or nearby
     gap_pct = round((deposit - compare) / compare * 100, 1) if compare and deposit else None
@@ -182,10 +187,10 @@ def deposit_guide(inp: dict, ltv: dict) -> dict:
         headline = DEPOSIT_MISSING_LABEL
     elif safe_max is None:
         headline = "집값을 알면 적정 보증금을 계산할 수 있어요."
-    elif deposit <= safe_max:
-        headline = f"이 보증금은 안전선 안이에요. 최대 {money(safe_max)}까지가 안전선이에요."
+    elif lines[0]["fits"]:
+        headline = "보증금과 선순위채권 합계가 핏홈 주의선인 집값의 70% 미만이에요."
     else:
-        headline = f"안전선보다 {money(deposit - safe_max)} 높아요. 안전선 기준 적정 보증금은 {money(max(safe_max, 0))}이에요."
+        headline = "보증금과 선순위채권 합계가 핏홈 주의선인 집값의 70% 이상이에요."
 
     return {
         "deposit10k": deposit,
@@ -209,14 +214,18 @@ def hug_limit(inp: dict, ltv: dict) -> dict:
     """HUG 반환보증으로 보장받을 수 있는 최대 보증금(선순위 차감)."""
     prop = inp.get("property") or {}
     housing = prop.get("housingType") or "villa"
-    official = _num((inp.get("price") or {}).get("official10k"))
+    price = inp.get("price") or {}
+    official = _num(price.get("official10k"))
     region_cap = HUG_DEPOSIT_CAP10K["capital" if is_capital(prop.get("address")) else "other"]
-    if housing != "apartment" and official:
+    market_first = housing in {"apartment", "officetel"}
+    # 공시가격 환산을 선택했다면 ltv["price10k"]도 환산액이다. 시세로 간주하지 않는다.
+    market = _num(price.get("value10k")) if price.get("basis") == "official" else ltv["price10k"]
+    if not market_first and official:
         base = official * HUG_OFFICIAL_MULTIPLIER
         basis = f"공시가격 × 140% × 90% − 선순위, 보증금 한도 {money(region_cap)}"
-    elif ltv["price10k"]:
-        base = ltv["price10k"]
-        basis = f"주택가격 × 90% − 선순위, 보증금 한도 {money(region_cap)}"
+    elif market:
+        base = market
+        basis = f"입력한 주택가격 × 90% − 선순위, 보증금 한도 {money(region_cap)}. HUG 인정가격에 따라 달라져요."
     else:
         return {"max10k": None, "basis": "주택가격이 없어 계산하지 못했어요", "regionCap10k": region_cap, "base10k": None}
     pending = pending_senior_reason(ltv)
@@ -325,7 +334,7 @@ DOCUMENTS = [
          (None, "계약서 동·호수·면적과 같은지", "전유부 › 호명칭·면적")]},
     {"id": "price", "title": "공시가격 · 실거래가", "where": "realtyprice", "cost": "무료",
      "consent": False, "request": None, "extraLink": "rtmolit", "items": [
-         ("hug126", "보증금이 공시가격의 126% 이하인지", "공동주택·개별주택 공시가격"),
+         ("hug126", "보증금과 선순위채권을 더해 공시가격의 126% 이하인지", "공동주택·개별주택 공시가격"),
          ("marketGap", "보증금이 주변 전세 시세와 비슷한지", "실거래가 공개시스템 › 전월세")]},
     {"id": "fixedDate", "title": "확정일자 부여현황", "where": "iros", "cost": "임대인 동의 필요",
      "consent": True, "request": "fixedDate", "items": [
@@ -358,6 +367,8 @@ def documents(checks_by_id: dict, requests: list[dict]) -> list[dict]:
         items = []
         for check_id, text, where in doc["items"]:
             check = checks_by_id.get(check_id) if check_id else None
+            if check_id == "hug126" and check is None:
+                continue
             items.append({
                 "id": f"{doc['id']}.{check_id or len(items)}",
                 "text": text,
@@ -519,6 +530,12 @@ if __name__ == "__main__":
     assert g["lines"][0]["max10k"] == 20000 and g["lines"][0]["fits"] is False  # 4억×70% − 0.8억
     assert g["lines"][2]["max10k"] == 23500  # min(2.5억×1.4×0.9 − 0.8억, 7억)
     assert g["gapPct"] == 15.4
+    assert deposit_guide(inp, {**ltv, "deposit10k": 20000})["lines"][0]["fits"] is False  # 정확히 70%
+    for housing_type in ("apartment", "officetel"):
+        market_first = {**inp, "property": {**inp["property"], "housingType": housing_type}}
+        assert hug_limit(market_first, ltv)["base10k"] == 40000
+        official_only = {**market_first, "price": {"basis": "official", "official10k": 25000}}
+        assert hug_limit(official_only, {**ltv, "price10k": 35000})["max10k"] is None
     r = repayment(inp, ltv)  # 서울 빌라 낙찰 3.08억(77%) → 비용 308 → 근저당 8,000 → 내 보증금 22,492/30,000
     assert r["sale10k"] == 30800 and r["myRecovered10k"] == 22492 and r["myLoss10k"] == 7508
     gs = guarantees({**inp}, ltv, {k: {"result": "pass"} for k in ("trust", "seizure", "auction", "leaseRegistration", "use", "violation", "mortgage")})

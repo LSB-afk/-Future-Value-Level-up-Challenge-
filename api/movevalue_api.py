@@ -19,7 +19,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from apartment_adapters import apartment_credential_status, apartments_response, load_apartment_dataset
-from jeonse_verdict import evaluate as evaluate_jeonse
+from deposit_priority import region_from_address, repayment_priority
+from jeonse_verdict import evaluate as evaluate_jeonse, validate_input as validate_jeonse_input
 from property_feedback import add_feedback, list_feedback
 import precontract_routes
 from kakao_safety_adapters import kakao_safety_response, kakao_safety_status
@@ -126,6 +127,134 @@ class Query:
     persona: str
     weights: dict[str, float]
     limit: int
+
+
+def deposit_priority_response(payload: dict) -> dict:
+    """POST /api/deposit-priority: 보증금 반환 순위 계산. 잘못된 값은 ValueError(→ 400)."""
+
+    def money_value(value, name: str) -> float | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise ValueError(f"{name}는 숫자(만원)여야 합니다.")
+        try:
+            number_value = float(value)
+        except ValueError as exc:
+            raise ValueError(f"{name}는 숫자(만원)여야 합니다.") from exc
+        if not math.isfinite(number_value) or number_value < 0:
+            raise ValueError(f"{name}는 0 이상의 숫자여야 합니다.")
+        return number_value
+
+    def text_value(name: str) -> str | None:
+        value = payload.get(name)
+        if value is not None and not isinstance(value, str):
+            raise ValueError(f"{name}는 글자여야 합니다.")
+        return value or None
+
+    mortgages = payload.get("mortgages") or []
+    if not isinstance(mortgages, list) or not all(isinstance(m, dict) for m in mortgages):
+        raise ValueError("mortgages는 [{amount10k, registered}] 배열이어야 합니다.")
+    mortgages = [
+        # 금액이 비어 있으면 0이 아니라 '모름'(None)이다. 0으로 바꾸면 근저당이 없는 것처럼 계산된다(전체 QA Astra-05).
+        {"amount10k": money_value(m.get("amount10k"), "mortgages.amount10k"),
+         "registered": m.get("registered") if isinstance(m.get("registered"), str) else None}
+        for m in mortgages
+    ]
+    deposit = money_value(payload.get("deposit10k"), "deposit10k")
+    if not deposit:
+        raise ValueError("deposit10k(보증금, 만원)가 필요합니다.")
+    prop = payload.get("property") or {}
+    if not isinstance(prop, dict):
+        raise ValueError("property는 객체여야 합니다.")
+    return repayment_priority(
+        deposit,
+        money_value(payload.get("housePrice10k"), "housePrice10k"),
+        text_value("region") or region_from_address(text_value("address") or ""),
+        text_value("moveInDate"),
+        text_value("fixedDate"),
+        mortgages,
+        money_value(payload.get("priorTenants10k"), "priorTenants10k"),
+        text_value("taxArrears") or "unknown",
+        mortgage_status="none" if payload.get("noMortgage") is True else "auto",
+        housing_type=prop.get("housingType") or text_value("housingType") or "",
+    )
+
+
+def verify_trade_price(payload: dict) -> dict:
+    """판정 요청을 서버가 가진 단지 데이터로 다시 맞춘다.
+
+    - 화면이 '실거래' 집값이라고 보낸 값은 단지(apt:ID) 상세가 실제로 실거래이고 금액도 같을 때만 인정한다.
+      확인할 수 없으면 '추정'으로 낮춘다. 추정 집값으로는 '안심' 등급이 나오지 않는다.
+    - 공시가격이 API 값이 아닌 추정값 그대로면 빼서, HUG 126% 점검이 추정값으로 판정하지 않게 한다.
+      사용자가 직접 고친 공시가격은 그대로 둔다.
+    - 건물 용도를 화면 기본값(주거용)으로 보냈으면 건축물대장 결과로 바꾼다.
+    """
+    price = dict(payload.get("price") or {})
+    key = str(payload.get("key") or "")
+    apartment_id = key[4:] if key.startswith("apt:") else None
+    listing = re.fullmatch(r"listing:([^:]+)-L[1-4]", key)
+    if listing:
+        apartment_id = listing.group(1)
+    detail = None
+    if apartment_id:
+        try:
+            candidate = property_detail_response({"id": [apartment_id]})["detail"]
+        except (ValueError, KeyError):
+            candidate = None
+        # The property search also accepts partial names. Only an exact ID can establish evidence.
+        # Demo listing IDs identify their parent complex, whose address must also match the report.
+        if candidate and candidate.get("id") == apartment_id:
+            address = (payload.get("property") or {}).get("address")
+            if not listing or (address and address == candidate.get("address")):
+                detail = candidate
+    notes = [payload["sourceDowngraded"]] if payload.get("sourceDowngraded") else []
+    if price.get("source") == "trade":
+        server_price = (detail or {}).get("price") or {}
+        claimed = number(price.get("value10k"), -1)
+        server_values = {number(server_price.get(k)) for k in ("recentSale10k", "saleMedian10k") if server_price.get(k)}
+        confirmed = bool(server_price.get("saleLive")) and claimed in server_values
+        if not confirmed:
+            price["source"] = "estimate"
+            notes.append("trade→estimate")
+        elif server_price.get("saleMedian10k") and claimed != number(server_price["saleMedian10k"]):
+            # 화면은 최근 1건을 보내지만, 판정은 Agent·위험 카드와 같은 기준(같은 평형 12개월 중앙값)으로 맞춘다.
+            price["value10k"] = server_price["saleMedian10k"]
+            notes.append("실거래 최근 1건→같은 평형 중앙값")
+    if detail:
+        server_price = detail.get("price") or {}
+        if (not server_price.get("officialPriceLive") and price.get("official10k") is not None
+                and number(price.get("official10k")) == number(server_price.get("officialPrice10k"), -1)
+                and price.get("basis") != "official"):
+            price.pop("official10k")
+            notes.append("추정 공시가격 제외")
+        # 집값 기준을 '공시가격 × 140%'로 골랐는데 그 공시가격이 서버의 추정값 그대로면 추정 집값이다.
+        # 매매 실거래 출처가 그대로 따라가 '안심'이 나오던 경로를 막는다(재점검 Astra-02).
+        if price.get("basis") == "official":
+            official_is_estimate = (not server_price.get("officialPriceLive")
+                                    and number(price.get("official10k"), -1) == number(server_price.get("officialPrice10k"), -2))
+            if official_is_estimate:
+                price["source"] = "estimate"
+                notes.append("추정 공시가격 기준→추정")
+            elif price.get("source") == "trade":
+                price["source"] = "input"
+                notes.append("공시가격 기준→입력값")
+    elif price.get("basis") == "official" and price.get("source") == "trade":
+        price["source"] = "input"
+    # 건물 용도를 '공공데이터'로 보냈으면 서버가 건축물대장으로 확인한 값만 인정한다.
+    # 대장을 조회하지 못했으면(키 없음·지번 모름·매물 키) '주거용 통과'가 아니라 '미확인'이다.
+    building = dict(payload.get("building") or {})
+    if building and building.get("source", "public") == "public":
+        ledger = (detail or {}).get("buildingLedger") or {}
+        if ledger.get("mode") == "live_api":
+            building.update(use={"residential": "residential", "nonresidential": "nonresidential"}.get(ledger.get("use"), "unknown"),
+                            ledgerNote=ledger.get("note"))
+        else:
+            building.update(use="unknown", ledgerNote=ledger.get("note") or "건축물대장을 조회하지 못해 용도를 확인하지 못했습니다. 정부24에서 건축물대장을 발급해 확인하세요.")
+        payload = {**payload, "building": building}
+    payload = {**payload, "price": price}
+    if notes:
+        payload["sourceDowngraded"] = ", ".join(notes)
+    return payload
 
 
 def clamp(value: float, minimum: float = 0, maximum: float = 100) -> float:
@@ -763,10 +892,19 @@ def location_suggestions_response(raw: dict[str, list[str]]) -> dict:
         seen.add(key)
         deduped.append(item)
 
+    # 후보가 없으면 왜 없는지 알려 준다. 키 없이는 역·회사 이름을 찾지 못해 사용자가 멈췄다(전체 QA Q4).
+    hint = ""
+    if not deduped and compact_query:
+        if not credential_status().get("kakao"):
+            hint = ("역·회사 이름 검색은 지도 검색(카카오) 연결이 필요해 지금은 찾지 못했어요. "
+                    "근처 동 이름(예: 역삼동, 서초동)이나 '구 + 동'으로 입력해 주세요.")
+        else:
+            hint = "검색 결과가 없어요. 서울특별시 안의 '구 + 동'이나 도로명 주소로 입력해 주세요."
     return {
         "ok": True,
         "query": query,
         "requires": "서울특별시 + 구 + 동",
+        "hint": hint,
         "suggestions": deduped[:limit],
         "integrations": credential_status(),
     }
@@ -1179,23 +1317,42 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path.startswith(precontract_routes.PREFIXES):
             precontract_routes.handle_post(self, parsed.path)
             return
-        if parsed.path in {"/api/jeonse-verdict", "/api/property-feedback"}:
+        if parsed.path in {"/api/jeonse-verdict", "/api/property-feedback", "/api/deposit-priority"}:
             try:
                 if parsed.path == "/api/jeonse-verdict" and not precontract_routes.accepts_json(self):
                     return
                 payload = self.read_json_body()
-                if parsed.path == "/api/jeonse-verdict":
-                    confirmed_prior = None
+                if parsed.path == "/api/deposit-priority":
+                    self.send_json(HTTPStatus.OK, deposit_priority_response(payload))
+                elif parsed.path == "/api/jeonse-verdict":
                     owner_token = payload.pop("documentOwnerToken", None)
+                    payload = verify_trade_price(validate_jeonse_input(payload))
+                    confirmed_prior = None
                     if owner_token:
                         from document_requests import confirmed_prior as document_prior
-                        prop = payload.get("property")
-                        if isinstance(prop, dict):
-                            confirmed_prior = document_prior(owner_token, prop.get("address", ""))
+                        confirmed_prior = document_prior(owner_token, (payload.get("property") or {}).get("address", ""))
                     key = str(payload.get("key") or "")
                     payload["feedbackCount"] = len(list_feedback(key)) if key else 0
-                    self.send_json(HTTPStatus.OK, evaluate_jeonse(payload, confirmed_prior_deposits10k=confirmed_prior))
+                    result = evaluate_jeonse(payload, confirmed_prior_deposits10k=confirmed_prior)
+                    if payload.get("sourceDowngraded"):
+                        result["sourceDowngraded"] = payload["sourceDowngraded"]
+                    self.send_json(HTTPStatus.OK, result)
                 else:
+                    # 같은 사이트에서 온 요청만, 실제 있는 단지 키만 받는다(재점검 Astra-17). 매물(listing:) 키는 시연용이라 형식만 본다.
+                    origin = self.headers.get("Origin") or ""
+                    host = self.headers.get("Host") or ""
+                    if origin and urlparse(origin).netloc != host:
+                        raise ValueError("다른 사이트에서 보낸 제보는 받지 않습니다.")
+                    # 앞뒤 공백을 지운 뒤 검사한다(" apt:MADEUP"이 단지 검사를 건너뛰던 문제, 재점검 Astra-17).
+                    feedback_key = str(payload.get("key") or "").strip()
+                    payload["key"] = feedback_key
+                    if feedback_key.startswith("apt:"):
+                        try:
+                            exists = property_detail_response({"id": [feedback_key[4:]]})["detail"].get("id") == feedback_key[4:]
+                        except (ValueError, KeyError):
+                            exists = False
+                        if not exists:
+                            raise ValueError("없는 단지에는 제보할 수 없습니다.")
                     item = add_feedback(
                         str(payload.get("key") or ""),
                         str(payload.get("category") or ""),
@@ -1205,6 +1362,12 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(HTTPStatus.OK, {"ok": True, "item": item})
             except (ValueError, json.JSONDecodeError) as exc:
                 self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
+            except OSError:
+                # 제보 저장 등 디스크 오류는 사용자 입력 문제가 아니므로 500으로 알린다(전체 QA Astra-15).
+                self.send_json(HTTPStatus.INTERNAL_SERVER_ERROR, {"ok": False, "error": "서버에 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요."})
+            except (TypeError, OverflowError, AttributeError) as exc:
+                # 검증이 놓친 이상한 형식이라도 연결을 끊지 말고 400으로 알린다.
+                self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": f"요청 형식이 올바르지 않습니다: {type(exc).__name__}"})
             return
         if parsed.path != "/api/agent-chat":
             self.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": f"unknown path: {parsed.path}"})

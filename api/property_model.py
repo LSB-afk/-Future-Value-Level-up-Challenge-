@@ -14,6 +14,7 @@ import json
 import math
 from pathlib import Path
 
+from building_ledger_adapters import ledger_for_market
 from jeonse_safeguard import build_safeguard
 from real_estate_price_adapters import enrich_market_from_live
 
@@ -292,62 +293,121 @@ def build_risk(apartment: dict, market: dict) -> dict:
     age = building_age(apartment)
     jeonse_ratio = number(market.get("jeonseRatio"))
     official_ratio = number(market.get("depositOfficialRatio"))
-    volatility = number(market.get("volatilityRate"))
-    surrounding_jeonse = number(market.get("surroundingAverageJeonse10k"))
     recent_jeonse = number(market.get("recentJeonse10k"))
-    surrounding_gap = ((recent_jeonse - surrounding_jeonse) / surrounding_jeonse) * 100 if surrounding_jeonse else 0
+    sale_live = bool(market.get("saleLive"))
+    jeonse_live = bool(market.get("jeonseLive"))
+    live = sale_live and jeonse_live
+    sale_label = "실거래" if live else "추정"
+    tail = "깡통전세 실무 기준은 보증금+대출 80%, HUG 보증 한도는 90%입니다."
+
+    # 비교하는 두 값의 출처가 다르면(실거래 vs 추정) 비교하지 않고 '확인 필요'로 둔다.
+    # 추정끼리의 비교도 마찬가지다: 추정 공시가격·추정 주변 시세는 단지마다 고정 난수로 만든 값이라
+    # '정상'으로 표시하면 근거 없는 안심이 된다 (B008 판정, 2026-11-08 QA).
+    if sale_live != jeonse_live:
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": "unknown",
+                        "evidence": f"매매가와 전세가 중 하나만 실거래라 전세가율을 비교하지 않았습니다. 같은 평형의 매매 실거래를 확인하세요. {tail}"}
+    elif live and market.get("areaMatched") is False:
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": "unknown",
+                        "evidence": f"최근 매매와 전세의 평형이 달라 전세가율을 비교하지 않았습니다. 같은 평형의 매매가를 확인하세요. {tail}"}
+    elif live and (((market.get("liveStatus") or {}).get("molitTrade") or {}).get("incomplete")
+                   or ((market.get("liveStatus") or {}).get("molitRent") or {}).get("incomplete")):
+        # 실거래를 다 받지 못한 달이 있으면(1,000건 넘는 달·조회 실패) 중앙값이 치우칠 수 있어 '정상'으로 두지 않는다(재점검 Astra-13).
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": "unknown" if jeonse_ratio < 80 else "high",
+                        "evidence": f"일부 달의 실거래를 다 받지 못해 참고값입니다. 같은 평형 실거래를 직접 확인하세요. {tail}"}
+    elif not live:
+        # 추정 시세의 전세가율은 계산 구조상 47~72%에 갇혀 80%에 닿지 않는다(B008 G1). '정상'으로 두면 근거 없는 안심이다.
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}% (추정)", "status": "unknown",
+                        "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])}로 계산한 참고값이라 판정하지 않습니다. 같은 평형 실거래를 확인하세요. {tail}"}
+    else:
+        basis = market.get("jeonseRatioBasis") or (f"전용 {market['areaM2']:.0f}㎡" if market.get("areaM2") else "")
+        ratio_signal = {"value": f"{jeonse_ratio:.1f}%", "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
+                        "evidence": f"실거래 {basis} 기준입니다. {tail} 매매가가 부풀려지면 이 비율이 낮아 보일 수 있으니 '매매가 급등' 항목도 함께 보세요."}
+
+    # 공시가격 기준은 HUG 반환보증 규칙만 쓴다: 보증금 ≤ 공시가격 × 140% × 90% = 126% (위키 hug-return-guarantee-current-rules).
+    # 예전 120%·95% 선은 근거가 없어 지웠다(B010 P7).
+    # HUG는 아파트·오피스텔 가격을 KB·부동산원 시세부터 쓰고 공시가격 환산은 그다음이다(위키 hug-housing-value-source-order).
+    # 그래서 아파트에는 126% 규칙을 판정에 쓰지 않고 참고로만 보여 준다(B011 리뷰).
+    # 오피스텔도 HUG가 시세를 먼저 쓴다(전체 QA Sol P03).
+    is_apartment = any(t in str(apartment.get("category") or "아파트") for t in ("아파트", "오피스텔"))
+    if market.get("officialPriceLive") and is_apartment:
+        official_signal = {"value": f"{official_ratio:.1f}%", "status": "info",
+                           "evidence": f"공동주택 공시가격 {format_money_10k(market['officialPrice10k'])} 대비 전세 시세입니다. 아파트는 HUG가 시세를 먼저 쓰므로 공시가격 126% 기준은 참고로만 봅니다."}
+    elif market.get("officialPriceLive"):
+        # 이 비율에는 선순위채권이 빠져 있다. 넘으면 주의지만, 안 넘어도 '양호'라 할 수 없어 참고로 둔다(재점검 Sol P03).
+        over = official_ratio > 126
+        official_signal = {"value": f"{official_ratio:.1f}%", "status": "warning" if over else "info",
+                           "evidence": f"공시가격 {format_money_10k(market['officialPrice10k'])}(공시가격 API) 대비 전세 시세입니다. "
+                                       + ("연립·다세대 등은 HUG가 공시가격 환산액(×140%)을 먼저 쓰므로, 보증금과 선순위채권 합계가 공시가격의 126%를 넘으면 반환보증 가입이 어려울 수 있습니다(최종은 HUG 심사)." if over else "공시가격의 126% 이하입니다. 선순위채권이 있으면 그만큼 한도가 줄어듭니다.")}
+    elif is_apartment:
+        official_signal = {"value": "확인 필요", "status": "info",
+                           "evidence": "공시가격 API가 연결되지 않았습니다. 아파트는 HUG가 시세를 먼저 쓰므로 공시가격은 참고입니다. 부동산공시가격알리미에서 확인할 수 있습니다."}
+    else:
+        official_signal = {"value": "확인 필요", "status": "unknown",
+                           "evidence": "공시가격 API가 연결되지 않아 비교하지 않습니다. 부동산공시가격알리미에서 공시가격을 확인하세요. 연립·다세대 등은 HUG가 공시가격 × 140%를 집값으로 보고 그 90%(공시가격의 126%)에서 선순위채권을 뺀 만큼 보증합니다."}
+
+    # 같은 달에 같은 평형 전세 보증금이 매매가 이상인 거래 = 그 시점에 보증금이 집값 이상(정의상 깡통). 동시진행 수법의 흔적일 수 있다.
+    overlap = market.get("depositOverSaleMonths") or []
+    if not (sale_live and jeonse_live and market.get("areaM2")):
+        concurrent_signal = {"value": "확인 필요", "status": "unknown",
+                             "evidence": "같은 평형의 매매·전세 실거래가 함께 있어야 확인할 수 있습니다."}
+    elif overlap:
+        concurrent_signal = {"value": f"{len(overlap)}개월", "status": "warning",
+                             "evidence": f"{', '.join(overlap[:4])}에 같은 평형 전세 보증금이 같은 달 매매가 이상이었습니다. 매매와 전세를 동시에 진행하는 수법의 흔적일 수 있습니다. 동·호가 공개되지 않아 같은 호실인지는 알 수 없으니, 계약하려는 집의 매매·소유자 변경 계획을 확인하세요."}
+    else:
+        concurrent_signal = {"value": "없음", "status": "ok",
+                             "evidence": "최근 12개월 같은 평형에서 같은 달 매매가 이상인 전세 보증금은 없었습니다."}
+
+    # 아래는 판정 기준선이 확인되지 않은 비교라 '참고(info)'로만 보여 주고 점수에 넣지 않는다(B010: 공개 괴리율 기준 없음).
+    references = []
+    surge = market.get("saleSurgePct")
+    if sale_live and surge is not None:
+        references.append({"label": "매매가 급등(참고)", "value": f"{surge:+.1f}%", "status": "info",
+                           "evidence": f"{market.get('saleSurgeBasis')}입니다. 매매가가 부풀려지면 전세가율이 낮아 보이는 착시가 생깁니다. 기준선은 없으니 큰 차이가 있으면 감정가·분양가 근거를 확인하세요."})
+    district = number(market.get("districtJeonseMedian10k"))
+    if jeonse_live and district and recent_jeonse:
+        gap = (recent_jeonse - district) / district * 100
+        side = ("주변보다 비싼 전세는 보증금이 부풀려지지 않았는지 확인하세요." if gap > 0 else "주변보다 싼 전세는 광고와 실제 매물·조건이 같은지 확인하세요(미끼 광고 사례).")
+        references.append({"label": "주변 전세 중앙값 대비(참고)", "value": f"{gap:+.1f}%", "status": "info",
+                           "evidence": f"{market.get('districtJeonseBasis')} {format_money_10k(district)} 대비입니다. {side} 사기를 가르는 공개 기준선은 없습니다."})
+    trend = market.get("jeonseTrendPct")
+    if jeonse_live and trend is not None:
+        references.append({"label": "전세 시세 추이(참고)", "value": f"{trend:+.1f}%", "status": "info",
+                           "evidence": f"{market.get('jeonseTrendBasis')}입니다. 전세가가 내려가면 만기 때 다음 세입자 보증금만으로 돌려주기 어려워지는 역전세 부담이 커집니다."})
+    references.append({"label": "건축물 노후도(참고)", "value": f"{age}년" if age else "확인 필요", "status": "info",
+                       "evidence": f"사용승인일 {apartment.get('approvalDate') or '미제공'} 기준입니다. 노후도는 전세사기 위험 기준이 아닙니다."})
 
     signals = [
-        {
-            "label": "매매가 대비 전세가율",
-            "value": f"{jeonse_ratio:.1f}%",
-            # 깡통전세 실무 기준선이 80%라 경고 임계값을 그 기준에 맞춘다.
-            "status": signal_status(jeonse_ratio >= 80, jeonse_ratio >= 70),
-            "evidence": f"추정 매매가 {format_money_10k(market['recentSale10k'])}, 전세가 {format_money_10k(market['recentJeonse10k'])} 기준입니다. 깡통전세 실무 기준은 보증금+대출 80%, HUG 보증 한도는 90%입니다.",
-        },
-        {
-            "label": "공시가격 대비 보증금 비율",
-            "value": f"{official_ratio:.1f}%",
-            "status": signal_status(official_ratio >= 120, official_ratio >= 95),
-            "evidence": f"공시가격은 API 연계 전 추정값 {format_money_10k(market['officialPrice10k'])}을 사용했습니다.",
-        },
-        {
-            "label": "주변 전세 중앙값 대비",
-            "value": f"{surrounding_gap:+.1f}%",
-            "status": signal_status(surrounding_gap >= 18, surrounding_gap >= 8),
-            "evidence": f"인근 전세 중앙값 {format_money_10k(surrounding_jeonse)} 대비 수준입니다.",
-        },
-        {
-            "label": "최근 가격 변동성",
-            "value": f"{volatility:.1f}%",
-            "status": signal_status(volatility >= 11, volatility >= 7),
-            "evidence": "실거래 API 연계 전까지 인근 권역 기반 변동성 추정값으로 표시합니다.",
-        },
-        {
-            "label": "건축물 노후도",
-            "value": f"{age}년" if age else "확인 필요",
-            "status": signal_status(age >= 35, age >= 25),
-            "evidence": f"사용승인일 {apartment.get('approvalDate') or '미제공'} 기준입니다.",
-        },
+        {"label": "매매가 대비 전세가율", **ratio_signal},
+        {"label": "공시가격 대비 전세 시세", **official_signal},
+        {"label": "같은 달 보증금 ≥ 매매가", **concurrent_signal},
         {
             "label": "등기부 권리관계",
             "value": "미입력",
             "status": "unknown",
             "evidence": "근저당, 압류, 선순위 임차권은 사용자가 등기부등본으로 별도 확인해야 합니다.",
         },
+        *references,
     ]
 
     score = 12
-    weights = {"high": 20, "warning": 11, "unknown": 7, "ok": 0}
+    weights = {"high": 20, "warning": 11, "unknown": 7, "ok": 0, "info": 0}
     for item in signals:
         score += weights.get(item["status"], 0)
     score = int(clamp(score, 0, 100))
-    if score >= 70:
+    # 등기부는 늘 미확인이라(자동 수집 없음) 세지 않는다. 나머지 가격 신호 중 모르는 것이 2개 이상이면 '확인 필요'.
+    scored_unknown = sum(1 for item in signals if item["status"] == "unknown" and item["label"] != "등기부 권리관계")
+    if score >= 70 or any(item["status"] == "high" for item in signals):
+        # 깡통 기준(80%)을 넘는 신호가 하나라도 있으면 점수와 상관없이 가장 높은 단계다(리뷰: 점수 상한이 70 미만이 됨).
         level = "계약 전 집중 확인"
         level_key = "high"
-    elif score >= 45:
+    elif score >= 45 or any(item["status"] == "warning" for item in signals):
         level = "주의 요소 있음"
         level_key = "warning"
+    elif scored_unknown >= 2 or ratio_signal["status"] == "unknown":
+        # 핵심 신호인 전세가율을 모르면 다른 게 괜찮아도 '낮음'이라 하지 않는다.
+        # 모르는 가격 신호가 많은데 점수가 낮다고 '낮음'이라 하면 근거 없는 안심이다.
+        level = "확인 필요"
+        level_key = "unknown"
     else:
         level = "낮음"
         level_key = "low"
@@ -382,15 +442,28 @@ def contract_checklist(apartment: dict, market: dict, signals: list[dict]) -> li
         {
             "label": "전세보증보험 가능 여부",
             "status": "필수 확인",
-            "priority": "high" if "공시가격 대비 보증금 비율" in high_or_unknown else "medium",
+            "priority": "high" if "공시가격 대비 전세 시세" in high_or_unknown else "medium",
             "reason": "보증금·공시가격·선순위 권리 조건에 따라 가입 가능성이 달라집니다.",
+        },
+        {
+            # B010: 판결로 확인된 구조(리베이트 → 분양대금 → 명의 이전)와 업계가 경고하는 신호. 위키 jeonse-fraud-insider-structure.
+            "label": "매매·전세 동시진행과 소유자 변경 계획",
+            "status": "계약 전 질문",
+            "priority": "high" if "같은 달 보증금 ≥ 매매가" in high_or_unknown else "medium",
+            "reason": "매매와 전세 계약을 같은 시기에 하거나 계약 직후 소유자가 바뀌면, 보증금이 매매대금·리베이트로 쓰이고 갚을 능력이 없는 명의자에게 넘어가는 수법과 겹칩니다.",
+        },
+        {
+            "label": "분양 담당·등기부 소유자·중개 담당자 역할",
+            "status": "계약 전 질문",
+            "priority": "medium",
+            "reason": "세 사람이 서로 다르고 각자 역할을 설명하지 않거나, 상담한 사람과 계약서의 중개사가 다르면(무등록·등록증 대여) 계약금 전에 확인하세요.",
         },
         {
             "label": "임대인 세금 체납 여부",
             "status": "임대인 동의 필요",
             "priority": "high",
             "consent": "landlord",
-            "reason": "당해세는 확정일자보다 앞서 배당됩니다. 열람에 임대인 동의가 필요하므로, 거부당하면 그 자체를 위험 신호로 보고 특약으로 대체하세요.",
+            "reason": "법정기일이 내 확정일자보다 빠른 세금은 보증금보다 먼저 배당될 수 있습니다. 계약 전 열람에는 임대인 동의가 필요하니(계약 후 보증금 1천만원 초과 임차인은 동의 없이 열람 가능), 거부당하면 그 자체를 위험 신호로 보고 특약으로 대체하세요.",
         },
         {
             "label": "신탁등기 여부",
@@ -474,6 +547,7 @@ def build_property_preview(apartment: dict, destination: str = "gangnam") -> dic
 def build_property_detail(apartment: dict) -> dict:
     area = nearest_living_area(apartment)
     market = enrich_market_from_live(apartment, estimate_market(apartment, area))
+    ledger = ledger_for_market(market)
     trend = transaction_trend(apartment, market)
     risk = build_risk(apartment, market)
     safeguard = build_safeguard(apartment, market)
@@ -506,6 +580,7 @@ def build_property_detail(apartment: dict) -> dict:
             "method": apartment.get("managementMethod") or "확인 필요",
         },
         "price": market,
+        "buildingLedger": ledger,
         "transactions": trend,
         "risk": risk,
         "safeguard": safeguard,

@@ -48,6 +48,23 @@ class DocumentVerdictTest(unittest.TestCase):
             start.assert_not_called()
         self.post("document-checks/read", {"kind": "ownerId", "fileBase64": ""}, 400)
 
+    def test_listing_trade_price_is_verified_against_its_own_complex(self):
+        address = "서울특별시 은평구 테스트로 10"
+        detail = {"id": "A123", "address": address,
+                  "price": {"saleLive": True, "recentSale10k": 72000, "saleMedian10k": 70000}}
+        payload = {"key": "listing:A123-L1", "property": {"address": address},
+                   "price": {"source": "trade", "value10k": 72000}, "deposit10k": None}
+        with patch("movevalue_api.property_detail_response", return_value={"detail": detail}):
+            held = self.post("jeonse-verdict", payload)["ltv"]
+            self.assertEqual((held["priceSource"], held["price10k"]), ("trade", 70000))
+            self.assertIsNone(held["ratioPct"])
+            self.assertIsNone(held["stressRatioPct"])
+            payload["property"]["address"] = "다른 단지"
+            self.assertEqual(self.post("jeonse-verdict", payload)["ltv"]["priceSource"], "estimate")
+            payload["property"]["address"] = address
+            payload["key"] = "listing:A12-L1"
+            self.assertEqual(self.post("jeonse-verdict", payload)["ltv"]["priceSource"], "estimate")
+
     def test_only_current_owner_review_releases_the_same_address(self):
         post = self.post
         address = "서울특별시 강서구 테스트로 100"

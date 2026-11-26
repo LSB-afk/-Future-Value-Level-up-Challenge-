@@ -2,6 +2,8 @@
 // running in Pyodide. Only the static build loads this file (scripts/build_pages.py
 // injects the script tag); the local dev server never uses it.
 (() => {
+  // 화면이 정적 데모임을 알 수 있게 표시한다(저장이 필요한 제보 폼을 숨길 때 쓴다).
+  window.FITHOME_STATIC = true;
   const PYODIDE_URL = "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js";
   const PY_FILES = [
     "env_loader.py",
@@ -77,7 +79,10 @@
       return nativeFetch(input, init);
     }
     const handle = await ready;
-    const result = handle(url);
+    // POST 본문(판정·반환 순위 요청)을 함께 넘긴다. 예전에는 url만 넘겨 POST가 GET처럼 처리돼 404가 났다.
+    const method = (init && init.method) || "GET";
+    const requestBody = init && typeof init.body === "string" ? init.body : null;
+    const result = handle(url, method, requestBody);
     const [status, body] = result.toJs();
     result.destroy();
     return new Response(body, {
