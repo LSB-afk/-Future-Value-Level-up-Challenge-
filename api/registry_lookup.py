@@ -11,14 +11,15 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 import threading
 import time
 import unicodedata
 import urllib.error
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
-from document_requests import DocumentRequestError, _pdf_lines
+from document_requests import DocumentRequestError, _pdf_lines, private_db_file
 
 MAX_PDF = 4 * 1024 * 1024
 _PROVIDER = "하이픈 · 인터넷등기소"
@@ -37,6 +38,10 @@ class RegistryError(ValueError):
     def __init__(self, message, http_status=400):
         super().__init__(message)
         self.http_status = http_status
+
+
+class RegistryUncertain(RegistryError):
+    """제공기관이 요청을 처리했는지(과금됐는지) 알 수 없는 타임아웃·연결 오류."""
 
 
 def registry_status():
@@ -98,7 +103,7 @@ def _provider(endpoint, params):
             raise RegistryError("등기 응답이 처리 가능한 크기를 초과했습니다.", 502)
         result = json.loads(raw)
     except (OSError, UnicodeError, json.JSONDecodeError, urllib.error.URLError) as exc:
-        raise RegistryError(
+        raise RegistryUncertain(
             "등기 제공기관 응답을 확인하지 못했습니다. 유료 열람은 자동 재시도하지 않습니다.",
             502,
         ) from exc
@@ -606,7 +611,107 @@ def read_registry_pdf(address, pdf_bytes):
     return result
 
 
-def fetch_registry(address, property_id, confirm_charge=False):
+# 유료 열람 기록. 같은 요청 번호로는 제공기관을 두 번 부르지 않는다.
+# PDF 원문과 증거 줄(이름이 들어갈 수 있다)은 남기지 않고 판독 결과만 남긴다.
+_CHARGE_KEY = re.compile(r"[A-Za-z0-9_-]{16,128}")
+_CHARGE_SUMMARY = ("address", "propertyId", "issuedAt", "mortgageMax10k", "reviewRequired",
+                   "reason", "documentHash", "source", "selectedAddress")
+_CHARGE_PENDING_SECONDS = 180  # 제공기관 타임아웃보다 길게 처리 중이면 결과를 알 수 없는 것으로 본다.
+_CHARGE_RETENTION = 7 * 86400
+_KST = timezone(timedelta(hours=9))
+
+
+def _daily_limit():
+    try:
+        return max(0, int(os.environ.get("FITHOME_REGISTRY_DAILY_LIMIT", "50")))
+    except ValueError:
+        return 50
+
+
+def _charge_db():
+    conn = sqlite3.connect(private_db_file("access.sqlite3"), timeout=5, isolation_level=None)
+    conn.execute("""CREATE TABLE IF NOT EXISTS registry_charges (
+        key TEXT PRIMARY KEY, request TEXT NOT NULL, uniq_no TEXT NOT NULL, status TEXT NOT NULL,
+        summary TEXT NOT NULL, day TEXT NOT NULL, created REAL NOT NULL, updated REAL NOT NULL)""")
+    return conn
+
+
+def _charge_row(key):
+    conn = _charge_db()
+    try:
+        return conn.execute("SELECT request, status, summary, updated FROM registry_charges WHERE key=?",
+                            (key,)).fetchone()
+    finally:
+        conn.close()
+
+
+def _replay(row, request):
+    stored_request, status, summary, updated = row
+    if stored_request != request:
+        raise RegistryError("이 요청 번호는 다른 등기 조회에 이미 쓰였습니다. 주소를 다시 검색해 주세요.", 409)
+    if status == "done":
+        return {**json.loads(summary), "replayed": True}
+    if status == "failed":
+        stored = json.loads(summary)
+        raise RegistryError(stored["error"], stored["status"])
+    if status == "pending" and time.time() - updated < _CHARGE_PENDING_SECONDS:
+        raise RegistryError("같은 등기 조회를 처리하고 있습니다. 잠시 후 결과를 다시 확인해 주세요.", 409)
+    raise RegistryError(
+        "제공기관 응답이 끊겨 과금 여부 확인이 필요합니다. 이중 과금을 막기 위해 같은 요청은 다시 열람하지 않습니다. "
+        "제공기관 이용 내역을 확인한 뒤 주소를 다시 검색해 주세요.",
+        409,
+    )
+
+
+def _reserve(key, request, number):
+    """호출 전에 'pending'을 먼저 남긴다. 이미 있는 요청 번호면 그 기록을 돌려준다."""
+    now = time.time()
+    conn = _charge_db()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("DELETE FROM registry_charges WHERE created < ?", (now - _CHARGE_RETENTION,))
+            row = conn.execute("SELECT request, status, summary, updated FROM registry_charges WHERE key=?",
+                               (key,)).fetchone()
+            if row:
+                return row
+            day = datetime.now(_KST).date().isoformat()
+            used = conn.execute("SELECT COUNT(*) FROM registry_charges WHERE day=?", (day,)).fetchone()[0]
+            limit = _daily_limit()
+            if used >= limit:
+                raise RegistryError(
+                    f"오늘 유료 등기 조회 한도({limit}건)를 모두 사용했습니다. 내일 다시 시도하거나 등기 PDF를 제출해 주세요.",
+                    429,
+                )
+            conn.execute("INSERT INTO registry_charges VALUES (?,?,?,?,?,?,?,?)",
+                         (key, request, number, "pending", "{}", day, now, now))
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.close()
+    return None
+
+
+def _settle(key, status, summary=None):
+    try:
+        conn = _charge_db()
+        try:
+            if status is None:  # 제공기관을 부르지 않았다.
+                conn.execute("DELETE FROM registry_charges WHERE key=? AND status='pending'", (key,))
+            else:
+                conn.execute("UPDATE registry_charges SET status=?, summary=?, updated=? WHERE key=?",
+                             (status, json.dumps(summary or {}, ensure_ascii=False), time.time(), key))
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError, DocumentRequestError):
+        # 기록이 'pending'으로 남으면 같은 요청 번호의 재시도는 과금 확인 안내를 받는다.
+        pass
+
+
+def fetch_registry(address, property_id, confirm_charge=False, idempotency_key=None):
+    """유료 열람. idempotency_key가 있으면 호출 전후를 기록하고 일일 상한을 적용한다(HTTP 경로는 항상 넘긴다)."""
     address = _address(address)
     if confirm_charge is not True:
         raise RegistryError("등기 주소·동호수와 유료 열람을 확인해 주세요.")
@@ -614,6 +719,18 @@ def fetch_registry(address, property_id, confirm_charge=False):
         raise RegistryError(registry_status()["reason"], 503)
     if not isinstance(property_id, str):
         raise RegistryError("주소를 검색하고 등기를 다시 선택해 주세요.")
+    key = request = None
+    if idempotency_key is not None:
+        if not isinstance(idempotency_key, str) or not _CHARGE_KEY.fullmatch(idempotency_key):
+            raise RegistryError("유료 열람 요청 번호 형식을 확인해 주세요.")
+        key = hashlib.sha256(idempotency_key.encode()).hexdigest()
+        request = hashlib.sha256((address + "\x00" + property_id).encode()).hexdigest()
+        try:
+            row = _charge_row(key)
+        except (sqlite3.Error, OSError) as exc:
+            raise RegistryError("유료 열람 기록을 확인하지 못해 열람하지 않았습니다.", 503) from exc
+        if row:
+            return _replay(row, request)
     with _LOCK:
         record = _SELECTIONS.get(property_id)
         if (
@@ -622,36 +739,63 @@ def fetch_registry(address, property_id, confirm_charge=False):
             or time.monotonic() - record[0] > _SELECTION_TTL
         ):
             raise RegistryError("유효한 주소 검색 결과를 다시 선택해 주세요.", 409)
-        del _SELECTIONS[property_id]  # Do not charge twice on double-click/retry.
+    if key:
+        try:
+            row = _reserve(key, request, record[2])
+        except (sqlite3.Error, OSError) as exc:
+            raise RegistryError("유료 열람 기록을 남기지 못해 열람하지 않았습니다.", 503) from exc
+        if row:
+            return _replay(row, request)
+    with _LOCK:
+        # Do not charge twice on double-click/retry.
+        if _SELECTIONS.pop(property_id, None) is None:
+            if key:
+                _settle(key, None)
+            raise RegistryError("유효한 주소 검색 결과를 다시 선택해 주세요.", 409)
     _, _, number, where, kind = record
-    data = _provider(
-        "in0004000163",
-        {
-            "uniqNo": number,
-            "searchDiv": "uniqNo",
-            "cmortCheck": "Y",
-            "pdfHex": "Y",
-            "display": "1",
-            "dupChk": "Y",
-            "closingYn": "N",
-            "excRegYn": "N",
-            "kindcls": "1" if kind == "집합건물" else "3",
-            "kindclsYn": "Y",
-        },
-    )
-    out = data.get("outList")
-    if not isinstance(out, dict) or _prop_id(out.get("get고유번호")) != number:
-        raise RegistryError(
-            "제공기관이 선택한 고유번호와 일치하는 원본을 반환하지 않았습니다.", 502
-        )
-    raw = data.get("pdfHexString")
-    if not isinstance(raw, str) or len(raw) > 2 * MAX_PDF:
-        raise RegistryError("제공기관 PDF를 읽을 수 없습니다.", 502)
     try:
-        pdf = bytes.fromhex(raw)
-    except ValueError as exc:
-        raise RegistryError("제공기관 PDF가 손상됐습니다.", 502) from exc
-    result = _parse_pdf(address, pdf, record)
+        data = _provider(
+            "in0004000163",
+            {
+                "uniqNo": number,
+                "searchDiv": "uniqNo",
+                "cmortCheck": "Y",
+                "pdfHex": "Y",
+                "display": "1",
+                "dupChk": "Y",
+                "closingYn": "N",
+                "excRegYn": "N",
+                "kindcls": "1" if kind == "집합건물" else "3",
+                "kindclsYn": "Y",
+            },
+        )
+        out = data.get("outList")
+        if not isinstance(out, dict) or _prop_id(out.get("get고유번호")) != number:
+            raise RegistryError(
+                "제공기관이 선택한 고유번호와 일치하는 원본을 반환하지 않았습니다.", 502
+            )
+        raw = data.get("pdfHexString")
+        if not isinstance(raw, str) or len(raw) > 2 * MAX_PDF:
+            raise RegistryError("제공기관 PDF를 읽을 수 없습니다.", 502)
+        try:
+            pdf = bytes.fromhex(raw)
+        except ValueError as exc:
+            raise RegistryError("제공기관 PDF가 손상됐습니다.", 502) from exc
+        result = _parse_pdf(address, pdf, record)
+    except RegistryUncertain:
+        if key:
+            _settle(key, "unknown")
+        raise
+    except RegistryError as exc:
+        if key:
+            _settle(key, "failed", {"error": str(exc), "status": exc.http_status})
+        raise
+    except BaseException:
+        if key:
+            _settle(key, "unknown")
+        raise
     result["source"] = "hyphen"
     result["selectedAddress"] = where
+    if key:
+        _settle(key, "done", {name: result.get(name) for name in _CHARGE_SUMMARY})
     return result
