@@ -266,7 +266,7 @@ def last_user_text(messages: list[dict]) -> str:
     )
 
 
-RAG_DEFAULT = "agentic"
+RAG_DEFAULT = "graph"  # 2026-11-28 평가: 검색 벤치마크 최고(검증용 Recall@4 0.95~1.0), 시나리오 동등 이상
 
 
 def retriever():

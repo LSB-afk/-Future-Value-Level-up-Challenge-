@@ -19,6 +19,14 @@ class AgenticRagTests(unittest.TestCase):
         self.assertIn("post-contract-registry-alert-and-lease-registration", slugs)
         self.assertIn("post-contract-resident-date-and-lease-report", slugs)
 
+    def test_single_topic_keeps_depth_multi_topic_spreads(self):
+        # 단일 주제 질문은 노트당 두 조각까지(깊이), 복합 질문은 노트당 한 조각 먼저(폭).
+        single = kb.search_agentic("등기부 볼 때 갑구 을구에서 뭘 확인해야 해요")
+        self.assertLessEqual(max(sum(h["slug"] == s for h in single) for s in {h["slug"] for h in single}), 2)
+        multi = kb.search_agentic("신탁 등기가 있고 집주인 대리인이 나왔어요. 뭘 확인해야 해요?")
+        slugs = [h["slug"] for h in multi]
+        self.assertEqual(len(slugs), len(set(slugs)))
+
     def test_one_chunk_per_note_before_repeats_and_k_respected(self):
         hits = kb.search_agentic("신탁 등기가 있고 집주인 대리인이 나왔어요. 뭘 확인해야 해요?", k=4)
         self.assertLessEqual(len(hits), 4)
@@ -39,7 +47,8 @@ class AgenticRagTests(unittest.TestCase):
         system, hits = build_system("", messages)
         self.assertIn("[K1]", system)
         plan = knowledge_trace(messages, hits)
-        self.assertEqual(plan["method"], "agentic")
+        from agent_llm import RAG_DEFAULT
+        self.assertEqual(plan["method"], RAG_DEFAULT)
         self.assertEqual(len(plan["found"]), len(hits))
         self.assertGreaterEqual(len(plan["subQueries"]), 2)
 

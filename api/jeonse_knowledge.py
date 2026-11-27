@@ -180,6 +180,7 @@ CLAUSE_SPLIT = re.compile(r"[?？!.。]\s*|\s+(?:그리고|또|또한|그런데|
 RRF_K = 60
 DIVERSITY_FLOOR = 0.5
 SUBQUERY_FLOOR = 0.3
+ADAPTIVE_DEPTH = True  # 단일 질문은 깊게, 복합 질문은 넓게
 
 
 def plan_query(question: str) -> dict:
@@ -242,7 +243,18 @@ def _select(lanes: list, fused: Counter, raw: dict, best_per_lane: dict, k: int)
                 take(i, label)
                 taken_slugs.add(slug)
                 break
-    # 2) 합친 순위로 채우되 노트당 한 조각 먼저. 다만 관련도가 1위의 절반이 안 되는 새 노트로 칸을 채우지는 않는다.
+    # 단일 주제 질문은 깊이가 중요하다. 예전 검색처럼 합친 순위대로 노트당 두 조각까지 담는다
+    # (2026-11-28 시나리오 평가: 노트당 한 조각으로 넓히자 같은 노트 두 번째 조각의 세부 내용이 빠졌다).
+    if ADAPTIVE_DEPTH and not any(label.startswith("하위") for label, *_ in lanes):
+        per_note: Counter = Counter()
+        for i in order:
+            slug = idx["chunks"][i]["slug"]
+            if per_note[slug] < 2:
+                take(i, "합친 순위")
+                per_note[slug] += 1
+        chosen.sort(key=lambda i: -fused[i])
+        return [{**idx["chunks"][i], "score": round(raw[i], 2), "matchedBy": matched[i]} for i in chosen]
+    # 2) 복합 질문: 합친 순위로 채우되 노트당 한 조각 먼저. 관련도가 1위의 절반이 안 되는 새 노트로 칸을 채우지는 않는다.
     floor = fused[order[0]] * DIVERSITY_FLOOR
     for i in order:
         slug = idx["chunks"][i]["slug"]
