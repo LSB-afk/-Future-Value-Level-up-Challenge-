@@ -149,8 +149,8 @@ def _tool_args(raw) -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
-def agent_chat(messages: list[dict], context: str = "") -> dict:
-    """agent_llm.agent_chat과 같은 계약. 도구 호출 루프를 직접 돈다."""
+def agent_chat(messages: list[dict], context: str = "", report_state: dict | None = None) -> dict:
+    """agent_llm.agent_chat과 같은 계약. 도구 호출 루프를 직접 돈다. report_state는 document_status 실행에만 쓴다."""
     state = availability()
     if not state["available"]:
         return {"ok": False, "error": state["reason"], "availability": state}
@@ -247,7 +247,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
             function = call.get("function") or {}
             name = str(function.get("name") or "")
             payload = _tool_args(function.get("arguments"))
-            output = run_tool_once(name, payload, seen_calls, facts)
+            output = run_tool_once(name, payload, seen_calls, facts, report_state)
             tool_outputs.append(output)
             tool_trace.append({"name": name, "input": payload})
             # Anthropic은 tool_result를 한 user 메시지에 모아 보내지만 Ollama는 호출당 tool 메시지다.

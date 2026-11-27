@@ -16,6 +16,7 @@ import json
 import math
 import os
 import re
+import sqlite3
 from datetime import date
 
 from env_loader import load_dotenv
@@ -63,7 +64,7 @@ SYSTEM_PROMPT = """당신은 국토교통 데이터 기반 주거 매칭 서비�
 ## 데이터 사용 규칙
 - 단지에 대한 수치를 말할 때는 반드시 도구를 호출해 확인한 값만 쓰세요. 기억이나 추측으로 가격·점수·거리를 말하지 마세요.
 - 도구가 돌려준 값에는 실데이터와 추정치가 섞여 있습니다. sourceMode나 dataStatus가 추정이라고 표시하면 "추정"이라고 밝히세요.
-- 등기부 권리관계, 임대인 체납, 보증보험 가입 가능 여부는 어떤 도구로도 알 수 없습니다. 모르는 것은 모른다고 말하고 확인 방법을 안내하세요.
+- 등기부 근저당, 다가구 선순위 보증금, 임대인 납세증명서는 document_status로 확인된 항목(status가 '서류 확인')만 서류 기준으로 말하고 기준일을 함께 밝히세요. 확인 안 된 항목과 그 밖의 등기부 권리관계·보증보험 가입 가능 여부는 모른다고 말하고 확인 방법을 안내하세요. 서류 상태를 말하기 전에는 document_status를 호출하세요.
 - web_search는 제도·법령·기관 안내가 바뀌었는지 확인할 때만 쓰세요. 단지의 가격·전세가율·위험 점수·거리는 반드시 FitHome 도구가 돌려준 값만 쓰고, 검색 결과로 대체하지 마세요.
 - 검색으로도 등기부 권리관계나 임대인 체납은 알 수 없습니다. 검색 결과가 그럴듯해 보여도 특정 단지의 권리관계를 단정하지 마세요.
 - 검색어에 사용자의 보증금 액수나 동·호수를 넣지 마세요. 제도명과 기관명만 검색하세요.
@@ -79,7 +80,8 @@ SYSTEM_PROMPT = """당신은 국토교통 데이터 기반 주거 매칭 서비�
 - '확인 못 한 부분'이 붙은 내용은 단정하지 마세요.
 
 ## 안심 단정 금지
-- "안전합니다", "깡통전세가 아닙니다", "계약해도 됩니다", "괜찮습니다"처럼 안심을 단정하지 마세요. FitHome은 등기부·임대인 체납·보증 가입 여부를 직접 보지 못하므로 안전을 판정할 수 없습니다. "확인한 범위에서 보이는 신호"와 "다음에 확인할 일"을 말하세요.
+- "안전합니다", "깡통전세가 아닙니다", "계약해도 됩니다", "괜찮습니다"처럼 안심을 단정하지 마세요. FitHome이 서류로 확인한 항목도 기준일 시점의 일부 항목일 뿐이라 안전을 판정할 수 없습니다. document_status로 확인된 항목만 서류 기준으로 말하고, 확인 안 된 항목은 모른다고 말하세요. "확인한 범위에서 보이는 신호"와 "다음에 확인할 일"을 말하세요.
+- 판정 등급 '확인 필요'는 서류가 모자라 판단을 보류했다는 뜻입니다. '확인 필요'를 안전하다거나 문제없다는 뜻으로 말하지 마세요.
 - jeonse_safeguard의 headroom(근저당 여유 금액)은 실제 근저당 금액이 아닙니다. 실제 근저당은 사용자가 등기부를 보고 알려줘야 압니다.
 - 사용자가 보증금·근저당·선순위 보증금 금액을 말하면 반드시 jeonse_verdict_check로 계산하고, 도구가 준 비율과 등급을 그대로 쓰세요. 직접 계산하지 마세요.
 - 집값 대비 빚 계산이 보류됐으면 원인과 확인할 서류를 안내하세요. 전세가율을 LTV로 사용하지 마세요.
@@ -131,10 +133,12 @@ def reassurance_in(answer: str) -> list[str]:
 # 도구 호출을 글자로 내보냈다("letonse_safeguard {...}"). 둘 다 사용자에게 그대로 가면 안 된다.
 HAN_RE = re.compile(r"[一-鿿]")
 RAW_TOOL_RE = re.compile(r"\b[a-z]+_[a-z_]+\s*\{\s*\"")
-DISCLAIMER = "\n\n※ FitHome은 안전 여부를 판정하지 않습니다. 등기부·임대인 체납·보증 가입 여부를 직접 확인하세요."
+# 리포트에서 서류로 확인한 값이 있어도 모순되지 않게 쓴다: 확인한 항목은 기준일 시점 값이고, 확인 안 된 항목은 모른다.
+DISCLAIMER = ("\n\n※ FitHome은 안전 여부를 판정하지 않습니다. 서류로 확인한 항목도 발급·열람일 기준이므로 계약 직전과 잔금 직전에 "
+              "다시 확인하고, 확인되지 않은 항목(등기부 권리관계·임대인 체납·보증 가입 여부)은 직접 확인하세요.")
 SAFE_FALLBACK = (
-    "FitHome은 등기부·임대인 체납·보증 가입 여부를 직접 보지 못해 안전 여부를 판정하지 않습니다. "
-    "계약 전에 ① 등기부(갑구 소유자·신탁·압류, 을구 근저당)를 직접 열람하고 ② 임대인에게 납세증명서와 확정일자 부여현황을 요청하고 "
+    "FitHome은 안전 여부를 판정하지 않습니다. 서류로 확인한 항목이 있어도 발급·열람일 기준의 일부 항목일 뿐입니다. "
+    "계약 전에 ① 등기부(갑구 소유자·신탁·압류, 을구 근저당)를 다시 열람하고 ② 아직 받지 않았다면 임대인에게 납세증명서와 확정일자 부여현황을 요청하고 "
     "③ 보증보험 가입이 가능한지 확인하세요. 금액을 알려 주시면 집값 대비 빚 비율을 계산해 드릴 수 있습니다."
 )
 FAILED_ANSWER = "답을 제대로 만들지 못했습니다. 질문을 조금 바꿔 다시 물어봐 주세요. 급하면 전세피해 및 예방지원센터 상담을 이용하세요."
@@ -154,8 +158,8 @@ def rewrite_request(found: list[str]) -> str:
     asks = []
     if any(p in REASSURANCE_PHRASES for p in found):
         asks.append(
-            f"안심을 단정하는 표현({', '.join(p for p in found if p in REASSURANCE_PHRASES)})이 있습니다. FitHome은 등기부·체납·보증 "
-            "가입 여부를 직접 보지 못하므로 안전을 판정할 수 없습니다. 그 표현 없이 '확인한 범위에서 보이는 신호'와 '다음에 확인할 일'로 쓰세요."
+            f"안심을 단정하는 표현({', '.join(p for p in found if p in REASSURANCE_PHRASES)})이 있습니다. FitHome은 서류로 확인한 항목이 "
+            "있어도 안전을 판정하지 않습니다. 그 표현 없이 '확인한 범위에서 보이는 신호'와 '다음에 확인할 일'로 쓰세요."
         )
     if "외국어(한자) 문장" in found:
         asks.append("답 일부가 한국어가 아닙니다. 전부 한국어로 쓰세요.")
@@ -709,7 +713,128 @@ def tool_search_jeonse_knowledge(query: str, k: int = 4) -> str:
     return search_tool(query, k)
 
 
+# --- 열린 매물 리포트의 서류 확인 상태 ------------------------------------------
+# 화면이 보낸 reportState는 도구 실행 맥락으로만 쓴다. 근거 번호·서류 요청 토큰은 시스템 프롬프트·도구 결과·
+# trace 어디에도 넣지 않는다(모델이 토큰을 되뇌면 대화 기록으로 새어 나간다).
+REPORT_TOKEN_RE = re.compile(r"[A-Za-z0-9_-]{43}")
+REPORT_HOUSING_TYPES = {"apartment", "villa", "multi", "officetel"}
+DOC_CONFIRMED, DOC_UNKNOWN = "서류 확인", "미확인"
+
+
+def clean_report_state(raw) -> dict | None:
+    """/api/agent-chat의 reportState를 검증한다. 형식이 어긋난 칸은 버리고, 객체가 아니면 ValueError."""
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ValueError("reportState는 객체여야 합니다.")
+    address = raw.get("address")
+    if not isinstance(address, str) or not 4 <= len(address.strip()) <= 220 or any(ord(c) < 32 for c in address):
+        return None
+    state = {"address": address.strip()}
+    if raw.get("housingType") in REPORT_HOUSING_TYPES:
+        state["housingType"] = raw["housingType"]
+    for field in ("registryEvidenceId", "documentOwnerToken"):
+        value = raw.get(field)
+        if isinstance(value, str) and REPORT_TOKEN_RE.fullmatch(value):
+            state[field] = value
+    return state
+
+
+def _doc_item(item: str, status: str, reason: str = "", basis_date: str | None = None, **extra) -> dict:
+    row = {"item": item, "status": status, "basisDate": basis_date}
+    if reason:
+        row["reason"] = reason
+    row.update(extra)
+    return row
+
+
+def _registry_status(state: dict) -> dict:
+    from jeonse_verdict import REGISTRY_FRESH_DAYS, money
+
+    item = "등기부 을구 근저당(채권최고액)"
+    token = state.get("registryEvidenceId")
+    if not token:
+        return _doc_item(item, DOC_UNKNOWN, "이 리포트에서 대조한 등기부가 없습니다.")
+    try:
+        from evidence_store import resolve_registry
+
+        values, reason = resolve_registry(token, state["address"])
+    except (sqlite3.Error, OSError, ValueError):
+        return _doc_item(item, DOC_UNKNOWN, "등기 근거를 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.")
+    if values is None:
+        return _doc_item(item, DOC_UNKNOWN, reason)
+    issued = values.get("issuedAt") or ""
+    source = "제공기관 등기 열람본" if values.get("source") == "hyphen" else "올린 등기부 PDF (형식 대조, 진위 미확인)"
+    age = (date.today() - date.fromisoformat(issued)).days if _iso_date(issued) else None
+    if age is None or age > REGISTRY_FRESH_DAYS:
+        # jeonse_verdict와 같은 기준: 30일 넘은 열람본의 근저당은 쓰지 않는다.
+        return _doc_item(item, DOC_UNKNOWN, f"열람일이 최근 {REGISTRY_FRESH_DAYS}일 이내가 아니라 다시 열람해야 합니다.",
+                         issued or None, source=source)
+    return _doc_item(item, DOC_CONFIRMED, basis_date=issued, basisLabel="등기부 열람일", source=source,
+                     amount10k=values["mortgageMax10k"], amountLabel=money(values["mortgageMax10k"]))
+
+
+def _prior_status(state: dict) -> dict:
+    from jeonse_verdict import money
+
+    item = "선순위 임차보증금(확정일자 자료)"
+    token = state.get("documentOwnerToken")
+    if not token:
+        return _doc_item(item, DOC_UNKNOWN, "임대인 서류 요청 기록이 없습니다.")
+    try:
+        import document_requests
+
+        amount = document_requests.confirmed_prior(token, state["address"])
+        if amount is None:
+            return _doc_item(item, DOC_UNKNOWN, "확인을 마친 선순위 보증금 자료가 없습니다.")
+        docs = document_requests.get_request({"ownerToken": token}).get("documents") or []
+    except (sqlite3.Error, OSError, ValueError):
+        return _doc_item(item, DOC_UNKNOWN, "서류 확인 상태를 불러오지 못했습니다.")
+    issued = next((d.get("issuedAt") for d in docs if d.get("kind") == "fixedDate" and d.get("status") == "confirmed"), None)
+    extra = {"note": "다가구는 이 금액이 판정에 쓰입니다."} if state.get("housingType") == "multi" else {}
+    return _doc_item(item, DOC_CONFIRMED, basis_date=issued, basisLabel="자료 발급일", amount10k=amount,
+                     amountLabel=money(amount), **extra)
+
+
+def _tax_status(state: dict) -> dict:
+    item = "임대인 납세증명서"
+    token = state.get("documentOwnerToken")
+    if not token:
+        return _doc_item(item, DOC_UNKNOWN, "임대인 서류 요청 기록이 없습니다.")
+    try:
+        import document_requests
+
+        # 납세증명서 확인은 별도 작업으로 붙는다. 아직 없으면 '미확인'으로 둔다.
+        confirmed_tax = getattr(document_requests, "confirmed_tax", None)
+        if not callable(confirmed_tax):
+            return _doc_item(item, DOC_UNKNOWN, "납세증명서 확인 기능이 아직 연결되지 않았습니다.")
+        confirmed = confirmed_tax(token, state["address"]) is True
+    except (sqlite3.Error, OSError, ValueError):
+        return _doc_item(item, DOC_UNKNOWN, "서류 확인 상태를 불러오지 못했습니다.")
+    if not confirmed:
+        return _doc_item(item, DOC_UNKNOWN, "확인을 마친 납세증명서가 없습니다.")
+    return _doc_item(item, DOC_CONFIRMED, note="증명서 발급일 기준입니다. 그 뒤에 생긴 체납은 반영되지 않습니다.")
+
+
+def tool_document_status(report_state: dict | None = None) -> str:
+    """열린 매물 리포트에서 서버가 확인한 서류 상태를 돌려준다. 금액·날짜는 서버 기록만, 주소·토큰·임대인 정보는 넣지 않는다."""
+    state = report_state or {}
+    if not state.get("address"):
+        items = [_doc_item(name, DOC_UNKNOWN, "열린 매물 리포트가 없습니다.")
+                 for name in ("등기부 을구 근저당(채권최고액)", "선순위 임차보증금(확정일자 자료)", "임대인 납세증명서")]
+    else:
+        items = [_registry_status(state), _prior_status(state), _tax_status(state)]
+    return json.dumps({
+        "reportOpen": bool(state.get("address")),
+        "housingType": state.get("housingType") or "unknown",
+        "items": items,
+        "neverChecked": ["갑구 소유자·신탁·압류·경매·임차권등기", "등기부 소유자와 계약 상대 일치", "보증보험 가입 가능 여부"],
+        "rule": "status가 '서류 확인'인 항목만 서류 기준으로 말하고 기준일을 밝히세요. '미확인'과 neverChecked 항목은 모른다고 말하세요.",
+    }, ensure_ascii=False)
+
+
 TOOL_IMPLS = {
+    "document_status": tool_document_status,
     "search_jeonse_knowledge": tool_search_jeonse_knowledge,
     "jeonse_verdict_check": tool_jeonse_verdict_check,
     "deposit_priority": tool_deposit_priority,
@@ -722,6 +847,15 @@ TOOL_IMPLS = {
 }
 
 TOOL_SCHEMAS = [
+    {
+        "name": "document_status",
+        "description": (
+            "사용자가 연 매물 리포트에서 FitHome 서버가 서류로 확인한 항목의 상태를 돌려줍니다: 등기부 근저당(열람일·출처), "
+            "다가구 선순위 보증금, 임대인 납세증명서. 항목마다 status('서류 확인' 또는 '미확인')와 기준일이 붙습니다. "
+            "읽기 전용이며 인자가 없습니다. 등기·선순위·체납 서류가 확인됐는지 말하기 전에 호출하세요."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
     {
         "name": "search_jeonse_knowledge",
         "description": (
@@ -874,11 +1008,17 @@ TOOL_SCHEMAS = [
 ]
 
 
-def _run_tool(name: str, payload: dict) -> str:
+# 모델이 준 인자 대신 서버가 검증한 리포트 맥락(reportState)으로만 실행하는 도구.
+REPORT_TOOLS = {"document_status"}
+
+
+def _run_tool(name: str, payload: dict, report_state: dict | None = None) -> str:
     impl = TOOL_IMPLS.get(name)
     if impl is None:
         return json.dumps({"error": f"알 수 없는 도구: {name}"}, ensure_ascii=False)
     try:
+        if name in REPORT_TOOLS:
+            return impl(report_state)
         return impl(**payload)
     except Exception as exc:  # noqa: BLE001 - 도구 실패는 모델이 읽고 대처해야 한다.
         return json.dumps({"error": f"{name} 실행 실패: {exc}"}, ensure_ascii=False)
@@ -917,14 +1057,15 @@ def facts_block(facts: dict) -> str:
     return ("\n\n[FitHome 계산 결과 — 위 설명과 다르면 이 값이 맞습니다]\n" + "\n".join(lines)) if lines else ""
 
 
-def run_tool_once(name: str, payload: dict, seen: set, facts: dict | None = None) -> str:
+def run_tool_once(name: str, payload: dict, seen: set, facts: dict | None = None,
+                  report_state: dict | None = None) -> str:
     """같은 (도구, 인자) 반복 호출을 막는다. 2026-11-08 평가에서 qwen2.5:7b가 보증금 없이
     jeonse_verdict_check를 7번 연달아 불러 턴 상한에 걸렸다(S2)."""
     key = (name, json.dumps(payload, ensure_ascii=False, sort_keys=True))
     if key in seen:
         return json.dumps({"error": REPEAT_TOOL_ERROR}, ensure_ascii=False)
     seen.add(key)
-    output = _run_tool(name, payload)
+    output = _run_tool(name, payload, report_state)
     if facts is not None and name in FACT_TOOLS:
         try:
             data = json.loads(output)
@@ -960,8 +1101,10 @@ def _collect_web_blocks(content, tool_trace: list[dict], sources: list[dict]) ->
             sources.append({"url": url, "title": getattr(citation, "title", "") or url})
 
 
-def agent_chat(messages: list[dict], context: str = "") -> dict:
-    """대화 이력을 받아 Claude 응답을 돌려준다. 도구 호출 루프를 직접 돈다."""
+def agent_chat(messages: list[dict], context: str = "", report_state: dict | None = None) -> dict:
+    """대화 이력을 받아 Claude 응답을 돌려준다. 도구 호출 루프를 직접 돈다.
+
+    report_state(clean_report_state로 검증한 값)는 document_status 실행에만 쓰고 모델에게는 보내지 않는다."""
     state = availability()
     if not state["available"]:
         return {"ok": False, "error": state["reason"], "availability": state}
@@ -1036,7 +1179,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
 
         results = []
         for block in tool_uses:
-            output = run_tool_once(block.name, dict(block.input), seen_calls, facts)
+            output = run_tool_once(block.name, dict(block.input), seen_calls, facts, report_state)
             tool_outputs.append(output)
             tool_trace.append({"name": block.name, "input": dict(block.input)})
             results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
@@ -1124,10 +1267,10 @@ if __name__ == "__main__":
                                            "registry_issued_at": date.today().isoformat()}, set(), facts)
     block = facts_block(facts)
     assert "16.0%" in block and "계산 결과" in block, block
-    assert finalize_answer("깡통이야?", "이 집은 안전해요.", ["안전해요"]).startswith("FitHome은 등기부")
+    assert finalize_answer("깡통이야?", "이 집은 안전해요.", ["안전해요"]).startswith(SAFE_FALLBACK)
     kept = finalize_answer("q", "이 집은 안전해요. 6개월 전 등기부라 잔금 직전에 다시 열람해 근저당이 새로 잡혔는지 확인하세요.", ["안전해요"])
     assert "안전해요" not in kept and "다시 열람" in kept and "판정하지 않습니다" in kept, kept
-    assert finalize_answer("q", "안전합니다. 契約安全確認事項", ["안전합니다", "외국어(한자) 문장"]).startswith("FitHome은 등기부")
+    assert finalize_answer("q", "안전합니다. 契約安全確認事項", ["안전합니다", "외국어(한자) 문장"]).startswith(SAFE_FALLBACK)
     # 금액 질문인데 도구를 안 불렀어도 서버가 계산해 붙인다
     auto: dict = {}
     auto_facts("서울에서 보증금 6천만 원인데 소액임차인 최우선변제 받을 수 있어?", "", auto)
@@ -1143,6 +1286,9 @@ if __name__ == "__main__":
 
     assert "error" in json.loads(tool_apartment_snapshot("does-not-exist"))
     assert "error" in _run_tool("nope", {})
+    # 리포트가 없으면 서류 항목은 전부 '미확인'이고, 모델이 넣은 인자는 무시한다
+    status = json.loads(_run_tool("document_status", {"address": "가짜"}))
+    assert not status["reportOpen"] and {i["status"] for i in status["items"]} == {"미확인"}, status
 
     if not state["available"]:
         blocked = agent_chat([{"role": "user", "content": "테스트"}])
