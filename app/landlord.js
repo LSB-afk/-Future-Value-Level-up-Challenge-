@@ -16,6 +16,7 @@
   const message = document.getElementById("upload-status");
   const rows = new Map();
   let busy = false;
+  let consentVersion = null;
 
   function getToken() {
     // Only this history entry can resume the same link after a reload.
@@ -111,6 +112,21 @@
       const request = await post("recipient", {});
       const kinds = request.requested.filter(kind => Object.hasOwn(documents, kind));
       if (!kinds.length) throw new Error("이 링크에는 제출할 서류가 없습니다.");
+      const terms = request.consent?.terms;
+      if (!request.consent?.version || !Array.isArray(terms) || !terms.length) {
+        throw new Error("제출 동의 내용을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      }
+      // 서버가 내려준 문안만 표시하고, 제출할 때 같은 버전으로 동의했음을 보낸다.
+      consentVersion = request.consent.version;
+      const list = document.getElementById("consent-terms");
+      list.replaceChildren(...terms.map(term => {
+        const item = document.createElement("li");
+        const title = document.createElement("strong");
+        title.textContent = term.title;
+        item.append(title, " " + term.text);
+        return item;
+      }));
+      document.getElementById("consent-version").textContent = "동의 문안 버전 " + consentVersion;
       document.getElementById("address").textContent = request.address;
       const expires = new Date(request.expiresAt);
       if (Number.isFinite(expires.getTime())) {
@@ -155,7 +171,7 @@
       row.error.textContent = "";
       try {
         const fileBase64 = await readFile(file);
-        const result = await post("submit", { kind, fileBase64 });
+        const result = await post("submit", { kind, fileBase64, consent: { version: consentVersion, agreed: true } });
         row.input.value = "";
         row.input.removeAttribute("aria-invalid");
         row.sent = true;

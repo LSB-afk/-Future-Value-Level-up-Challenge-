@@ -15,6 +15,7 @@ import document_requests as requests
 
 ADDRESS = "대전광역시 유성구 예시로 10 201호"
 DAY = requests._today().isoformat()
+CONSENT = {"consent": {"version": requests.CONSENT_VERSION, "agreed": True}}
 
 
 def lines(total="선순위 임차보증금 총액: 350,000,000원", address=ADDRESS,
@@ -118,9 +119,40 @@ class Lifecycle(unittest.TestCase):
         self.owner = {"ownerToken": self.created["ownerToken"]}
         self.recipient = {"recipientToken": self.created["recipientToken"]}
 
-    def submit(self, data):
-        return requests.submit_document({**self.recipient, "kind": "fixedDate",
+    def submit(self, data, consent=CONSENT):
+        return requests.submit_document({**self.recipient, **consent, "kind": "fixedDate",
                                          "fileBase64": base64.b64encode(data).decode("ascii")})
+
+    def test_recipient_sees_consent_terms_and_submit_requires_current_consent(self):
+        terms = requests.get_recipient(self.recipient)["consent"]
+        self.assertEqual(terms["version"], requests.CONSENT_VERSION)
+        self.assertEqual([t["title"] for t in terms["terms"]], ["이용 목적", "임차인에게 보이는 범위", "보관 기간", "원본 PDF"])
+        old = {"version": "2000-01-01", "agreed": True}
+        with patch.object(requests, "_pdf_lines", return_value=[lines()]) as read:
+            for consent in [{}, {"consent": None}, {"consent": {"version": requests.CONSENT_VERSION}},
+                            {"consent": {"version": requests.CONSENT_VERSION, "agreed": "true"}},
+                            {"consent": {"agreed": True}}, {"consent": old}]:
+                with self.subTest(consent=consent), self.assertRaises(requests.DocumentRequestError) as cm:
+                    self.submit(b"%PDF-consent", consent)
+                self.assertEqual(cm.exception.status, 400)
+                self.assertIn("동의", str(cm.exception))
+            read.assert_not_called()
+        self.assertEqual(requests.get_request(self.owner)["documents"], [])
+
+    def test_submission_records_consent_version_and_time(self):
+        before = requests.datetime.now(requests.timezone.utc).replace(microsecond=0)
+        with patch.object(requests, "_pdf_lines", return_value=[lines(title="선순위 임차보증금 확인서")]):
+            self.assertEqual(self.submit(b"%PDF-consent")["status"], "ready")
+        doc = requests.get_request(self.owner)["documents"][0]
+        self.assertEqual(doc["consentVersion"], requests.CONSENT_VERSION)
+        consented = requests.datetime.fromisoformat(doc["consentAt"])
+        self.assertEqual(consented.utcoffset(), timedelta(0))
+        self.assertLessEqual(before, consented)
+        # 세입자 화면에는 제출자를 확인된 임대인으로 적지 않는다.
+        self.assertTrue(any("링크로 제출된 서류" in note for note in doc["notes"]))
+        self.assertFalse(any("임대인이 제출" in note for note in doc["notes"]))
+        confirmed = requests.review_request({**self.owner, "kind": "fixedDate", "fingerprint": doc["fingerprint"]})
+        self.assertEqual(confirmed["documents"][0]["consentAt"], doc["consentAt"])
 
     def test_role_separation_and_private_storage(self):
         for func, value in [(requests.get_request, self.created["recipientToken"]),
@@ -227,7 +259,7 @@ class Lifecycle(unittest.TestCase):
             ({"kind": "fixedDate", "fileBase64": "A" * (6 * 1024 * 1024)}, 413),
         ]:
             with self.subTest(status=status), self.assertRaises(requests.DocumentRequestError) as cm:
-                requests.submit_document({**self.recipient, **payload})
+                requests.submit_document({**self.recipient, **CONSENT, **payload})
             self.assertEqual(cm.exception.status, status)
 
 
