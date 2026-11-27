@@ -1,4 +1,5 @@
 """Scoped, transient PortOne V2 identity verification receipts for a FitHome report."""
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -7,12 +8,13 @@ import json
 import os
 import re
 import secrets
+import sqlite3
 from threading import Lock
 import time
 import unicodedata
 from urllib.parse import urlencode
 
-from document_requests import DocumentRequestError
+from document_requests import DocumentRequestError, private_db_file
 
 
 PENDING_SECONDS = 600
@@ -50,12 +52,48 @@ def _scope(payload):
     return sha256("\x00".join(fields).encode()).hexdigest()
 
 
-def _lookup(payload):
+@contextmanager
+def _db():
+    # 서버 재시작·다중 워커에서도 인증 완료를 유지한다. 해시된 토큰·매물 범위·완료 시각만 남긴다.
+    conn = sqlite3.connect(private_db_file("access.sqlite3"), timeout=5)
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS identity_receipts (
+            key TEXT PRIMARY KEY, scope TEXT NOT NULL, verified_at TEXT NOT NULL, expires REAL NOT NULL)""")
+        yield conn
+    finally:
+        conn.close()
+
+
+def _token_key(payload):
     token = payload.get("challengeToken")
     if not isinstance(token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{43}", token):
         raise IdentityVerificationError(404, "이 매물의 인증 시간이 지났어요. 다시 시작해 주세요.")
-    key = sha256(token.encode()).digest()
-    entry = _challenges.get(key)
+    return sha256(token.encode()).digest()
+
+
+def _stored(key):
+    try:
+        with _db() as conn:
+            row = conn.execute("SELECT scope, verified_at, expires FROM identity_receipts WHERE key=? AND expires>?",
+                               (key.hex(), time.time())).fetchone()
+    except (sqlite3.Error, OSError):
+        raise IdentityVerificationError(503, "인증 기록을 확인하지 못했어요. 잠시 후 다시 시도해 주세요.") from None
+    return _Challenge(row[0], "", row[2], 0, row[1]) if row else None
+
+
+def _save(key, entry):
+    try:
+        with _db() as conn, conn:
+            conn.execute("DELETE FROM identity_receipts WHERE expires <= ?", (time.time(),))
+            conn.execute("INSERT OR REPLACE INTO identity_receipts VALUES (?,?,?,?)",
+                         (key.hex(), entry.scope, entry.verified_at, entry.expires))
+    except (sqlite3.Error, OSError):
+        raise IdentityVerificationError(503, "인증 결과를 저장하지 못했어요. 잠시 후 다시 확인해 주세요.") from None
+
+
+def _lookup(payload):
+    key = _token_key(payload)
+    entry = _challenges.get(key) or _stored(key)
     if entry is None or entry.scope != _scope(payload) or entry.expires <= time.time():
         raise IdentityVerificationError(404, "이 매물의 인증 시간이 지났어요. 다시 시작해 주세요.")
     return entry
@@ -150,10 +188,27 @@ def confirm_verification(payload):
                     raise ValueError
             except (KeyError, AttributeError, ValueError, OSError, OverflowError):
                 raise IdentityVerificationError(422, "기관의 인증 완료 시각을 확인할 수 없어요.") from None
-            entry.verified_at = verified.astimezone(timezone.utc).isoformat()
-            entry.expires = time.time() + VERIFIED_SECONDS
-            entry.verification_id = ""
-            return _public(entry)
+            done = _Challenge(entry.scope, "", time.time() + VERIFIED_SECONDS, entry.started,
+                              verified.astimezone(timezone.utc).isoformat())
+            key = _token_key(payload)
+            _save(key, done)  # 저장하지 못하면 대기 상태로 남겨 다시 확인할 수 있게 한다.
+            _challenges.pop(key, None)
+            return _public(done)
     finally:
         with _guard:
             entry.checking = False
+
+
+def require_verified(payload):
+    """본인인증 기관이 연결된 서버에서는 같은 매물 범위(reportKey+address)의 인증 완료를 요구한다."""
+    if not all(_config()):
+        return
+    try:
+        with _guard:
+            entry = _lookup(payload)
+    except IdentityVerificationError as exc:
+        if exc.status == 503:
+            raise
+        entry = None
+    if entry is None or not entry.verified_at:
+        raise IdentityVerificationError(403, "이 매물에 대한 신청자 본인인증을 먼저 완료해 주세요.")

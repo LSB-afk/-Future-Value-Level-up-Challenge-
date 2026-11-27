@@ -5,6 +5,7 @@ import base64
 import binascii
 import hmac
 import os
+import secrets
 from http import HTTPStatus
 from ipaddress import ip_address
 from urllib.parse import urlsplit
@@ -81,6 +82,7 @@ def handle_post(handler, path):
     from document_requests import (DocumentRequestError, create_request, get_recipient,
                                    get_request, review_request, submit_document)
     from registry_lookup import RegistryError, fetch_registry, read_registry_pdf, registry_status, search_registry
+    from identity_verification import require_verified
 
     document_routes = {
         "/api/document-requests/create": create_request,
@@ -96,6 +98,8 @@ def handle_post(handler, path):
         limit = MAX_UPLOAD_JSON if path in UPLOAD_PATHS else 64 * 1024
         payload = handler.read_json_body(max_bytes=limit)
         if path in document_routes:
+            if path == "/api/document-requests/create":
+                require_verified(payload)  # 본인인증 기관이 연결된 서버에서만 같은 매물의 인증을 요구한다.
             result = document_routes[path](payload)
         elif path == "/api/document-requests/extend":
             from document_requests import extend_request
@@ -132,8 +136,12 @@ def handle_post(handler, path):
             elif path == "/api/registry/search":
                 result = search_registry(payload.get("address", ""))
             else:
+                require_verified(payload)
+                # 요청 번호를 보내지 않는 화면도 호출 기록과 일일 상한은 적용받는다(재시도 재생만 빠진다).
+                key = payload.get("idempotencyKey") or secrets.token_urlsafe(24)
                 result = _with_registry_evidence(fetch_registry(payload.get("address", ""), payload.get("propertyId", ""),
-                                                                confirm_charge=payload.get("confirmCharge") is True))
+                                                                confirm_charge=payload.get("confirmCharge") is True,
+                                                                idempotency_key=key))
         else:
             handler.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "지원하지 않는 서류 요청입니다."})
             return

@@ -1,6 +1,8 @@
 import json
 from datetime import datetime, timezone
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
@@ -14,11 +16,49 @@ CONFIG = {"FITHOME_PORTONE_STORE_ID": "store-test", "FITHOME_PORTONE_CHANNEL_KEY
 
 class IdentityTest(unittest.TestCase):
     def setUp(self):
-        env = patch.dict(os.environ, CONFIG)
+        self.store = self.enterContext(tempfile.TemporaryDirectory())
+        env = patch.dict(os.environ, {**CONFIG, "FITHOME_DOCUMENT_STORE": self.store})
         env.start()
         self.addCleanup(env.stop)
         identity._challenges.clear()
         self.addCleanup(identity._challenges.clear)
+
+    def verified(self, scope=SCOPE):
+        start = identity.start_verification({**scope, "consent": True})
+        request = {**scope, "challengeToken": start["challengeToken"]}
+        with patch.object(identity, "_provider_lookup", return_value=self.response(start)):
+            self.assertEqual(identity.confirm_verification(request)["status"], "verified")
+        return request
+
+    def test_completed_receipt_survives_restart_without_personal_fields(self):
+        request = self.verified()
+        identity._challenges.clear()  # 서버 재시작·다른 워커와 같다.
+        self.assertEqual(identity.identity_status(request)["status"], "verified")
+        identity.require_verified(request)
+        stored = b"".join(path.read_bytes() for path in Path(self.store).iterdir())
+        for secret in ("never-retain", "테스트 신청자",request["challengeToken"], SCOPE["address"]):
+            self.assertNotIn(secret.encode(), stored)
+
+    def test_gate_requires_same_scope_unexpired_completed_receipt(self):
+        request = self.verified()
+        for mutation in ({"reportKey": "listing:other"}, {"address": SCOPE["address"] + " 2호"},
+                         {"challengeToken": None}, {"reportKey": None}):
+            with self.assertRaises(identity.IdentityVerificationError) as caught:
+                identity.require_verified({**request, **mutation})
+            self.assertEqual(caught.exception.status, 403)
+        _, pending = self.prepare()
+        with self.assertRaises(identity.IdentityVerificationError) as caught:
+            identity.require_verified(pending)
+        self.assertEqual(caught.exception.status, 403)
+        identity._challenges.clear()
+        with patch.object(identity.time, "time", return_value=identity.time.time() + identity.VERIFIED_SECONDS + 1):
+            with self.assertRaises(identity.IdentityVerificationError) as caught:
+                identity.require_verified(request)
+        self.assertEqual(caught.exception.status, 403)
+
+    def test_gate_is_open_when_provider_is_not_connected(self):
+        with patch.dict(os.environ, {"FITHOME_PORTONE_API_SECRET": ""}):
+            self.assertIsNone(identity.require_verified({}))
 
     def prepare(self):
         start = identity.start_verification({**SCOPE, "consent": True})
