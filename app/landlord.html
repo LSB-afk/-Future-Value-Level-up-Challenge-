@@ -33,8 +33,13 @@
         <p class="muted">서류마다 PDF 한 개(최대 4MB)를 선택하세요. 주소와 발급일이 보이는 파일을 사용하고, 주민등록번호 뒷자리 등 점검에 필요 없는 정보는 가려 주세요.</p>
         <div id="documents"></div>
       </section>
-      <label class="consent"><input id="consent" type="checkbox" required>
-        <span>선택한 서류를 핏홈에 제출하고, 주소·발급일·금액 등 점검에 필요한 내용과 해당 원문 줄을 요청자에게 공유하는 데 동의합니다.</span>
+      <section class="document" aria-labelledby="consent-title">
+        <h2 id="consent-title">제출 동의 내용</h2>
+        <ul id="consent-terms" class="muted"></ul>
+        <p id="consent-version" class="muted"></p>
+      </section>
+      <label class="consent"><input id="consent" type="checkbox" required aria-describedby="consent-terms">
+        <span>위 동의 내용을 확인했고, 선택한 서류를 핏홈에 제출해 요청자에게 위 범위로 공유하는 데 동의합니다.</span>
       </label>
       <button id="send" class="primary" type="submit" disabled>선택한 서류 제출</button>
       <p id="upload-status" role="status" aria-live="polite"></p>

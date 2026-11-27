@@ -45,6 +45,20 @@ _MONEY = re.compile(r"^(?:금)?(?:(\d+(?:\.\d+)?)억)?(?:(\d+(?:\.\d+)?)(천만|
 _DATE = re.compile(r"(?<!\d)((?:19|20)\d\d)\s*(?:[-./]|년)\s*(\d{1,2})\s*(?:[-./]|월)\s*(\d{1,2})(?!\d)")
 _UNITS = {"": 1, "천": 1000, "만": 10000, "십만": 100000, "백만": 1000000, "천만": 10000000}
 _KST = timezone(timedelta(hours=9))
+# 동의 문안을 바꾸면 버전도 바꾼다. 이전 문안에 동의한 화면의 제출은 서버가 받지 않는다.
+CONSENT_VERSION = "2026-11-28"
+CONSENT_TERMS = (
+    {"title": "이용 목적",
+     "text": "제출한 서류에서 주소·발급일·유효기한·선순위 보증금 총액 등 계약 전 점검에 필요한 내용을 읽어, "
+             "이 링크를 보낸 임차인의 전세 위험 점검에만 사용합니다."},
+    {"title": "임차인에게 보이는 범위",
+     "text": "서류 종류, 주소 일치 여부, 발급일·유효기한, 읽은 금액, 판독 근거가 된 원문 줄(주민등록번호 형식은 가림), "
+             "동의 시각과 문안 버전이 보입니다. 제출자 신원은 확인하지 않으므로 '링크로 제출된 서류'로 표시됩니다."},
+    {"title": "보관 기간",
+     "text": "읽은 내용과 원문 줄은 서류 요청의 만료일까지만 보관하고, 요청이 만료되면 함께 삭제합니다."},
+    {"title": "원본 PDF",
+     "text": "원본 PDF 파일은 저장하지 않습니다. 내용을 읽은 뒤 같은 파일인지 확인하는 지문(해시)만 남깁니다."},
+)
 
 
 class DocumentRequestError(ValueError):
@@ -236,7 +250,19 @@ def get_recipient(payload):
     with _db() as conn:
         row = _request(conn, payload, "recipient")
         submitted = [r[0] for r in conn.execute("SELECT kind FROM documents WHERE request_id=?", (row["id"],))]
-        return {**_public(row), "submitted": submitted}
+        return {**_public(row), "submitted": submitted,
+                "consent": {"version": CONSENT_VERSION, "terms": [dict(t) for t in CONSENT_TERMS]}}
+
+
+def _consent(payload):
+    """화면 체크박스와 별도로, 현재 문안 버전에 대한 동의가 요청에 담겼는지 서버가 확인한다."""
+    consent = payload.get("consent")
+    if not isinstance(consent, dict) or consent.get("agreed") is not True:
+        raise DocumentRequestError(400, "서류 제출 동의가 필요합니다. 동의 내용을 확인하고 동의해 주세요.")
+    if consent.get("version") != CONSENT_VERSION:
+        raise DocumentRequestError(400, "동의 문안이 바뀌었습니다. 페이지를 새로 고친 뒤 바뀐 내용을 확인하고 다시 동의해 주세요.")
+    return {"consentVersion": CONSENT_VERSION,
+            "consentAt": datetime.now(timezone.utc).isoformat(timespec="seconds")}
 
 
 def _pdf_lines(raw):
@@ -427,7 +453,7 @@ def _analyze(kind, address, pages):
     if kind == "fixedDate":
         if titles.intersection(_STATEMENT_TITLES):
             document_type = "landlordStatement"
-            notes.append("임대인이 제출한 확인서입니다. 공공기관이 선순위 금액을 확인한 자료는 아닙니다.")
+            notes.append("링크로 제출된 서류이며, 임대인이 작성하는 확인서 양식입니다. 제출자 신원과 선순위 금액은 공공기관이 확인한 것이 아닙니다.")
         elif titles:
             document_type = "fixedDateRecord"
         if amount is None and entries:
@@ -448,6 +474,7 @@ def submit_document(payload):
         row = _request(conn, payload, "recipient")
         if kind not in json.loads(row["requested"]):
             raise DocumentRequestError(400, "이 요청에 포함된 서류를 선택해 주세요.")
+    consent = _consent(payload)
     data = payload.get("fileBase64")
     if not isinstance(data, str) or len(data) > ((MAX_PDF_BYTES + 2) // 3) * 4:
         raise DocumentRequestError(413, "서류 하나당 4MB 이하 PDF를 제출해 주세요.")
@@ -465,6 +492,8 @@ def submit_document(payload):
             return {"ok": True, "kind": kind, "status": _current_evidence(json.loads(cached[0]))["status"]}
     detail = _analyze(kind, row["address"], _pdf_lines(raw))
     detail["fingerprint"] = fingerprint
+    # 같은 파일을 다시 보내면 처음 동의한 기록이 그대로 남는다.
+    detail.update(consent)
     with _db() as conn, conn:
         conn.execute("BEGIN IMMEDIATE")
         row = _request(conn, payload, "recipient")
