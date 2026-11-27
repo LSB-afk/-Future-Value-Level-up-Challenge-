@@ -196,6 +196,13 @@ def request_json(endpoint: str, params: dict[str, str], headers: dict[str, str] 
 
 
 def response_error(root: ET.Element) -> str:
+    # 공공데이터포털 게이트웨이 오류(키 오류·서비스 장애)는 header가 아니라 cmmMsgHeader로 온다.
+    # 이를 놓치면 오류가 '거래 없음'으로 읽혀 추정 시세가 조용히 쓰인다(2026-11-28 확인).
+    gateway = root.find(".//cmmMsgHeader")
+    if gateway is not None:
+        code = text_of(gateway, "returnReasonCode") or "gateway"
+        message = text_of(gateway, "returnAuthMsg") or text_of(gateway, "errMsg")
+        return f"{code}: {message or '공공데이터 API 오류'}"
     header = root.find(".//header")
     if header is None:
         return ""
@@ -794,12 +801,14 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
     if trade_key and lawd_code:
         live_status["molitTrade"].update(
             {
-                "mode": "live_api" if trade_records else "no_matching_record",
+                "mode": "live_api" if trade_records else ("api_error" if trade_error else "no_matching_record"),
                 "recordCount": len(trade_records),
                 "error": trade_error,
                 # 실패한 달·페이지 상한에 걸린 달이 있어 12개월 전체를 다 받지 못했다(건수·중앙값이 덜 모였을 수 있음).
                 "incomplete": trade_incomplete,
-                "note": "단지명/주소 매칭 실거래가를 상세 가격에 반영했습니다." if trade_records else "최근 12개월 내 단지명/주소 매칭 매매 실거래가가 없습니다.",
+                "note": "단지명/주소 매칭 실거래가를 상세 가격에 반영했습니다." if trade_records
+                else f"국토교통부 매매 실거래 API 오류로 실거래가를 확인하지 못해 추정값을 씁니다({trade_error})." if trade_error
+                else "최근 12개월 내 단지명/주소 매칭 매매 실거래가가 없습니다.",
             }
         )
         recent = latest(trade_records, bucket) or latest(trade_records)
@@ -815,11 +824,13 @@ def enrich_market_from_live(apartment: dict[str, Any], fallback_market: dict[str
     if rent_key and lawd_code:
         live_status["molitRent"].update(
             {
-                "mode": "live_api" if rent_records else "no_matching_record",
+                "mode": "live_api" if rent_records else ("api_error" if rent_error else "no_matching_record"),
                 "recordCount": len(rent_records),
                 "error": rent_error,
                 "incomplete": rent_incomplete,
-                "note": "단지명/주소 매칭 전월세 실거래가를 상세 가격에 반영했습니다." if rent_records else "최근 12개월 내 단지명/주소 매칭 전월세 실거래가가 없습니다.",
+                "note": "단지명/주소 매칭 전월세 실거래가를 상세 가격에 반영했습니다." if rent_records
+                else f"국토교통부 전월세 실거래 API 오류로 실거래가를 확인하지 못해 추정값을 씁니다({rent_error})." if rent_error
+                else "최근 12개월 내 단지명/주소 매칭 전월세 실거래가가 없습니다.",
             }
         )
         recent = latest(jeonse_records, bucket) or latest(jeonse_records)
