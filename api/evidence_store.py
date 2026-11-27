@@ -95,6 +95,8 @@ def apply_registry(payload, token):
     registry.update(mortgageMax10k=values["mortgageMax10k"], issuedAt=values["issuedAt"],
                     mortgageSource=label, dateSource=label)
     rights = values.get("rights") or {}  # 권리 판독 전에 발급한 근거에는 없다
+    if not _fresh(values.get("issuedAt")):
+        rights = {}  # 열람한 지 30일이 지난 등기부의 갑구는 서류 근거로 쓰지 않는다(근저당과 같은 기준)
     applied, conflicts = [], []
     for key in RIGHT_KEYS:
         if rights.get(key) not in ("yes", "no"):
@@ -112,6 +114,17 @@ def apply_registry(payload, token):
         "status": "applied", "source": values["source"], "issuedAt": values["issuedAt"],
         "mortgageMax10k": values["mortgageMax10k"], "replacedTypedValues": replaced,
         "rightsApplied": applied, "rightsConflicts": conflicts}
+
+
+def _fresh(issued_at) -> bool:
+    from datetime import date, datetime
+
+    from jeonse_verdict import REGISTRY_FRESH_DAYS
+    try:
+        issued = datetime.strptime(str(issued_at)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return False
+    return 0 <= (date.today() - issued).days <= REGISTRY_FRESH_DAYS
 
 
 def _as_float(value):

@@ -181,5 +181,20 @@ class RegistryEvidenceTests(unittest.TestCase):
         checks = {c["id"]: c for c in evaluate(checked)["checks"]}
         self.assertNotIn(checks["violation"]["source"], {"public", "registry"})
 
+class StaleRightsTests(unittest.TestCase):
+    def test_rights_from_stale_registry_are_not_applied(self):
+        from datetime import timedelta
+        store = tempfile.TemporaryDirectory()
+        self.addCleanup(store.cleanup)
+        with patch.dict(os.environ, {"FITHOME_DOCUMENT_STORE": store.name}):
+            old = (date.today() - timedelta(days=31)).isoformat()
+            token = _with_registry_evidence(reading(issuedAt=old, rights={"trust": "no", "seizure": "no"}))
+            if not token.get("evidenceId"):
+                self.skipTest("오래된 열람본에는 근거 번호를 발급하지 않음")
+            inp, info = evidence_store.apply_registry(validate_input(payload()), token["evidenceId"])
+            self.assertEqual(info["rightsApplied"], [])
+            self.assertNotIn("rightsKeys", inp["registry"])
+
+
 if __name__ == "__main__":
     unittest.main()
