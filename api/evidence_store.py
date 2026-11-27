@@ -20,6 +20,8 @@ MAX_ROWS = 20000
 _TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")
 # 제공기관 열람본과 사용자가 올린 PDF를 구분한다. 업로드 PDF는 형식만 대조했고 진위는 확인하지 않았다.
 SOURCE_LABEL_KEYS = {"hyphen": "registry", "uploaded_pdf": "registryUpload"}
+# 요약표에서 읽은 갑구·을구 권리. 문서가 yes/no를 말한 것만 덮어쓰고 unknown은 화면 입력을 그대로 둔다.
+RIGHT_KEYS = ("trust", "seizure", "auction", "leaseRegistration")
 
 
 @contextmanager
@@ -44,8 +46,10 @@ def issue_registry(result, document_hash):
     The document hash is kept as an audit record of which file produced the values."""
     if result.get("reviewRequired") is not False or result.get("mortgageMax10k") is None or not result.get("issuedAt"):
         return None
+    rights = result.get("rights") if isinstance(result.get("rights"), dict) else {}
     detail = {"mortgageMax10k": result["mortgageMax10k"], "issuedAt": result["issuedAt"],
-              "source": result.get("source") or "uploaded_pdf"}
+              "source": result.get("source") or "uploaded_pdf",
+              "rights": {k: rights[k] for k in RIGHT_KEYS if rights.get(k) in ("yes", "no", "unknown")}}
     token = secrets.token_urlsafe(32)
     now = int(time.time())
     with _db() as conn, conn:
@@ -90,9 +94,17 @@ def apply_registry(payload, token):
     label = SOURCE_LABEL_KEYS.get(values["source"], "registryUpload")
     registry.update(mortgageMax10k=values["mortgageMax10k"], issuedAt=values["issuedAt"],
                     mortgageSource=label, dateSource=label)
+    rights = values.get("rights") or {}  # 권리 판독 전에 발급한 근거에는 없다
+    applied = [k for k in RIGHT_KEYS if rights.get(k) in ("yes", "no")]
+    for key in applied:
+        replaced = replaced or registry.get(key) not in (None, "", rights[key])
+        registry[key] = rights[key]
+    if applied:
+        registry["rightsSource"] = label
     return {**payload, "registry": registry}, {
         "status": "applied", "source": values["source"], "issuedAt": values["issuedAt"],
-        "mortgageMax10k": values["mortgageMax10k"], "replacedTypedValues": replaced}
+        "mortgageMax10k": values["mortgageMax10k"], "replacedTypedValues": replaced,
+        "rightsApplied": applied}
 
 
 def _as_float(value):

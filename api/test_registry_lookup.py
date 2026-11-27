@@ -17,7 +17,9 @@ UNIT_DESC = "[집합건물] " + ADDRESS + " 제102동 제3층 제301호"
 RIGHTS = ["1 근저당권설정", "채권최고액 금120,000,000원"]
 
 
-def document(rights=RIGHTS, desc="[건물] " + ADDRESS, issued_at=NOW, prop_id=ID):
+def document(rights=RIGHTS, desc="[건물] " + ADDRESS, issued_at=NOW, prop_id=ID, owner_rights=None):
+    # owner_rights가 있으면 요약표에 '2. 소유지분을 제외한 소유권에 관한 사항 (갑구)' 섹션을 넣는다.
+    gap = [] if owner_rights is None else ["2. 소유지분을 제외한 소유권에 관한 사항 (갑구)", *owner_rights]
     rows = [
         "등기사항전부증명서",
         desc,
@@ -25,6 +27,7 @@ def document(rights=RIGHTS, desc="[건물] " + ADDRESS, issued_at=NOW, prop_id=I
         "열람일시: " + issued_at,
         "갑구",
         "주요 등기사항 요약 (참고용)",
+        *gap,
         "3. (근)저당권 및 전세권 등 (을구)",
         *rights,
         "참고사항",
@@ -236,6 +239,64 @@ class RegistryTest(unittest.TestCase):
             self.assertEqual(len(counter), 1)
             success = next(r for r in outcomes if r)
             self.assertEqual(success["mortgageMax10k"], 12000)
+
+    def test_summary_rights_trust_found_without_owner_names(self):
+        owner = ["순위번호 등기목적 접수정보 주요등기사항 대상소유자", "4 신탁 2024년3월2일 제56호 홍길동"]
+        result = registry.read_registry_pdf(ADDRESS, document(owner_rights=owner))
+        self.assertFalse(result["reviewRequired"], result["reason"])  # 근저당 판독은 그대로
+        self.assertEqual(result["mortgageMax10k"], 12000)
+        self.assertEqual(
+            result["rights"],
+            {"trust": "yes", "seizure": "unknown", "auction": "unknown", "leaseRegistration": "unknown"},
+        )
+        [evidence] = result["rightsEvidence"]
+        self.assertEqual((evidence["right"], evidence["text"], evidence["page"]), ("trust", "신탁", 1))
+        self.assertNotIn("홍길동", str(result["rights"]) + str(result["rightsEvidence"]))
+
+    def test_summary_rights_seizure_and_auction(self):
+        owner = ["3 가압류 2023년1월2일 제12호", "5 임의경매개시결정 2024년1월3일"]
+        rights = registry.read_registry_pdf(ADDRESS, document(owner_rights=owner))["rights"]
+        self.assertEqual((rights["trust"], rights["seizure"], rights["auction"]), ("unknown", "yes", "yes"))
+
+    def test_summary_rights_no_only_when_section_says_no_records(self):
+        result = registry.read_registry_pdf(
+            ADDRESS, document(rights=["- 기록사항 없음"], owner_rights=["- 기록사항 없음"])
+        )
+        self.assertEqual(result["mortgageMax10k"], 0)
+        self.assertEqual(set(result["rights"].values()), {"no"})
+        self.assertEqual({e["right"] for e in result["rightsEvidence"]}, set(registry._RIGHT_TERMS))
+        # 빈 표시와 다른 기록이 섞이면 없음으로 읽지 않는다
+        mixed = registry.read_registry_pdf(ADDRESS, document(owner_rights=["- 기록사항 없음", "3 가처분"]))
+        self.assertEqual(mixed["rights"]["trust"], "unknown")
+        # 근저당만 있는 을구는 임차권이 '없음'이 아니라 '미확인'이다
+        self.assertEqual(mixed["rights"]["leaseRegistration"], "unknown")
+
+    def test_summary_rights_cancelled_or_missing_section_is_unknown(self):
+        cancelled = registry.read_registry_pdf(
+            ADDRESS, document(owner_rights=["3 가압류 2023년1월2일", "말소"])
+        )
+        self.assertEqual(set(cancelled["rights"].values()), {"unknown"})
+        self.assertEqual(cancelled["rightsEvidence"], [])
+        missing = registry.read_registry_pdf(ADDRESS, document(rights=["기록사항 없음"]))
+        self.assertEqual(
+            missing["rights"],
+            {"trust": "unknown", "seizure": "unknown", "auction": "unknown", "leaseRegistration": "no"},
+        )
+        # 열람일이 오래된 문서는 권리도 읽지 않는다
+        stale = registry.read_registry_pdf(
+            ADDRESS, document(issued_at="2000-01-01", owner_rights=["- 기록사항 없음"])
+        )
+        self.assertEqual(set(stale["rights"].values()), {"unknown"})
+
+    def test_summary_rights_lease_registration_found(self):
+        for row in ("2 주택임차권 2024년5월1일 제99호", "2 임차권설정 2024년5월1일"):
+            with self.subTest(row=row):
+                result = registry.read_registry_pdf(ADDRESS, document(rights=RIGHTS + [row]))
+                self.assertEqual(result["rights"]["leaseRegistration"], "yes")
+                self.assertEqual(result["mortgageMax10k"], 12000)  # 근저당 판독은 그대로
+                [evidence] = result["rightsEvidence"]
+                self.assertEqual(evidence["right"], "leaseRegistration")
+                self.assertIn(evidence["text"], ("주택임차권", "임차권설정"))
 
     def test_scanned_or_corrupt_pdf(self):
         with self.assertRaises(registry.RegistryError):
