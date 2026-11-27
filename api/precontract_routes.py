@@ -63,6 +63,20 @@ def _provider_access(handler, token_env, header):
             and not any(handler.headers.get(name) for name in ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host")))
 
 
+def _with_registry_evidence(result):
+    """Attach a server-held evidence ID; the document hash itself is not sent to the browser."""
+    import sqlite3
+    from document_requests import DocumentRequestError
+    from evidence_store import issue_registry
+    document_hash = result.pop("documentHash", None)
+    try:
+        token = issue_registry(result, document_hash) if document_hash else None
+    except (sqlite3.Error, DocumentRequestError, OSError):
+        # 유료 조회는 이미 끝났다. 근거 번호 없이 결과를 돌려주면 값은 '입력값'으로만 쓰인다.
+        token = None
+    return {**result, "evidenceId": token} if token else result
+
+
 def handle_post(handler, path):
     from document_requests import (DocumentRequestError, create_request, get_recipient,
                                    get_request, review_request, submit_document)
@@ -105,7 +119,7 @@ def handle_post(handler, path):
                                    "/api/identity/confirm": confirm_verification}
                 result = identity_routes[path](payload)
         elif path == "/api/registry/upload":
-            result = read_registry_pdf(payload.get("address", ""), read_pdf(payload))
+            result = _with_registry_evidence(read_registry_pdf(payload.get("address", ""), read_pdf(payload)))
         elif path in {"/api/registry/status", "/api/registry/search", "/api/registry/fetch"}:
             if not _provider_access(handler, "FITHOME_REGISTRY_GATEWAY_TOKEN", "X-FitHome-Gateway"):
                 reason = "이 서버에서 유료 등기 조회를 사용할 수 없습니다. 등기 PDF를 제출할 수 있습니다."
@@ -118,8 +132,8 @@ def handle_post(handler, path):
             elif path == "/api/registry/search":
                 result = search_registry(payload.get("address", ""))
             else:
-                result = fetch_registry(payload.get("address", ""), payload.get("propertyId", ""),
-                                        confirm_charge=payload.get("confirmCharge") is True)
+                result = _with_registry_evidence(fetch_registry(payload.get("address", ""), payload.get("propertyId", ""),
+                                                                confirm_charge=payload.get("confirmCharge") is True))
         else:
             handler.send_json(HTTPStatus.NOT_FOUND, {"ok": False, "error": "지원하지 않는 서류 요청입니다."})
             return

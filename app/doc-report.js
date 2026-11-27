@@ -247,7 +247,8 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
   }
 
   function registryStatus() {
-    if (registryEvidence()) return verdict().ltv.mortgagePending ? "근저당 재확인 필요" : "원문 확인됨";
+    if (registryEvidence() && verdict().registryEvidence?.status === "applied") return verdict().ltv.mortgagePending ? "근저당 재확인 필요" : "원문 확인됨";
+    if (registryEvidence()) return "등기 근거 다시 대조 필요";
     if (verdict().ltv.mortgage10k != null) return "금액 직접 입력";
     if (provider?.available) return "기관 조회 가능";
     return "PDF 대조 가능";
@@ -586,7 +587,7 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
           delete overrides.registryIssuedAt;
           store.set(key + ".overrides", overrides);
           store.set(key + ".edits", { ...e, mortgageUnknown: false, mortgageMax10k: item.mortgageMax10k, issuedAt: item.issuedAt || "" });
-          store.set(key + ".registryEvidence", { address: item.address, selectedAddress: item.selectedAddress, source: item.source, mortgageMax10k: item.mortgageMax10k, evidence: item.evidence, issuedAt: item.issuedAt });
+          store.set(key + ".registryEvidence", { address: item.address, selectedAddress: item.selectedAddress, source: item.source, mortgageMax10k: item.mortgageMax10k, evidence: item.evidence, issuedAt: item.issuedAt, evidenceId: item.evidenceId || null });
           local.review = null;
           if (key === report()) { await recalculate(); toast("등기부 금액을 판정에 반영했어요."); }
         } else if (action === "refresh") {

@@ -122,10 +122,11 @@ def expand(query: str) -> str:
     return " ".join([query, *extra])
 
 
-def search(query: str, k: int = 4, min_score: float = 1.0) -> list[dict]:
-    """질문과 가까운 근거 조각 k개. 점수가 낮으면 덜 돌려준다(엉뚱한 근거를 주느니 없는 게 낫다)."""
+def _bm25(query: str, min_score: float = 1.0, extra: str = "") -> list[tuple[float, int]]:
+    """(점수, 조각 번호)를 점수 순으로. 질문은 동의어 확장 후 글자 2-gram으로 맞춘다.
+    extra(질문 유형 단어)는 동의어 확장을 거치지 않는다(유형 단어가 엉뚱한 주제를 켜지 않게)."""
     idx = _index()
-    terms = Counter(_grams(expand(query)))
+    terms = Counter(_grams(expand(query) + " " + extra))
     if not terms:
         return []
     n = len(idx["docs"])
@@ -142,6 +143,15 @@ def search(query: str, k: int = 4, min_score: float = 1.0) -> list[dict]:
         if score >= min_score:
             scored.append((score, i))
     scored.sort(reverse=True)
+    return scored
+
+
+def search(query: str, k: int = 4, min_score: float = 1.0) -> list[dict]:
+    """질문과 가까운 근거 조각 k개. 점수가 낮으면 덜 돌려준다(엉뚱한 근거를 주느니 없는 게 낫다)."""
+    idx = _index()
+    scored = _bm25(query, min_score)
+    if not scored:
+        return []
     out, seen_slugs = [], Counter()
     for score, i in scored:
         chunk = idx["chunks"][i]
@@ -152,6 +162,231 @@ def search(query: str, k: int = 4, min_score: float = 1.0) -> list[dict]:
         if len(out) >= k:
             break
     return out
+
+
+# ---------- ③ Agentic RAG: 질문을 나눠 찾고, 합치고, 고르게 고른다 ----------
+
+# 질문 유형(무엇을 묻는가)을 검색어로 바꾼다. 특정 노트가 아니라 질문의 형식에 붙는 일반 규칙이다.
+INTENTS = (
+    ("정의", re.compile(r"뭐예요|뭔가요|무슨 뜻|뜻이|의미|이란|란 뭐|같은 말"), "정의 의미"),
+    ("시점", re.compile(r"언제|시점|다시|한 번만|매번|당일|잔금 날|잔금날|직전|단계"), "시점 단계 재확인 반복 계약 전 잔금"),
+    ("경로", re.compile(r"어디서|어디에|어디로|떼|발급|신청|조회|열람|볼 수|확인할 수"), "신청 발급 열람 경로 기관 방법"),
+    ("기준", re.compile(r"얼마|몇 ?퍼센트|몇 ?%|한도|기준|비율|이하|이상"), "기준 한도 비율 금액 요건"),
+    ("요건", re.compile(r"조건|자격|요건|대상|되나요|돼요\?|가능|할 수 있"), "요건 대상 자격 조건"),
+    ("대처", re.compile(r"어떻게 해|어떡|방법|뭐부터|대처|못 받|안 줘|안 돌려"), "대처 절차 방법 순서"),
+)
+# 절을 나누는 자리: 문장 끝, 접속 부사, '~고/~는데/~지만' 같은 연결 어미 뒤 공백.
+CLAUSE_SPLIT = re.compile(r"[?？!.。]\s*|\s+(?:그리고|또|또한|그런데|근데)\s+|(?<=[가-힣])(?:고|는데|은데|지만|면서|며)\s+(?=[가-힣])")
+RRF_K = 60
+DIVERSITY_FLOOR = 0.5
+SUBQUERY_FLOOR = 0.3
+
+
+def plan_query(question: str) -> dict:
+    """질문 → 하위 질문(절)과 질문 유형. 작은 로컬 모델에게 계획을 맡기지 않고 결정적으로 만든다."""
+    text = " ".join(str(question or "").split())
+    clauses = [c.strip() for c in CLAUSE_SPLIT.split(text) if c and len(c.strip()) >= 6]
+    subs = clauses[:3] if len(clauses) > 1 else []
+    intents = [name for name, pattern, _ in INTENTS if pattern.search(text)]
+    return {"question": text, "subQueries": subs, "intents": intents}
+
+
+def _intent_words(query: str) -> str:
+    return " ".join(words for _, pattern, words in INTENTS if pattern.search(query))
+
+
+def _fuse(plan: dict, min_score: float) -> tuple[list, Counter, dict, dict]:
+    """전체·하위·유형 재작성 질문(lane)별 BM25 순위를 가중 RRF로 합친다."""
+    # 전체 질문은 두 주제의 관계까지 담고 있어 가중치를 더 준다.
+    lanes: list[tuple[str, str, str, float]] = [("전체", plan["question"], "", 1.5)]
+    lanes += [(f"하위{n + 1}", sub, "", 1.0) for n, sub in enumerate(plan["subQueries"])]
+    for label, text, _, _ in list(lanes):
+        words = _intent_words(text)
+        if words:
+            lanes.append((label + "·유형", text, words, 0.5))
+    fused: Counter = Counter()
+    raw: dict[int, float] = {}
+    best_per_lane: dict[str, list[int]] = {}
+    for label, text, extra, weight in lanes:
+        ranked = _bm25(text, min_score, extra)
+        best_per_lane[label] = [i for _, i in ranked]
+        for rank, (score, i) in enumerate(ranked[:30]):
+            fused[i] += weight / (RRF_K + rank + 1)
+            raw[i] = max(raw.get(i, 0.0), score)
+    return lanes, fused, raw, best_per_lane
+
+
+def _select(lanes: list, fused: Counter, raw: dict, best_per_lane: dict, k: int) -> list[dict]:
+    idx = _index()
+    order = [i for i, _ in fused.most_common()]
+    chosen: list[int] = []
+    matched: dict[int, str] = {}
+
+    def take(i: int, by: str) -> None:
+        if i not in chosen and len(chosen) < k:
+            chosen.append(i)
+            matched[i] = by
+
+    # 1) 하위 질문마다 그 질문의 최상위 노트를 하나씩 확보한다(복합 질문의 두 번째 주제가 밀려나지 않게).
+    #    단, 그 하위 질문의 근거가 약하면(전체 1위 점수의 SUBQUERY_FLOOR 미만) 억지로 넣지 않는다.
+    taken_slugs: set[str] = set()
+    top_raw = max(raw.values())
+    for label, *_ in lanes:
+        if not label.startswith("하위") or "·" in label:
+            continue
+        for i in best_per_lane.get(label, []):
+            slug = idx["chunks"][i]["slug"]
+            if raw[i] < top_raw * SUBQUERY_FLOOR:
+                break
+            if slug not in taken_slugs:
+                take(i, label)
+                taken_slugs.add(slug)
+                break
+    # 2) 합친 순위로 채우되 노트당 한 조각 먼저. 다만 관련도가 1위의 절반이 안 되는 새 노트로 칸을 채우지는 않는다.
+    floor = fused[order[0]] * DIVERSITY_FLOOR
+    for i in order:
+        slug = idx["chunks"][i]["slug"]
+        if slug not in taken_slugs and fused[i] >= floor:
+            take(i, "합친 순위")
+            taken_slugs.add(slug)
+    # 3) 칸이 남으면 같은 노트의 다음 조각.
+    for i in order:
+        take(i, "합친 순위")
+    chosen.sort(key=lambda i: -fused[i])
+    return [{**idx["chunks"][i], "score": round(raw[i], 2), "matchedBy": matched[i]} for i in chosen]
+
+
+def search_agentic(query: str, k: int = 4, min_score: float = 1.0, plan: dict | None = None) -> list[dict]:
+    """하위 질문별 BM25 순위를 RRF로 합치고, 하위 질문마다 근거가 한 개씩은 들어가게 고른다.
+
+    - 전체 질문, 하위 질문, 질문 유형으로 다시 쓴 질문을 각각 검색한다(유형 재작성은 가중치 0.5).
+    - 한 노트는 먼저 한 조각만 고르고, 칸이 남을 때만 같은 노트의 다른 조각을 넣는다.
+    - 결과에는 어느 하위 질문으로 찾았는지(matchedBy)를 남겨 trace에서 보여 줄 수 있다."""
+    lanes, fused, raw, best = _fuse(plan or plan_query(query), min_score)
+    return _select(lanes, fused, raw, best, k) if fused else []
+
+
+# ---------- ② GraphRAG: 위키 노트 연결로 관련 노트를 함께 끌어올린다 ----------
+
+GRAPH_ALPHA = 0.1
+GRAPH_SEEDS = 2
+
+
+def graph_boost(fused: Counter, alpha: float | None = None, seeds: int | None = None) -> Counter:
+    """상위 시드 노트(합친 점수 1~GRAPH_SEEDS위)와 연결된 노트의 조각을 α·(시드 관련도)만큼 올린다.
+
+    시드 관련도는 그 노트 최고 점수를 1위로 나눈 값이고, 이웃 쪽 연결 수의 제곱근으로 나눠 허브 노트가
+    연결만으로 올라오지 않게 한다. 글자로 한 번도 걸리지 않은 조각은 올리지 않는다(근거 없는 확장 방지)."""
+    alpha = GRAPH_ALPHA if alpha is None else alpha
+    seeds = GRAPH_SEEDS if seeds is None else seeds
+    idx = _index()
+    graph = (idx["meta"] or {}).get("graph") or {}
+    if not fused or not graph:
+        return fused
+    top = max(fused.values())
+    note_rel: dict[str, float] = {}
+    for i, value in fused.items():
+        slug = idx["chunks"][i]["slug"]
+        note_rel[slug] = max(note_rel.get(slug, 0.0), value / top)
+    seed_rel = dict(sorted(note_rel.items(), key=lambda kv: -kv[1])[:seeds])
+    boosted: Counter = Counter()
+    for i, value in fused.items():
+        slug = idx["chunks"][i]["slug"]
+        nbrs = graph.get(slug) or []
+        support = sum(seed_rel.get(m, 0.0) for m in nbrs) / math.sqrt(max(len(nbrs), 1))
+        boosted[i] = value * (1 + alpha * support)
+    return boosted
+
+
+def search_graph(query: str, k: int = 4, min_score: float = 1.0, plan: dict | None = None) -> list[dict]:
+    """③ Agentic 검색 + ② 노트 그래프 보정."""
+    lanes, fused, raw, best = _fuse(plan or plan_query(query), min_score)
+    return _select(lanes, graph_boost(fused), raw, best, k) if fused else []
+
+
+# ---------- ① 하이브리드: 글자 검색(BM25) + 의미 검색(bge-m3 임베딩) ----------
+
+EMBED_PATH = CORPUS_PATH.with_name("jeonse_knowledge.embeddings.json")
+EMBED_MODEL = "bge-m3"
+DENSE_TOP = 10
+DENSE_WEIGHT = 1.0
+
+
+def _corpus_signature(chunks: list[dict]) -> str:
+    import hashlib
+
+    return hashlib.sha256("\n".join(f"{c['id']}\t{c['text']}" for c in chunks).encode()).hexdigest()[:16]
+
+
+@lru_cache(maxsize=1)
+def _dense_index() -> dict | None:
+    """미리 계산한 조각 임베딩. 파일이 없거나 코퍼스와 어긋나면 None(→ 글자 검색만)."""
+    try:
+        data = json.loads(EMBED_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    chunks = _index()["chunks"]
+    if data.get("signature") != _corpus_signature(chunks) or len(data.get("vectors") or []) != len(chunks):
+        return None
+    return data
+
+
+def embed(texts: list[str], timeout: float | None = None) -> list[list[float]] | None:
+    """Ollama /api/embed. 쓸 수 없으면(정적 데모·서버 꺼짐·모델 없음·시간 초과) None.
+    기다리는 시간은 FITHOME_EMBED_TIMEOUT(초, 기본 6). 답변을 오래 붙잡지 않으려고 짧게 둔다."""
+    import os
+    import urllib.request
+
+    if timeout is None:
+        try:
+            timeout = float(os.environ.get("FITHOME_EMBED_TIMEOUT") or 6)
+        except ValueError:
+            timeout = 6.0
+    host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    body = json.dumps({"model": EMBED_MODEL, "input": texts}).encode()
+    try:
+        request = urllib.request.Request(host + "/api/embed", body, {"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            vectors = json.load(response).get("embeddings")
+    except Exception:  # noqa: BLE001 - 의미 검색은 보조다. 실패하면 글자 검색으로 간다.
+        return None
+    return vectors if isinstance(vectors, list) and len(vectors) == len(texts) else None
+
+
+@lru_cache(maxsize=256)
+def _embed_cached(texts: tuple[str, ...]) -> list[list[float]] | None:
+    return embed(list(texts))
+
+
+def _unit(vector: list[float]) -> list[float]:
+    norm = math.sqrt(sum(x * x for x in vector)) or 1.0
+    return [x / norm for x in vector]
+
+
+def search_hybrid(query: str, k: int = 4, min_score: float = 1.0, plan: dict | None = None,
+                  query_vectors: list[list[float]] | None = None) -> list[dict]:
+    """③+② 위에 의미 검색 순위를 RRF로 더한다. 임베딩을 쓸 수 없으면 search_graph와 같다.
+
+    전체 질문과 하위 질문을 한 번에 임베딩해 각각 상위 DENSE_TOP 조각을 '의미' lane으로 넣는다.
+    글자로는 안 걸려도 뜻이 가까운 조각(예: '전세가율이 뭐예요' → 전세가율 정의 노트)을 끌어온다."""
+    plan = plan or plan_query(query)
+    lanes, fused, raw, best = _fuse(plan, min_score)
+    dense = _dense_index()
+    texts = [plan["question"], *plan["subQueries"]]
+    vectors = query_vectors if query_vectors is not None else (_embed_cached(tuple(texts)) if dense and plan["question"] else None)
+    if dense and vectors:
+        matrix = dense["vectors"]
+        for n, vector in enumerate(vectors):
+            q = _unit(vector)
+            sims = sorted(((sum(a * b for a, b in zip(q, row)), i) for i, row in enumerate(matrix)), reverse=True)
+            label = "의미" if n == 0 else f"의미{n}"
+            weight = DENSE_WEIGHT * (1.5 if n == 0 else 1.0)
+            lanes.append((label, texts[n], "", weight))
+            best[label] = [i for _, i in sims]
+            for rank, (_, i) in enumerate(sims[:DENSE_TOP]):
+                fused[i] += weight / (RRF_K + rank + 1)
+                raw.setdefault(i, 0.0)
+    return _select(lanes, graph_boost(fused), raw, best, k) if fused else []
 
 
 def as_context(hits: list[dict]) -> str:
@@ -181,7 +416,7 @@ def cited_sources(answer: str, hits: list[dict]) -> list[dict]:
 
 def tool_search_jeonse_knowledge(query: str, k: int = 4) -> str:
     """Agent 도구용. 조각과 출처를 JSON으로 돌려준다."""
-    hits = search(str(query), k=max(1, min(int(k or 4), 6)))
+    hits = search_agentic(str(query), k=max(1, min(int(k or 4), 6)))
     return json.dumps(
         {
             "query": query,

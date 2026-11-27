@@ -317,7 +317,7 @@ def repayment(inp: dict, ltv: dict) -> dict:
 # --- 3. 체크리스트 ↔ 서류 -----------------------------------------------------------
 
 DOCUMENTS = [
-    {"id": "registry", "title": "등기사항전부증명서 (등기부등본)", "where": "iros", "cost": "열람 700원 · 누구나",
+    {"id": "registry", "title": "등기사항전부증명서 (등기부등본)", "where": "iros", "cost": "열람 1,100원 · 누구나",
      "consent": False, "request": "registryLatest", "items": [
          ("ownerMatches", "소유자가 계약 상대와 같은지", "갑구 › 소유자 성명"),
          ("trust", "신탁등기가 없는지", "갑구 › '신탁' 기재"),

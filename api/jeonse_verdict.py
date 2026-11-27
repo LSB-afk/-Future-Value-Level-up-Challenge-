@@ -44,6 +44,7 @@ SOURCE_LABELS = {
     "trade": "실거래",
     "public": "공공데이터",
     "registry": "등기부",
+    "registryUpload": "제출한 등기부 PDF",
     "input": "입력값",
     "estimate": "추정",
     "report": "제보",
@@ -69,6 +70,21 @@ MONEY_FIELDS = (
 DATE_FIELDS = (("registry", "issuedAt"), ("registry", "lastOwnershipChange"))
 # 화면(브라우저)이 주장할 수 있는 집값 출처. "핏홈 점검"은 시연용 예시에서만, "실거래"는 서버가 확인한 뒤에만 인정한다.
 CLIENT_PRICE_SOURCES = {"input", "estimate", "trade", "public", "none"}
+# 등기·임대인·건물 근거도 서버가 정한다. 화면은 '입력값'만 주장할 수 있고, 등기부 근거는 서버가 발급한
+# 근거 번호로만 붙는다(evidence_store). 건물 출처 'public'은 서버가 준 건축HUB 값을 화면이 되돌려 보낸 것이다.
+CLIENT_SECTION_SOURCES = {
+    "registry": ("source", {"input", "none"}),
+    "landlord": ("source", {"input", "none"}),
+    "building": ("source", {"input", "public", "none"}),
+}
+SERVER_ONLY_FIELDS = (("registry", "mortgageSource"), ("registry", "dateSource"))
+# 공시가격·전세 시세 출처. 'public'·'trade'는 서버(movevalue_api.verify_trade_price)가 단지 데이터와 맞을 때만 남긴다.
+CLIENT_FIELD_SOURCES = (
+    ("price", "officialSource", {"public", "estimate", "input", "none"}),
+    ("market", "source", {"trade", "estimate", "input", "none"}),
+)
+# 위반 표시는 '있음'만 PDF에서 인정한다(build_checks). 화면이 위반을 주장해도 판정이 더 조심스러워질 뿐이다.
+CLIENT_VIOLATION_SOURCES = {"input", "reviewedPdf"}
 MAX_MONEY_10K = 10_000_000  # 1,000억원. 이보다 크면 단위를 잘못 넣은 것이다.
 
 
@@ -124,12 +140,44 @@ def validate_input(inp, today: date | None = None) -> dict:
             raise ValueError(f"{section}.{key}는 YYYY-MM-DD 날짜여야 합니다.")
         if parsed > today:
             raise ValueError(f"{section}.{key}가 오늘({today.isoformat()})보다 뒤입니다.")
+    downgraded = []
     source = price.get("source")
     if source is not None and source not in CLIENT_PRICE_SOURCES:
         if source == "inspected" and inp.get("isDemo") is True:
             pass
         else:
-            inp = {**inp, "price": {**price, "source": "input"}, "sourceDowngraded": f"{source}→input"}
+            inp = {**inp, "price": {**price, "source": "input"}}
+            downgraded.append(f"{source}→input")
+    for section, field in SERVER_ONLY_FIELDS:
+        holder = inp.get(section) or {}
+        if field in holder:
+            downgraded.append(f"{section}.{field}:{holder[field]}→삭제")
+            inp = {**inp, section: {k: v for k, v in holder.items() if k != field}}
+    for section, (field, allowed) in CLIENT_SECTION_SOURCES.items():
+        holder = inp.get(section) or {}
+        claimed = holder.get(field)
+        if claimed is not None and claimed not in allowed:
+            downgraded.append(f"{section}.{field}:{claimed}→input")
+            inp = {**inp, section: {**holder, field: "input"}}
+        elif claimed is None and section == "registry" and holder:
+            # 출처가 빠진 등기 값을 '등기부'로 표시하던 기본값을 막는다.
+            inp = {**inp, section: {**holder, field: "input"}}
+    for section, field, allowed in CLIENT_FIELD_SOURCES:
+        holder = inp.get(section) or {}
+        claimed = holder.get(field)
+        if claimed is not None and claimed not in allowed:
+            downgraded.append(f"{section}.{field}:{claimed}→input")
+            inp = {**inp, section: {**holder, field: "input"}}
+    building = inp.get("building") or {}
+    violation_source = building.get("violationSource")
+    if violation_source not in (None, *CLIENT_VIOLATION_SOURCES):
+        downgraded.append(f"building.violationSource:{violation_source}→input")
+        inp = {**inp, "building": {**building, "violationSource": "input"}}
+    elif violation_source is None and building.get("violation") not in (None, "", "unknown"):
+        # 위반 여부를 보냈는데 근거가 없으면 건물 출처('공공데이터')를 빌리지 않고 입력값으로 본다.
+        inp = {**inp, "building": {**building, "violationSource": "input"}}
+    if downgraded:
+        inp = {**inp, "sourceDowngraded": ", ".join(downgraded)}
     return inp
 
 
@@ -207,6 +255,7 @@ def house_price(price: dict) -> tuple[float | None, str, str]:
 
 
 def ltv_block(inp: dict, *, confirmed_prior_deposits10k=None, today: date | None = None) -> dict:
+    today = today or date.today()
     housing = (inp.get("property") or {}).get("housingType") or "villa"
     deposit = _amount(inp.get("deposit10k"))
     price_input = inp.get("price") or {}
@@ -216,10 +265,14 @@ def ltv_block(inp: dict, *, confirmed_prior_deposits10k=None, today: date | None
     registry = inp.get("registry") or {}
     landlord = inp.get("landlord") or {}
     mortgage = _amount(registry.get("mortgageMax10k"))
-    if registry.get("issuedAt"):
-        issued = _date(registry["issuedAt"])
-        if issued is None or not 0 <= ((today or date.today()) - issued).days <= REGISTRY_FRESH_DAYS:
-            mortgage = None
+    mortgage_hold = ""
+    # 근저당은 언제 열람한 등기부의 값인지 알아야 쓴다. 열람일이 없거나 30일을 넘으면 계산을 멈춘다.
+    issued = _date(registry.get("issuedAt"))
+    if mortgage is not None:
+        if issued is None:
+            mortgage, mortgage_hold = None, "등기부 열람일이 없어 근저당 금액을 반영하지 않았습니다. 열람일을 함께 입력해 주세요."
+        elif not 0 <= (today - issued).days <= REGISTRY_FRESH_DAYS:
+            mortgage, mortgage_hold = None, f"열람한 지 {REGISTRY_FRESH_DAYS}일이 넘은 등기부라 근저당 금액을 반영하지 않았습니다."
     if housing == "multi":
         # Only the caller that resolves submitted evidence can provide this value.
         prior = _amount(confirmed_prior_deposits10k)
@@ -241,6 +294,7 @@ def ltv_block(inp: dict, *, confirmed_prior_deposits10k=None, today: date | None
         "priceSourceLabel": SOURCE_LABELS.get(price_source, price_source),
         "mortgage10k": mortgage,
         "mortgagePending": mortgage is None,
+        "mortgageHoldReason": mortgage_hold,
         "rentToMarketPct": rent_ratio,
         "prior10k": prior,
         "priorDepositPending": pending,
@@ -345,7 +399,8 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
     mortgage = ltv["mortgage10k"]
     checks.append(_check("ratio", "mortgage", "근저당 채권최고액", "등기부 을구의 근저당 합계를 확인할 것",
                          money(mortgage), "pass" if mortgage is not None else "unknown",
-                         (registry.get("mortgageSource") or reg_source) if mortgage is not None else "none"))
+                         (registry.get("mortgageSource") or reg_source) if mortgage is not None else "none",
+                         ltv["mortgageHoldReason"]))
     price_source = ltv["priceSource"]
     checks.append(_check("ratio", "priceBasis", "집값 근거", "집값이 확인된 값일 것(추정 아님)",
                          ltv["priceLabel"],
@@ -473,7 +528,7 @@ def build_requests(inp: dict, checks_by_id: dict) -> list[dict]:
         checks_by_id["taxArrears"]["result"] == "unknown")
     add("moveIn", "임대인·중개사", "이미 전입한 세대가 있는지 확인합니다.",
         "주민등록법 제29조의2(전입세대확인서). 계약 전에는 소유자 위임·협조가 필요하고, 계약 후 임차인은 직접 신청할 수 있습니다", housing == "multi")
-    add("registryLatest", "직접 열람(인터넷등기소, 700원)", "그사이 근저당·압류가 새로 잡혔는지 확인합니다.",
+    add("registryLatest", "직접 열람(인터넷등기소, 1,100원)", "그사이 근저당·압류가 새로 잡혔는지 확인합니다.",
         "부동산등기법 제19조(누구나 열람 가능)",
         checks_by_id["registryFresh"]["result"] in {"unknown", "caution"})
     add("guarantee", "HUG·중개사", "보증보험 가입이 가능해야 보증금을 돌려받을 안전판이 생깁니다.",

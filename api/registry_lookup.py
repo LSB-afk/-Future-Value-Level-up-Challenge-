@@ -6,6 +6,7 @@ https://hyphen.im/product-api/view?seq=145
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -315,6 +316,7 @@ def _parse_pdf(address, pdf, selected=None):
         "evidence": [],
         "reviewRequired": True,
         "reason": "",
+        "documentHash": hashlib.sha256(pdf).hexdigest() if isinstance(pdf, bytes) else None,
     }
 
     def hold(message):

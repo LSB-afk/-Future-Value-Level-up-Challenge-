@@ -1981,14 +1981,12 @@ details > summary span {
 .callout {
   padding: 13px;
   border: 1px solid rgba(20, 184, 166, 0.18);
-  border-left: 4px solid var(--naver);
   border-radius: 8px;
   background: #f0fdfa;
 }
 
 .callout.warn {
   border-color: rgba(185, 138, 0, 0.2);
-  border-left-color: var(--gold);
   background: #fffaf0;
 }
 
@@ -3374,10 +3372,112 @@ body.bookmark-panel-open .agent-hint {
   background: #fff7f7;
 }
 
+.trend-chart-wrap {
+  position: relative;
+}
+
 .property-trend-chart {
+  display: block;
   width: 100%;
   height: auto;
   min-height: 170px;
+  touch-action: pan-y;
+}
+
+.property-trend-chart .trend-grid {
+  stroke: var(--line-soft);
+  stroke-width: 1;
+}
+
+.property-trend-chart .trend-gap-band {
+  fill: rgba(37, 99, 235, 0.08);
+}
+
+.property-trend-chart .trend-last-line {
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.property-trend-chart .trend-last-line.sale {
+  stroke: var(--blue);
+}
+
+.property-trend-chart .trend-last-line.jeonse {
+  stroke: var(--gold);
+}
+
+.trend-badge.sale rect {
+  fill: var(--blue);
+}
+
+.trend-badge.jeonse rect {
+  fill: var(--gold);
+}
+
+.property-trend-chart .trend-badge text {
+  fill: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+}
+
+.property-trend-chart .trend-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.trend-cursor {
+  display: none;
+  pointer-events: none;
+}
+
+.trend-chart-wrap.is-hover .trend-cursor {
+  display: inline;
+}
+
+.property-trend-chart .trend-cursor line {
+  stroke: var(--muted-2);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.trend-tooltip {
+  position: absolute;
+  top: 4px;
+  z-index: 2;
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.trend-chart-wrap.is-hover .trend-tooltip {
+  display: flex;
+}
+
+.trend-tooltip-gap {
+  color: var(--blue);
+  font-weight: 700;
+}
+
+.chart-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 9px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: baseline;
+}
+
+.chart-swatch.gap {
+  background: rgba(37, 99, 235, 0.16);
 }
 
 .property-trend-chart line {

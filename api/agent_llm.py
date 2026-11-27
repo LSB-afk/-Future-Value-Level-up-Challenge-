@@ -16,6 +16,7 @@ import json
 import math
 import os
 import re
+from datetime import date
 
 from env_loader import load_dotenv
 
@@ -190,6 +191,9 @@ def auto_facts(question: str, context: str, facts: dict, trace: list | None = No
     apartment = re.search(r"id:\s*([A-Za-z0-9_-]+)", context or "")
     apartment_id = apartment.group(1) if apartment else ""
     mortgage = _amount_after("근저당", text)
+    # 등기부 열람일은 '열람'·'등기'와 붙어 나온 완전한 날짜만 쓴다(입주일·계약일을 열람일로 오인하지 않게).
+    seen = re.search(r"(\d{4}\D{1,3}\d{1,2}\D{1,3}\d{1,2}일?)\s*(?:에\s*)?(?:등기부?를?\s*)?열람", text)
+    registry_date = _iso_date(seen.group(1)) if seen else ""
     try:
         calls = []
         if re.search(r"소액임차|최우선변제", text) and "deposit_priority" not in facts:
@@ -199,7 +203,8 @@ def auto_facts(question: str, context: str, facts: dict, trace: list | None = No
                                                "mortgage_max": mortgage or ("없음" if "근저당 없" in text else "")}))
         if re.search(r"근저당|깡통|빚|LTV", text) and apartment_id and "jeonse_verdict_check" not in facts:
             calls.append(("jeonse_verdict_check", {"deposit": deposit, "mortgage_max": mortgage, "apartment_id": apartment_id,
-                                                  "housing_type": "multi" if "다가구" in text else ""}))
+                                                  "housing_type": "multi" if "다가구" in text else "",
+                                                  "registry_issued_at": registry_date}))
         for name, payload in calls:
             data = json.loads(_run_tool(name, payload))
             if "error" not in data:
@@ -257,16 +262,29 @@ def last_user_text(messages: list[dict]) -> str:
     )
 
 
+RAG_DEFAULT = "agentic"
+
+
+def retriever():
+    """검색 방식. FITHOME_RAG=bm25|agentic|graph|hybrid 로 바꿔 전후를 비교한다(평가용). 기본은 RAG_DEFAULT."""
+    import jeonse_knowledge as kb
+
+    name = os.environ.get("FITHOME_RAG", "").strip().lower() or RAG_DEFAULT
+    return {"bm25": kb.search, "agentic": kb.search_agentic, "graph": kb.search_graph,
+            "hybrid": kb.search_hybrid}.get(name, kb.search_agentic)
+
+
 def build_system(context: str, messages: list[dict], suffix: str = "") -> tuple[str, list[dict]]:
     """시스템 프롬프트에 화면 맥락과 RAG 근거 조각을 붙인다. (프롬프트, 근거 조각)을 돌려준다.
 
     작은 로컬 모델은 검색 도구를 스스로 잘 부르지 않는다. 그래서 마지막 사용자 질문으로 먼저 찾아
     넣어 두고(자동 RAG), 더 필요할 때만 search_jeonse_knowledge를 부르게 한다.
     """
-    from jeonse_knowledge import as_context, search
+    from jeonse_knowledge import as_context
 
     question = last_user_text(messages)
-    hits = search(question, k=4) if question else []
+    retrieve = retriever()
+    hits = retrieve(question, k=4) if question else []
     parts = [SYSTEM_PROMPT + suffix]
     if context:
         parts.append(f"## 현재 화면 맥락\n{context}")
@@ -275,6 +293,29 @@ def build_system(context: str, messages: list[dict], suffix: str = "") -> tuple[
     else:
         parts.append("## 참고 지식\n이 질문과 맞는 검증된 자료를 찾지 못했습니다. 제도·법령은 단정하지 말고 기관 확인을 안내하세요.")
     return "\n\n".join(parts), hits
+
+
+def check_answer(answer: str, hits: list[dict], system: str, question: str, tool_outputs: list[str]) -> tuple[str, dict]:
+    """④ 교정형 RAG. FITHOME_ANSWER_CHECK=off 이면 건너뛴다(전후 비교용)."""
+    if os.environ.get("FITHOME_ANSWER_CHECK", "").strip().lower() == "off":
+        return answer, {}
+    from answer_check import correct_answer
+
+    grounding = "\n".join([system, question, HANDOFF_NOTE, DISCLAIMER, *tool_outputs])
+    return correct_answer(answer, hits, grounding)
+
+
+def knowledge_trace(messages: list[dict], hits: list[dict]) -> dict:
+    """자동 검색의 계획(하위 질문·질문 유형)과 찾은 노트. 응답의 retrieval 칸으로 내보낸다(모델이 부른 도구 기록과 분리)."""
+    from jeonse_knowledge import plan_query
+
+    question = last_user_text(messages)
+    if not question:
+        return {}
+    plan = plan_query(question)
+    method = os.environ.get("FITHOME_RAG", "").strip().lower() or RAG_DEFAULT
+    return {"method": method, "subQueries": plan["subQueries"], "intents": plan["intents"],
+            "found": [{"title": h["title"], "matchedBy": h.get("matchedBy", "")} for h in hits]}
 
 
 def availability() -> dict:
@@ -498,6 +539,18 @@ def parse_money_10k(value) -> float | None:
     return total if pos else None
 
 
+def _iso_date(value) -> str:
+    """'2026-11-20'·'2026.11.20'·'2026년 11월 20일'을 YYYY-MM-DD로. 읽을 수 없거나 미래면 빈 값(→ 근저당 보류 안내)."""
+    match = re.search(r"(\d{4})\D{1,3}(\d{1,2})\D{1,3}(\d{1,2})", str(value or ""))
+    if not match:
+        return ""
+    try:
+        parsed = date(*map(int, match.groups()))
+    except ValueError:
+        return ""
+    return parsed.isoformat() if parsed <= date.today() else ""
+
+
 def tool_jeonse_verdict_check(
     deposit: str,
     mortgage_max: str = "",
@@ -512,6 +565,7 @@ def tool_jeonse_verdict_check(
     owner_matches: str = "unknown",
     tax_arrears: str = "unknown",
     guarantee_eligible: str = "unknown",
+    registry_issued_at: str = "",
 ) -> str:
     """사용자가 말한 보증금·근저당·선순위 보증금으로 FitHome 전세 판정 엔진(jeonse_verdict)을 돌린다."""
     from jeonse_guide import pending_senior_reason
@@ -554,6 +608,8 @@ def tool_jeonse_verdict_check(
         "registry": {
             "source": "input",
             "mortgageMax10k": 0 if tri(mortgage_max) == "no" else parse_money_10k(mortgage_max),
+            # 근저당은 열람일이 있어야 계산에 쓴다(jeonse_verdict.ltv_block). 사용자가 말한 날짜만 넣는다.
+            "issuedAt": _iso_date(registry_issued_at),
             "trust": tri(trust), "seizure": tri(seizure), "auction": tri(auction),
             "leaseRegistration": tri(lease_registration), "ownerMatches": tri(owner_matches),
         },
@@ -577,6 +633,8 @@ def tool_jeonse_verdict_check(
     if ltv["ratioPct"] is None:
         reason = pending_senior_reason(ltv) or "보증금 또는 매매 시세 미확인"
         summary["pendingReason"] = f"{reason} · 집값 대비 빚 계산 보류"
+        if ltv["mortgageHoldReason"]:
+            summary["holdDetail"] = ltv["mortgageHoldReason"]
         if ltv["rentToMarketPct"] is not None:
             label = "추정 전세가율" if ltv["priceSource"] == "estimate" else "전세가율"
             summary["rentToMarket"] = f"{label} {ltv['rentToMarketPct']}%"
@@ -692,6 +750,7 @@ TOOL_SCHEMAS = [
             "properties": {
                 "deposit": {"type": "string", "description": "내 전세 보증금 (예: '3억')"},
                 "mortgage_max": {"type": "string", "description": "등기부 을구 근저당 채권최고액 합계. 모르면 비움"},
+                "registry_issued_at": {"type": "string", "description": "그 근저당을 본 등기부 열람일 YYYY-MM-DD. 사용자가 말한 경우만, 모르면 비움(없으면 근저당 계산 보류)"},
                 "prior_deposits": {"type": "string", "description": "내 앞 순위 다른 세입자 보증금 합계(다가구). 모르면 비움"},
                 "house_price": {"type": "string", "description": "사용자가 말한 매매 시세. 모르면 비움"},
                 "apartment_id": {"type": "string", "description": "화면의 단지 id (집값을 단지 시세로 쓸 때)"},
@@ -918,6 +977,8 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
         return {"ok": False, "error": "대화 내용이 비어 있습니다."}
 
     tool_trace: list[dict] = []
+    tool_outputs: list[str] = []
+    retrieval = knowledge_trace(messages, hits)
     seen_calls: set = set()
     facts: dict = {}
     sources: list[dict] = []
@@ -955,12 +1016,15 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
                 rewrote = found
                 history.append({"role": "user", "content": rewrite_request(found)})
                 continue
+            text, corrected = check_answer(text, hits, system, last_user_text(messages), tool_outputs)
             return {
-                "guard": {"rewroteFor": rewrote or [], "remaining": found, "handoffAdded": needs_handoff(last_user_text(messages), text)},
+                "guard": {"rewroteFor": rewrote or [], "remaining": found, "handoffAdded": needs_handoff(last_user_text(messages), text),
+                          "corrected": corrected},
                 "ok": True,
                 "answer": (auto_facts(last_user_text(messages), context, facts, tool_trace)
                            or finalize_answer(last_user_text(messages), text, found, facts)),
                 "toolTrace": tool_trace,
+                "retrieval": retrieval,
                 "sources": cited_sources(text, hits) + sources,
                 "model": response.model,
                 "usage": {
@@ -973,6 +1037,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
         results = []
         for block in tool_uses:
             output = run_tool_once(block.name, dict(block.input), seen_calls, facts)
+            tool_outputs.append(output)
             tool_trace.append({"name": block.name, "input": dict(block.input)})
             results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
         # 웹 검색과 우리 도구가 같은 턴에 병렬로 불리면 stop_reason이 tool_use로 오고 검색은
@@ -1023,9 +1088,15 @@ if __name__ == "__main__":
                           "10000000": 1000, "10000000.0": 1000}.items():
         assert parse_money_10k(raw) == expected, (raw, parse_money_10k(raw))
     # 사용자 금액으로 판정: 집값 10억에 보증금 3억 + 근저당 6억 = 90% → 주의(90% 초과부터 위험)
-    verdict = json.loads(tool_jeonse_verdict_check("3억", mortgage_max="6억", house_price="10억"))
+    verdict = json.loads(tool_jeonse_verdict_check("3억", mortgage_max="6억", house_price="10억", registry_issued_at=date.today().isoformat()))
     assert verdict["debtRatio"].startswith("90.0%") and verdict["grade"] == "주의", verdict
-    verdict = json.loads(tool_jeonse_verdict_check("3억", mortgage_max="7억", house_price="10억", trust="no"))
+    verdict = json.loads(tool_jeonse_verdict_check("3억", mortgage_max="7억", house_price="10억", trust="no", registry_issued_at=date.today().isoformat()))
+    # 열람일 없는 근저당은 계산하지 않고 이유를 알린다(읽을 수 없는 날짜도 같은 처리)
+    for issued in ("", "언젠가", "2099-01-01"):
+        held = json.loads(tool_jeonse_verdict_check("3억", mortgage_max="6억", house_price="10억", registry_issued_at=issued))
+        assert "debtRatio" not in held and "열람일" in held.get("holdDetail", ""), held
+    assert json.loads(tool_jeonse_verdict_check("3억", mortgage_max="6억", house_price="10억",
+                                                registry_issued_at=date.today().strftime("%Y년 %m월 %d일")))["debtRatio"].startswith("90.0%")
     assert verdict["grade"] == "위험", verdict
     verdict = json.loads(tool_jeonse_verdict_check("3억", apartment_id=apartment_id))
     assert "근저당 미확인" in verdict["pendingReason"] and "debtRatio" not in verdict and verdict["grade"] != "안심", verdict
@@ -1049,7 +1120,8 @@ if __name__ == "__main__":
     none = json.loads(tool_deposit_priority("6천만", house_price="3억", region="서울", mortgage_max="없음"))
     assert none["smallTenant"]["eligible"] is True, none["smallTenant"]
     facts: dict = {}
-    run_tool_once("jeonse_verdict_check", {"deposit": "5억", "mortgage_max": "3억", "house_price": "50억"}, set(), facts)
+    run_tool_once("jeonse_verdict_check", {"deposit": "5억", "mortgage_max": "3억", "house_price": "50억",
+                                           "registry_issued_at": date.today().isoformat()}, set(), facts)
     block = facts_block(facts)
     assert "16.0%" in block and "계산 결과" in block, block
     assert finalize_answer("깡통이야?", "이 집은 안전해요.", ["안전해요"]).startswith("FitHome은 등기부")
@@ -1062,6 +1134,9 @@ if __name__ == "__main__":
     assert "1억 6,500만원" in auto["deposit_priority"]["smallTenant"]["note"], auto
     auto = {}
     auto_facts("보증금 5억에 근저당 3억이면 깡통이야?", f"현재 단지 (id: {apartment_id})", auto)
+    assert "열람일" in auto.get("jeonse_verdict_check", {}).get("holdDetail", ""), auto
+    auto = {}
+    auto_facts(f"{date.today().isoformat()}에 열람한 등기부 근저당 3억, 보증금 5억이면 깡통이야?", f"현재 단지 (id: {apartment_id})", auto)
     assert auto.get("jeonse_verdict_check", {}).get("formula", "").startswith("(근저당 3억원"), auto
     knowledge = json.loads(tool_search_jeonse_knowledge("신탁등기 수탁자 동의"))
     assert knowledge["results"] and knowledge["results"][0]["sources"], knowledge

@@ -12,7 +12,7 @@ class PriorEvidenceTests(unittest.TestCase):
             "property": {"housingType": "multi", "address": "대전광역시 유성구"},
             "deposit10k": 20000,
             "price": {"basis": "market", "value10k": 50000, "source": "input"},
-            "registry": {"mortgageMax10k": 0, "trust": "no", "seizure": "no",
+            "registry": {"mortgageMax10k": 0, "issuedAt": date.today().isoformat(), "trust": "no", "seizure": "no",
                          "auction": "no", "leaseRegistration": "no"},
             "building": {"use": "residential", "violation": "no"},
             "landlord": {"taxArrears": "no", "guaranteeEligible": "yes"},
@@ -106,7 +106,7 @@ class PriorEvidenceTests(unittest.TestCase):
         today = date(2026, 11, 24)
         self.payload["registry"].update(mortgageMax10k=0, source="input", mortgageSource="registry", dateSource="registry")
         for issued, pending in (("2026-10-25", False), ("2026-10-24", True),
-                                ("2026-11-25", True), ("오류", True), ("", False)):
+                                ("2026-11-25", True), ("오류", True), ("", True)):
             with self.subTest(issued=issued):
                 self.payload["registry"]["issuedAt"] = issued
                 report = evaluate(self.payload, today, confirmed_prior_deposits10k=0)

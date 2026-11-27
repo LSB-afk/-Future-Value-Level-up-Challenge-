@@ -92,16 +92,22 @@ def _invalid_token():
     return DocumentRequestError(404, "서류 요청을 찾을 수 없거나 유효기간이 지났습니다.")
 
 
-@contextmanager
-def _db():
+def private_db_file(name):
+    """A 0600 SQLite file under the document store, which must stay outside the served repository."""
     root = Path(os.environ.get("FITHOME_DOCUMENT_STORE") or Path.home() / ".fithome" / "document-requests").expanduser().resolve()
     repo = Path(__file__).resolve().parents[1]
     if root == repo or repo in root.parents:
         raise DocumentRequestError(503, "서류 저장 경로를 서비스 공개 폴더 밖에 설정해 주세요.")
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
-    dbfile = root / "requests.sqlite3"
+    dbfile = root / name
     with os.fdopen(os.open(dbfile, os.O_RDWR | os.O_CREAT, 0o600), "rb"):
         pass
+    return dbfile
+
+
+@contextmanager
+def _db():
+    dbfile = private_db_file("requests.sqlite3")
     conn = sqlite3.connect(dbfile, timeout=5)
     conn.row_factory = sqlite3.Row
     try:

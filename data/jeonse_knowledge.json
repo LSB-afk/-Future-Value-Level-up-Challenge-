@@ -1,10 +1,290 @@
 {
  "meta": {
-  "builtAt": "2026-11-08",
+  "builtAt": "2026-11-28",
   "from": "orchestra 팀 위키의 verified: true 노트 (sources·concepts)",
-  "notes": 45,
-  "chunks": 88,
-  "rule": "검증된 원문 근거만. 조각마다 출처 URL과 확인 못 한 부분(caveat)을 함께 싣는다."
+  "notes": 47,
+  "chunks": 90,
+  "rule": "검증된 원문 근거만. 조각마다 출처 URL과 확인 못 한 부분(caveat)을 함께 싣는다.",
+  "graph": {
+   "auction-housing-tax-priority-substitution": [
+    "registry-checkpoints"
+   ],
+   "auction-small-deposit-and-wage-priority": [
+    "registry-checkpoints",
+    "small-tenant-priority-payment-current"
+   ],
+   "auction-tenant-priority-versus-registered-security": [
+    "jeonse-stage-rechecks-opposability-gap",
+    "registry-checkpoints",
+    "small-tenant-priority-payment-current"
+   ],
+   "bai-jeonse-guarantee-screening-and-landlord-gaps": [
+    "hug-return-guarantee-current-rules",
+    "jeonse-fraud-insider-structure"
+   ],
+   "broker-listing-contract-checks": [
+    "industry-jeonse-risk-signals-and-evidence-limits",
+    "jeonse-cheap-listing-bait-evidence",
+    "registry-checkpoints"
+   ],
+   "building-ledger-guarantee-and-loan-restrictions": [
+    "hug-return-guarantee-current-rules",
+    "jeonse-illegal-use-building-check"
+   ],
+   "deposit-return-mediation-and-payment-order": [
+    "jeonse-prevention-support-center",
+    "jeonse-victim-special-act"
+   ],
+   "hf-jeonse-jikim-loan-linked-eligibility": [
+    "hug-return-guarantee-current-rules"
+   ],
+   "hug-housing-value-source-order": [
+    "jeonse-gap-indicator-blind-spots",
+    "jeonse-inflated-price-denominator-history",
+    "tenant-debt-ratio-versus-ltv"
+   ],
+   "hug-jeonse-guarantee": [
+    "hug-return-guarantee-current-rules",
+    "jeonse-illegal-use-building-check",
+    "jeonse-simultaneous-sale-inflated-valuation",
+    "safe-jeonse-public-app"
+   ],
+   "hug-return-guarantee-current-rules": [
+    "bai-jeonse-guarantee-screening-and-landlord-gaps",
+    "building-ledger-guarantee-and-loan-restrictions",
+    "hf-jeonse-jikim-loan-linked-eligibility",
+    "hug-jeonse-guarantee",
+    "jeonse-fraud-info-matrix",
+    "jeonse-inflated-price-denominator-history",
+    "jeonse-regional-ratio-threshold-boundaries",
+    "sgi-tenant-credit-insurance-source-boundaries",
+    "tenant-debt-ratio-versus-ltv"
+   ],
+   "industry-jeonse-risk-signals-and-evidence-limits": [
+    "broker-listing-contract-checks",
+    "jeonse-fraud-insider-structure",
+    "jeonse-simultaneous-sale-inflated-valuation",
+    "registry-checkpoints"
+   ],
+   "jeonse-cheap-listing-bait-evidence": [
+    "broker-listing-contract-checks",
+    "jeonse-price-gap-risk-map"
+   ],
+   "jeonse-checking-timing-and-repeated-verification": [
+    "jeonse-stage-rechecks-opposability-gap"
+   ],
+   "jeonse-document-access-before-after-contract": [
+    "landlord-information-consent-exceptions"
+   ],
+   "jeonse-double-contract-fake-landlord": [
+    "jeonse-fraud-info-matrix",
+    "registry-checkpoints"
+   ],
+   "jeonse-fraud-info-matrix": [
+    "hug-return-guarantee-current-rules",
+    "jeonse-double-contract-fake-landlord",
+    "jeonse-fraud-structural-causes",
+    "jeonse-illegal-use-building-check",
+    "jeonse-information-duties-reform-timeline",
+    "jeonse-multifamily-hidden-prior-deposits",
+    "jeonse-simultaneous-sale-inflated-valuation",
+    "jeonse-stage-rechecks-opposability-gap",
+    "jeonse-trust-property-authority-check",
+    "small-tenant-priority-payment-current"
+   ],
+   "jeonse-fraud-insider-structure": [
+    "bai-jeonse-guarantee-screening-and-landlord-gaps",
+    "industry-jeonse-risk-signals-and-evidence-limits",
+    "jeonse-inflated-price-denominator-history",
+    "jeonse-price-gap-risk-map",
+    "jeonse-return-funding-and-refinancing-dependency",
+    "jeonse-simultaneous-sale-inflated-valuation",
+    "michuhol-construction-king-deposit-diversion-indictment",
+    "nars-villa-sales-agency-oversight-gap",
+    "uijeongbu-2024no3192-rebate-and-nominee-judgment"
+   ],
+   "jeonse-fraud-structural-causes": [
+    "jeonse-fraud-info-matrix",
+    "jeonse-ratio",
+    "jeonse-return-funding-and-refinancing-dependency",
+    "jeonse-risks-beyond-information-interpretation",
+    "michuhol-construction-king-deposit-diversion-indictment",
+    "nars-villa-sales-agency-oversight-gap",
+    "underwater-jeonse"
+   ],
+   "jeonse-gap-indicator-blind-spots": [
+    "hug-housing-value-source-order",
+    "jeonse-price-gap-risk-map",
+    "jeonse-ratio"
+   ],
+   "jeonse-illegal-use-building-check": [
+    "building-ledger-guarantee-and-loan-restrictions",
+    "hug-jeonse-guarantee",
+    "jeonse-fraud-info-matrix",
+    "registry-checkpoints"
+   ],
+   "jeonse-inflated-price-denominator-history": [
+    "hug-housing-value-source-order",
+    "hug-return-guarantee-current-rules",
+    "jeonse-fraud-insider-structure",
+    "jeonse-price-gap-risk-map",
+    "jeonse-simultaneous-sale-inflated-valuation"
+   ],
+   "jeonse-information-duties-reform-timeline": [
+    "jeonse-fraud-info-matrix",
+    "jeonse-stage-rechecks-opposability-gap",
+    "post-contract-resident-date-and-lease-report",
+    "registry-checkpoints"
+   ],
+   "jeonse-multifamily-hidden-prior-deposits": [
+    "jeonse-fraud-info-matrix",
+    "jeonse-risks-beyond-information-interpretation",
+    "registry-checkpoints"
+   ],
+   "jeonse-prevention-support-center": [
+    "deposit-return-mediation-and-payment-order",
+    "jeonse-victim-special-act",
+    "registry-checkpoints"
+   ],
+   "jeonse-price-gap-risk-map": [
+    "jeonse-cheap-listing-bait-evidence",
+    "jeonse-fraud-insider-structure",
+    "jeonse-gap-indicator-blind-spots",
+    "jeonse-inflated-price-denominator-history",
+    "jeonse-ratio",
+    "jeonse-ratio-accident-panel-evidence",
+    "jeonse-regional-ratio-threshold-boundaries",
+    "jeonse-return-funding-and-refinancing-dependency",
+    "underwater-jeonse"
+   ],
+   "jeonse-ratio": [
+    "jeonse-fraud-structural-causes",
+    "jeonse-gap-indicator-blind-spots",
+    "jeonse-price-gap-risk-map",
+    "jeonse-ratio-accident-panel-evidence",
+    "jeonse-regional-ratio-threshold-boundaries",
+    "tenant-debt-ratio-versus-ltv",
+    "underwater-jeonse"
+   ],
+   "jeonse-ratio-accident-panel-evidence": [
+    "jeonse-price-gap-risk-map",
+    "jeonse-ratio",
+    "underwater-jeonse"
+   ],
+   "jeonse-regional-ratio-threshold-boundaries": [
+    "hug-return-guarantee-current-rules",
+    "jeonse-price-gap-risk-map",
+    "jeonse-ratio"
+   ],
+   "jeonse-return-funding-and-refinancing-dependency": [
+    "jeonse-fraud-insider-structure",
+    "jeonse-fraud-structural-causes",
+    "jeonse-price-gap-risk-map",
+    "michuhol-construction-king-deposit-diversion-indictment",
+    "tenant-debt-ratio-versus-ltv",
+    "underwater-jeonse"
+   ],
+   "jeonse-risks-beyond-information-interpretation": [
+    "jeonse-fraud-structural-causes",
+    "jeonse-multifamily-hidden-prior-deposits"
+   ],
+   "jeonse-simultaneous-sale-inflated-valuation": [
+    "hug-jeonse-guarantee",
+    "industry-jeonse-risk-signals-and-evidence-limits",
+    "jeonse-fraud-info-matrix",
+    "jeonse-fraud-insider-structure",
+    "jeonse-inflated-price-denominator-history",
+    "nars-villa-sales-agency-oversight-gap",
+    "uijeongbu-2024no3192-rebate-and-nominee-judgment"
+   ],
+   "jeonse-stage-rechecks-opposability-gap": [
+    "auction-tenant-priority-versus-registered-security",
+    "jeonse-checking-timing-and-repeated-verification",
+    "jeonse-fraud-info-matrix",
+    "jeonse-information-duties-reform-timeline",
+    "post-contract-registry-alert-and-lease-registration",
+    "post-contract-resident-date-and-lease-report",
+    "registry-checkpoints"
+   ],
+   "jeonse-trust-property-authority-check": [
+    "jeonse-fraud-info-matrix",
+    "registry-checkpoints"
+   ],
+   "jeonse-victim-special-act": [
+    "deposit-return-mediation-and-payment-order",
+    "jeonse-prevention-support-center"
+   ],
+   "landlord-information-consent-exceptions": [
+    "jeonse-document-access-before-after-contract"
+   ],
+   "michuhol-construction-king-deposit-diversion-indictment": [
+    "jeonse-fraud-insider-structure",
+    "jeonse-fraud-structural-causes",
+    "jeonse-return-funding-and-refinancing-dependency"
+   ],
+   "nars-villa-sales-agency-oversight-gap": [
+    "jeonse-fraud-insider-structure",
+    "jeonse-fraud-structural-causes",
+    "jeonse-simultaneous-sale-inflated-valuation",
+    "uijeongbu-2024no3192-rebate-and-nominee-judgment"
+   ],
+   "post-contract-registry-alert-and-lease-registration": [
+    "jeonse-stage-rechecks-opposability-gap",
+    "registry-checkpoints"
+   ],
+   "post-contract-resident-date-and-lease-report": [
+    "jeonse-information-duties-reform-timeline",
+    "jeonse-stage-rechecks-opposability-gap"
+   ],
+   "registry-checkpoints": [
+    "auction-housing-tax-priority-substitution",
+    "auction-small-deposit-and-wage-priority",
+    "auction-tenant-priority-versus-registered-security",
+    "broker-listing-contract-checks",
+    "industry-jeonse-risk-signals-and-evidence-limits",
+    "jeonse-double-contract-fake-landlord",
+    "jeonse-illegal-use-building-check",
+    "jeonse-information-duties-reform-timeline",
+    "jeonse-multifamily-hidden-prior-deposits",
+    "jeonse-prevention-support-center",
+    "jeonse-stage-rechecks-opposability-gap",
+    "jeonse-trust-property-authority-check",
+    "post-contract-registry-alert-and-lease-registration",
+    "small-tenant-priority-payment-current",
+    "tenant-debt-ratio-versus-ltv"
+   ],
+   "safe-jeonse-public-app": [
+    "hug-jeonse-guarantee"
+   ],
+   "sgi-tenant-credit-insurance-source-boundaries": [
+    "hug-return-guarantee-current-rules"
+   ],
+   "small-tenant-priority-payment-current": [
+    "auction-small-deposit-and-wage-priority",
+    "auction-tenant-priority-versus-registered-security",
+    "jeonse-fraud-info-matrix",
+    "registry-checkpoints"
+   ],
+   "tenant-debt-ratio-versus-ltv": [
+    "hug-housing-value-source-order",
+    "hug-return-guarantee-current-rules",
+    "jeonse-ratio",
+    "jeonse-return-funding-and-refinancing-dependency",
+    "registry-checkpoints"
+   ],
+   "uijeongbu-2024no3192-rebate-and-nominee-judgment": [
+    "jeonse-fraud-insider-structure",
+    "jeonse-simultaneous-sale-inflated-valuation",
+    "nars-villa-sales-agency-oversight-gap"
+   ],
+   "underwater-jeonse": [
+    "jeonse-fraud-structural-causes",
+    "jeonse-price-gap-risk-map",
+    "jeonse-ratio",
+    "jeonse-ratio-accident-panel-evidence",
+    "jeonse-return-funding-and-refinancing-dependency"
+   ]
+  }
  },
  "chunks": [
   {
@@ -684,6 +964,34 @@
    "confidence": "high"
   },
   {
+   "id": "landlord-information-consent-exceptions#1",
+   "slug": "landlord-information-consent-exceptions",
+   "title": "임대인 정보별 동의 원칙과 예외",
+   "summary": "임대인 정보는 계약 전 동의가 중요한 자료가 있지만, 계약 후 미납세금과 HUG 보증정보에는 별도 예외가 있다.",
+   "text": "- 주택임대차보호법 제3조의7은 계약 체결 때 확정일자 정보와 국세·지방세 납세증명서 제시를 요구한다.\n- 임대인이 해당 정보의 열람에 동의하는 방식으로 제시를 갈음할 수 있다.\n- 계약 전 미납국세·미납지방세 열람에는 임대인 동의가 필요하다.\n- 계약 후 보증금이 1천만원을 초과하면 임대차개시일까지 동의 없이 열람을 신청할 수 있다.\n- 동의 없는 세금 열람 사실은 임대인에게 통지된다.\n- HUG는 계약 전에도 공인중개사의 계약 체결의사 검증 등을 거쳐 동의 없는 보증정보 조회를 제공한다.\n- HUG 공개 채무불이행자 명단과 개별 임대인 보증정보는 서로 다른 조회다.\n- 출처: 정보 제시 의무, 국세징수법, 지방세징수법, HUG 적용 안내",
+   "sources": [
+    {
+     "title": "https://www.law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1031157321",
+     "url": "https://www.law.go.kr/lsLinkCommonInfo.do?lsJoLnkSeq=1031157321"
+    },
+    {
+     "title": "https://law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1018577391",
+     "url": "https://law.go.kr/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1018577391"
+    },
+    {
+     "title": "https://www.law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1032085419",
+     "url": "https://www.law.go.kr/LSW/lsLinkCommonInfo.do?chrClsCd=010202&lsJoLnkSeq=1032085419"
+    },
+    {
+     "title": "https://onestop.khug.or.kr/",
+     "url": "https://onestop.khug.or.kr/"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-11-27",
+   "confidence": "high"
+  },
+  {
    "id": "michuhol-construction-king-deposit-diversion-indictment#1",
    "slug": "michuhol-construction-king-deposit-diversion-indictment",
    "title": "건축왕 사건 수사에서 제시된 보증금 전용과 중개팀 역할",
@@ -1020,11 +1328,35 @@
    "confidence": "high"
   },
   {
+   "id": "jeonse-document-access-before-after-contract#1",
+   "slug": "jeonse-document-access-before-after-contract",
+   "title": "계약 단계별 전세 위험서류 접근 요건",
+   "summary": "계약 전 위험서류는 공개조회와 동의·자격 확인이 필요한 자료로 나뉘며, 인증만으로 접근권한이 생기지는 않는다.",
+   "text": "- 기준일과 확인일은 2026-11-27이다.\n- 등기사항증명서와 일반 건축물대장은 계약 전에도 임대인 동의 없이 조회할 수 있다.\n- 전입세대확인서는 방문 민원이며 계약 전 임차희망자와 계약 후 임대차계약자의 신청자격이 다르다.\n- 계약 전 확정일자 정보제공은 임대인 동의가 필요하고, 계약 후 임차인은 이해관계인 자격을 증명한다.\n- 미납국세·미납지방세는 온라인 본인 체납조회와 임차인의 임대인 정보 열람을 구분해야 한다.\n- 국세청은 임대인 미납국세 내역의 발급·복사·사진 촬영을 허용하지 않는다고 안내한다.\n- 따라서 서류가 확보되지 않은 상태와 위험요인이 없는 상태를 구분해야 한다.\n- 출처: 정부24 전입세대확인서, 주택임대차보호법, 국세청 열람 안내",
+   "sources": [
+    {
+     "title": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000305",
+     "url": "https://www.gov.kr/mw/AA020InfoCappView.do?CappBizCD=13100000305"
+    },
+    {
+     "title": "https://www.law.go.kr/LSW/lsInfoP.do?lsId=001248",
+     "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsId=001248"
+    },
+    {
+     "title": "https://mob.tbht.hometax.go.kr/jsonAction.do?actionId=UTBNFABB01F001",
+     "url": "https://mob.tbht.hometax.go.kr/jsonAction.do?actionId=UTBNFABB01F001"
+    }
+   ],
+   "caveat": "",
+   "date": "2026-11-27",
+   "confidence": "high"
+  },
+  {
    "id": "jeonse-double-contract-fake-landlord#1",
    "slug": "jeonse-double-contract-fake-landlord",
    "title": "이중계약·위임장 위조·가짜 임대인",
    "summary": "소유자 신원과 대리권 범위를 확인하고 계약 조건을 직접 대조해야 이중계약과 가짜 임대인 수법을 점검할 수 있다.",
-   "text": "- 건물관리인이 소유자에게 월세계약이라고 알리고 임차인에게는 전세계약을 체결해 보증금을 가로채는 수법과, 신분을 위장해 중복계약하는 수법이 지자체 예방자료에 소개돼 있다.\n- 국토부 전세피해 예방 안내서는 소유자 가족이 나왔더라도 대리권 유무와 범위를 확인해야 한다고 설명한다. 가족관계나 열쇠 보유가 임대 권한 확인을 대신하지 않는다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 등기상 소유자와 계약자 신원 | 임차인·중개사가 등기사항증명서와 계약자 신분증 대조 | 인터넷 등기 열람 기록당 700원; 계약 당일 | 불일치 사유와 적법한 권한을 확인한 뒤 지급 판단 |\n| 위임장 원본·위임 범위·인감 | 임대인·대리인이 제시하고 임차인·중개사가 인감증명서·신분증과 대조 | 계약 전; 서류 발급 비용 미확인 | 배우자·관리인이라는 설명만 받아들이지 않고 권한 자료 요구 |",
+   "text": "- 건물관리인이 소유자에게 월세계약이라고 알리고 임차인에게는 전세계약을 체결해 보증금을 가로채는 수법과, 신분을 위장해 중복계약하는 수법이 지자체 예방자료에 소개돼 있다.\n- 국토부 전세피해 예방 안내서는 소유자 가족이 나왔더라도 대리권 유무와 범위를 확인해야 한다고 설명한다. 가족관계나 열쇠 보유가 임대 권한 확인을 대신하지 않는다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 등기상 소유자와 계약자 신원 | 임차인·중개사가 등기사항증명서와 계약자 신분증 대조 | 인터넷 등기 열람 기록당 1,100원(2026-11-23 시행, 이전 700원); 계약 당일 | 불일치 사유와 적법한 권한을 확인한 뒤 지급 판단 |",
    "sources": [
     {
      "title": "부평구 이중계약·신분 위조 예방자료",
@@ -1052,7 +1384,7 @@
    "slug": "jeonse-double-contract-fake-landlord",
    "title": "이중계약·위임장 위조·가짜 임대인",
    "summary": "소유자 신원과 대리권 범위를 확인하고 계약 조건을 직접 대조해야 이중계약과 가짜 임대인 수법을 점검할 수 있다.",
-   "text": "| 실제 전세 조건과 수령 권한 | 소유자에게 계약 내용과 대리권을 확인하고 위임 범위와 비교 | 계약금·잔금 지급 전; 확인 비용 미확인 | 계약 체결 권한과 금전 수령 권한이 확인되지 않으면 지급 판단 보류 |",
+   "text": "| 위임장 원본·위임 범위·인감 | 임대인·대리인이 제시하고 임차인·중개사가 인감증명서·신분증과 대조 | 계약 전; 서류 발급 비용 미확인 | 배우자·관리인이라는 설명만 받아들이지 않고 권한 자료 요구 |\n| 실제 전세 조건과 수령 권한 | 소유자에게 계약 내용과 대리권을 확인하고 위임 범위와 비교 | 계약금·잔금 지급 전; 확인 비용 미확인 | 계약 체결 권한과 금전 수령 권한이 확인되지 않으면 지급 판단 보류 |",
    "sources": [
     {
      "title": "부평구 이중계약·신분 위조 예방자료",
@@ -1072,7 +1404,7 @@
    "slug": "jeonse-fraud-info-matrix",
    "title": "전세사기 수법별로 계약 전에 필요한 정보와 얻는 곳",
    "summary": "수법 9가지마다 확인할 정보·얻는 곳·비용과 MoveValue가 지금 계산하는 것을 한 표로 잇는다",
-   "text": "회의에서 \"전세 사기를 피하기 위해 필요한 정보가 뭔지 더 구체적이어야 한다\"고 한 질문에 대한 답이다. 왜 일어나는지는 jeonse-fraud-structural-causes를 보면 된다. 줄여 말하면 임차인이 임대인의 자산·부채를 알기 어렵고, 보증 구조가 악용됐으며, 전문 자격사가 가담했다. 수법마다 원문 근거는 각 노트에 있다.\n| 수법 | 계약 전에 알아야 할 정보 | 얻는 곳·비용 | MoveValue 제안 (미적용, jeonse-ltv-check) |\n| 깡통전세(근저당 과다) | 근저당 채권최고액, 집값 | 등기부 을구(열람 700원) | 입력하면 집값 대비 비율을 계산 |\n| 다가구 선순위 보증금 은닉 (jeonse-multifamily-hidden-prior-deposits) | 앞선 세입자 보증금 합계 | 확정일자 부여현황(임대인 동의, 600원), 전입세대확인서 | 입력하면 합산하고, HUG 다가구 80% 요건도 계산 |",
+   "text": "회의에서 \"전세 사기를 피하기 위해 필요한 정보가 뭔지 더 구체적이어야 한다\"고 한 질문에 대한 답이다. 왜 일어나는지는 jeonse-fraud-structural-causes를 보면 된다. 줄여 말하면 임차인이 임대인의 자산·부채를 알기 어렵고, 보증 구조가 악용됐으며, 전문 자격사가 가담했다. 수법마다 원문 근거는 각 노트에 있다.\n| 수법 | 계약 전에 알아야 할 정보 | 얻는 곳·비용 | MoveValue 제안 (미적용, jeonse-ltv-check) |\n| 깡통전세(근저당 과다) | 근저당 채권최고액, 집값 | 등기부 을구(열람 1,100원, 2026-11-23 시행) | 입력하면 집값 대비 비율을 계산 |\n| 다가구 선순위 보증금 은닉 (jeonse-multifamily-hidden-prior-deposits) | 앞선 세입자 보증금 합계 | 확정일자 부여현황(임대인 동의, 600원), 전입세대확인서 | 입력하면 합산하고, HUG 다가구 80% 요건도 계산 |",
    "sources": [
     {
      "title": "관계부처 전세사기 예방 및 피해 지원방안",
@@ -1732,7 +2064,7 @@
    "slug": "jeonse-stage-rechecks-opposability-gap",
    "title": "계약 단계별 재확인과 잔금일 대항력 공백",
    "summary": "계약 때 확인한 권리관계는 잔금일에도 다시 확인하고, 입주·전입 후와 갱신·만기까지 보증금 보호를 이어가야 한다.",
-   "text": "- 2026-10-23 기준 확인한 현행 안내에서 일반 주택임차인의 대항력은 주택 인도와 주민등록을 모두 마친 다음 날 발생한다. 확정일자만으로 대항력이 즉시 생기지 않는다.\n- 정부는 명의변경·확정일자 직후 근저당 설정 악용을 지적했다. 2026-06-18 발표의 대항력 즉시 발생은 추진 과제이며, 발표 자체를 시행 근거로 삼을 수 없다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 계약금: 소유자·대리권·시세·체납·선순위 권리 | 임차인이 등기·신분 자료 확인, 임대인 자료 제시, 중개사 설명 확보 | 계약금 지급 전; 인터넷 등기 열람 기록당 700원 | 원자료와 설명을 보완하고 미확인 항목을 남김 |",
+   "text": "- 2026-10-23 기준 확인한 현행 안내에서 일반 주택임차인의 대항력은 주택 인도와 주민등록을 모두 마친 다음 날 발생한다. 확정일자만으로 대항력이 즉시 생기지 않는다.\n- 정부는 명의변경·확정일자 직후 근저당 설정 악용을 지적했다. 2026-06-18 발표의 대항력 즉시 발생은 추진 과제이며, 발표 자체를 시행 근거로 삼을 수 없다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 계약금: 소유자·대리권·시세·체납·선순위 권리 | 임차인이 등기·신분 자료 확인, 임대인 자료 제시, 중개사 설명 확보 | 계약금 지급 전; 인터넷 등기 열람 기록당 1,100원(2026-11-23 시행, 이전 700원) | 원자료와 설명을 보완하고 미확인 항목을 남김 |",
    "sources": [
     {
      "title": "법제처 대항력·우선변제권 안내",
@@ -1808,7 +2140,7 @@
    "slug": "jeonse-trust-property-authority-check",
    "title": "신탁 사기와 신탁원부·수탁자 동의 확인",
    "summary": "신탁등기 주택은 등기 명의와 신탁원부의 임대차 요건을 함께 확인하고 필요한 동의의 진위까지 검증해야 한다.",
-   "text": "- 법무부는 신탁부동산의 처분권한이 통상 위탁자보다 수탁자에게 있으며, 권한 없는 위탁자와 계약해 대항력을 취득하지 못하는 피해를 설명했다.\n- 2024년 확인·설명서 작성방법은 신탁원부에서 계약 당사자와 수탁자·수익자의 동의 또는 승낙 등 임대차 요건을 확인하도록 했다. 동의 필요 범위는 해당 신탁 약정에 따라 확인한다.\n- 행정심판 사례에서도 임대인의 동의서 발급 약속만 믿고 신탁회사에 직접 확인하지 않은 중개행위의 문제를 인정했다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 신탁등기·수탁자 명의 | 임차인·중개사가 등기사항증명서 확인; 일반 등기는 공개 열람 | 인터넷 등기 열람 기록당 700원; 계약 전·잔금 전 | 명의와 계약 권한이 설명될 때까지 계약 판단 보류 |",
+   "text": "- 법무부는 신탁부동산의 처분권한이 통상 위탁자보다 수탁자에게 있으며, 권한 없는 위탁자와 계약해 대항력을 취득하지 못하는 피해를 설명했다.\n- 2024년 확인·설명서 작성방법은 신탁원부에서 계약 당사자와 수탁자·수익자의 동의 또는 승낙 등 임대차 요건을 확인하도록 했다. 동의 필요 범위는 해당 신탁 약정에 따라 확인한다.\n- 행정심판 사례에서도 임대인의 동의서 발급 약속만 믿고 신탁회사에 직접 확인하지 않은 중개행위의 문제를 인정했다.\n| 확인할 정보 | 어디서·누가 확보 (공공 열람/API, 임대인 동의, 중개사 설명 의무) | 비용·시점 | 확인 못 하면 할 행동 |\n| 신탁등기·수탁자 명의 | 임차인·중개사가 등기사항증명서 확인; 일반 등기는 공개 열람 | 인터넷 등기 열람 기록당 1,100원(2026-11-23 시행, 이전 700원); 계약 전·잔금 전 | 명의와 계약 권한이 설명될 때까지 계약 판단 보류 |",
    "sources": [
     {
      "title": "법무부 신탁등기 주의사항 안내",
@@ -1827,7 +2159,7 @@
      "url": "https://www.easylaw.go.kr/CSP/CnpClsMain.laf?ccfNo=2&cciNo=1&cnpClsNo=2&csmSeq=627"
     }
    ],
-   "caveat": "확인 못 함: 신탁원부의 2026-10-23 기준 온라인 제공 범위·수수료, 특정 동의서만으로 보증금 반환채무까지 확정되는지 여부. > 검증 정정: 등기 열람 700원은 일치. 법무부 신탁 안내와 2024 확인·설명서 작성방법은 열람하지 못해 미검증",
+   "caveat": "확인 못 함: 신탁원부의 2026-10-23 기준 온라인 제공 범위·수수료, 특정 동의서만으로 보증금 반환채무까지 확정되는지 여부. > 검증 정정: 등기 열람 700원은 당시 일치(2026-11-23부터 1,100원). 법무부 신탁 안내와 2024 확인·설명서 작성방법은 열람하지 못해 미검증",
    "date": "2026-10-23",
    "confidence": "medium"
   },
@@ -1851,7 +2183,7 @@
      "url": "https://www.law.go.kr/LSW/deccInfoP.do?deccSeq=258145&mode=3"
     }
    ],
-   "caveat": "확인 못 함: 신탁원부의 2026-10-23 기준 온라인 제공 범위·수수료, 특정 동의서만으로 보증금 반환채무까지 확정되는지 여부. > 검증 정정: 등기 열람 700원은 일치. 법무부 신탁 안내와 2024 확인·설명서 작성방법은 열람하지 못해 미검증",
+   "caveat": "확인 못 함: 신탁원부의 2026-10-23 기준 온라인 제공 범위·수수료, 특정 동의서만으로 보증금 반환채무까지 확정되는지 여부. > 검증 정정: 등기 열람 700원은 당시 일치(2026-11-23부터 1,100원). 법무부 신탁 안내와 2024 확인·설명서 작성방법은 열람하지 못해 미검증",
    "date": "2026-10-23",
    "confidence": "medium"
   },

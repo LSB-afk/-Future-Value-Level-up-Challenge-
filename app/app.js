@@ -4152,69 +4152,178 @@ function statusText(status) {
 }
 
 function renderTrendChart(rows) {
-  const liveRows = Array.isArray(rows) ? rows.filter((row) => row.sourceMode !== "trend_estimate") : [];
-  const saleData = liveRows
-    .map((row) => ({ month: row.month || "", value: Number(row.sale10k || 0), volume: Number(row.saleVolume || 0) }))
-    .filter((row) => row.month && row.value > 0);
-  const jeonseData = liveRows
-    .map((row) => ({ month: row.month || "", value: Number(row.jeonse10k || 0), volume: Number(row.jeonseVolume || 0) }))
-    .filter((row) => row.month && row.value > 0);
-  const pointCount = saleData.length + jeonseData.length;
-  if (liveRows.length < 2 || pointCount < 2) {
-    return `<div class="chart-empty">실거래 기반 월별 추이 정보 없음</div>`;
-  }
-  const values = [...saleData, ...jeonseData].map((row) => row.value);
-  const min = Math.min(...values) * 0.96;
-  const max = Math.max(...values) * 1.04;
-  const width = 420;
-  const height = 170;
-  const left = 34;
-  const right = 14;
-  const top = 18;
-  const bottom = 32;
-  const usableWidth = width - left - right;
-  const usableHeight = height - top - bottom;
-  const y = (value) => top + usableHeight - ((Number(value) - min) / (max - min || 1)) * usableHeight;
-  const x = (index) => left + (index / (liveRows.length - 1)) * usableWidth;
-  const indexedRows = liveRows.map((row, index) => ({ ...row, index }));
-  const pointFor = (row) => `${x(row.index).toFixed(1)},${y(row.value).toFixed(1)}`;
-  const seriesRows = (field, volumeField) => indexedRows
+  const monthKey = (month) => {
+    const [year, mon] = String(month || "").split(".").map(Number);
+    return year && mon ? year * 12 + mon - 1 : NaN;
+  };
+  const points = (Array.isArray(rows) ? rows : [])
+    .filter((row) => row.sourceMode !== "trend_estimate")
     .map((row) => ({
       month: row.month || "",
-      value: Number(row[field] || 0),
-      volume: Number(row[volumeField] || 0),
-      index: row.index
+      key: monthKey(row.month),
+      sale: Number(row.sale10k || 0),
+      jeonse: Number(row.jeonse10k || 0),
+      saleVolume: Number(row.saleVolume || 0),
+      jeonseVolume: Number(row.jeonseVolume || 0)
     }))
-    .filter((row) => row.month && row.value > 0);
-  const saleRows = seriesRows("sale10k", "saleVolume");
-  const jeonseRows = seriesRows("jeonse10k", "jeonseVolume");
-  const salePoints = saleRows.map(pointFor).join(" ");
-  const jeonsePoints = jeonseRows.map(pointFor).join(" ");
-  const pointSvg = (rows, className, label) => rows.map((row) => `
-    <circle class="${className}-point" cx="${x(row.index).toFixed(1)}" cy="${y(row.value).toFixed(1)}" r="3.2">
-      <title>${escapeHtml(`${row.month} ${label} ${formatMoney10k(row.value)}${row.volume ? ` · ${row.volume}건` : ""}`)}</title>
-    </circle>
-  `).join("");
-  const first = liveRows[0]?.month || "";
-  const last = liveRows[liveRows.length - 1]?.month || "";
+    .filter((row) => Number.isFinite(row.key) && (row.sale > 0 || row.jeonse > 0))
+    .sort((a, b) => a.key - b.key);
+  const saleRows = points.filter((row) => row.sale > 0);
+  const jeonseRows = points.filter((row) => row.jeonse > 0);
+  if (points.length < 2 || saleRows.length + jeonseRows.length < 2) {
+    return `<div class="chart-empty">실거래 기반 월별 추이 정보 없음</div>`;
+  }
+
+  // 매매·전세가 한 가격축을 같이 써야 둘의 차이를 그대로 비교할 수 있다.
+  const values = points.flatMap((row) => [row.sale, row.jeonse]).filter((value) => value > 0);
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const step = [1000, 2000, 5000, 10000, 20000, 50000].find((s) => (rawMax - rawMin) / s <= 5) || 100000;
+  const min = Math.floor(rawMin / step) * step;
+  const max = Math.max(Math.ceil(rawMax / step) * step, min + step);
+  const width = 420;
+  const height = 210;
+  const left = 10;
+  const plotRight = 362;
+  const top = 12;
+  const bottom = 184;
+  const firstKey = points[0].key;
+  const span = points[points.length - 1].key - firstKey || 1;
+  const x = (key) => left + ((key - firstKey) / span) * (plotRight - left);
+  const y = (value) => bottom - ((value - min) / (max - min)) * (bottom - top);
+  const eok = (value, digits = 1) => (value >= 10000 ? `${Number((value / 10000).toFixed(digits))}억` : `${formatNumber(value)}만`);
+  const line = (list, field) => list.map((row) => `${x(row.key).toFixed(1)},${y(row[field]).toFixed(1)}`).join(" ");
+
+  const tickEvery = Math.max(1, Math.ceil(span / 5));
+  const ticks = [];
+  for (let key = firstKey; key <= firstKey + span; key += tickEvery) {
+    const label = `${String(Math.floor(key / 12)).slice(2)}.${String((key % 12) + 1).padStart(2, "0")}`;
+    const anchor = key === firstKey ? "start" : x(key) > plotRight - 16 ? "end" : "middle";
+    ticks.push(`<text x="${x(key).toFixed(1)}" y="${height - 8}" text-anchor="${anchor}">${label}</text>`);
+  }
+
+  const bothRows = points.filter((row) => row.sale > 0 && row.jeonse > 0);
+  const gapBand = bothRows.length > 1
+    ? `<polygon class="trend-gap-band" points="${line(bothRows, "sale")} ${line([...bothRows].reverse(), "jeonse")}" />`
+    : "";
+  const dots = (list, field, className) => list
+    .map((row) => `<circle class="${className}-point" cx="${x(row.key).toFixed(1)}" cy="${y(row[field]).toFixed(1)}" r="3.2" />`)
+    .join("");
+
+  // 오른쪽 끝 최신가 배지 (두 배지가 겹치면 위아래로 벌린다)
+  const lastSale = saleRows[saleRows.length - 1];
+  const lastJeonse = jeonseRows[jeonseRows.length - 1];
+  let saleBadgeY = lastSale ? y(lastSale.sale) : 0;
+  let jeonseBadgeY = lastJeonse ? y(lastJeonse.jeonse) : 0;
+  if (lastSale && lastJeonse && jeonseBadgeY - saleBadgeY < 18) {
+    const middle = (saleBadgeY + jeonseBadgeY) / 2;
+    saleBadgeY = middle - 9;
+    jeonseBadgeY = middle + 9;
+  }
+  const badgeYs = [lastSale && saleBadgeY, lastJeonse && jeonseBadgeY].filter((value) => typeof value === "number");
+  const grid = [];
+  for (let value = min; value <= max; value += step) {
+    const gridY = y(value);
+    const hiddenByBadge = badgeYs.some((badgeY) => Math.abs(badgeY - gridY) < 13);
+    grid.push(`
+      <line class="trend-grid" x1="${left}" y1="${gridY.toFixed(1)}" x2="${plotRight}" y2="${gridY.toFixed(1)}" />
+      ${hiddenByBadge ? "" : `<text x="${plotRight + 6}" y="${(gridY + 4).toFixed(1)}">${eok(value)}</text>`}`);
+  }
+  const badge = (row, value, badgeY, className) => (row ? `
+    <line class="trend-last-line ${className}" x1="${x(row.key).toFixed(1)}" y1="${y(value).toFixed(1)}" x2="${plotRight}" y2="${badgeY.toFixed(1)}" />
+    <g class="trend-badge ${className}">
+      <rect x="${plotRight + 2}" y="${(badgeY - 8).toFixed(1)}" width="${width - plotRight - 4}" height="16" rx="3" />
+      <text x="${(plotRight + width) / 2}" y="${(badgeY + 4).toFixed(1)}" text-anchor="middle">${eok(value, 2)}</text>
+    </g>` : "");
+
+  const hoverData = points.map((row) => ({
+    month: row.month,
+    x: Number(x(row.key).toFixed(1)),
+    sale: row.sale,
+    jeonse: row.jeonse,
+    saleY: row.sale > 0 ? Number(y(row.sale).toFixed(1)) : null,
+    jeonseY: row.jeonse > 0 ? Number(y(row.jeonse).toFixed(1)) : null,
+    saleVolume: row.saleVolume,
+    jeonseVolume: row.jeonseVolume
+  }));
+
   return `
-    <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 거래 추이 그래프">
-      <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" />
-      <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" />
-      ${saleRows.length > 1 ? `<polyline class="sale-line" points="${salePoints}" />` : ""}
-      ${jeonseRows.length > 1 ? `<polyline class="jeonse-line" points="${jeonsePoints}" />` : ""}
-      ${pointSvg(saleRows, "sale", "매매")}
-      ${pointSvg(jeonseRows, "jeonse", "전세")}
-      <text x="${left}" y="${height - 10}">${escapeHtml(first)}</text>
-      <text x="${width - right}" y="${height - 10}" text-anchor="end">${escapeHtml(last)}</text>
-      <text x="${left}" y="12">${escapeHtml(formatMoney10k(max))}</text>
-      <text x="${width - right}" y="12" text-anchor="end">매매 / 전세</text>
-    </svg>
+    <div class="trend-chart-wrap" data-trend="${escapeHtml(JSON.stringify(hoverData))}">
+      <svg class="property-trend-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="최근 매매·전세 실거래 추이 그래프">
+        ${grid.join("")}
+        <line x1="${left}" y1="${bottom}" x2="${plotRight}" y2="${bottom}" />
+        ${ticks.join("")}
+        ${gapBand}
+        ${saleRows.length > 1 ? `<polyline class="sale-line" points="${line(saleRows, "sale")}" />` : ""}
+        ${jeonseRows.length > 1 ? `<polyline class="jeonse-line" points="${line(jeonseRows, "jeonse")}" />` : ""}
+        ${dots(saleRows, "sale", "sale")}
+        ${dots(jeonseRows, "jeonse", "jeonse")}
+        ${badge(lastSale, lastSale?.sale, saleBadgeY, "sale")}
+        ${badge(lastJeonse, lastJeonse?.jeonse, jeonseBadgeY, "jeonse")}
+        <g class="trend-cursor">
+          <line x1="0" y1="${top}" x2="0" y2="${bottom}" />
+          <circle class="sale-point" r="4.5" />
+          <circle class="jeonse-point" r="4.5" />
+        </g>
+        <rect class="trend-hit" x="${left}" y="0" width="${plotRight - left}" height="${height}" />
+      </svg>
+      <div class="trend-tooltip" aria-hidden="true"></div>
+    </div>
     <div class="chart-legend">
-      <span><i class="chart-dot sale"></i>매매 실거래</span>
-      <span><i class="chart-dot jeonse"></i>전세 실거래</span>
+      <span><i class="chart-dot sale"></i>매매 실거래 (월 평균)</span>
+      <span><i class="chart-dot jeonse"></i>전세 실거래 (월 평균)</span>
+      <span><i class="chart-swatch gap"></i>매매−전세 차이</span>
     </div>
   `;
+}
+
+function bindTrendCharts() {
+  document.querySelectorAll(".trend-chart-wrap").forEach((wrap) => {
+    const svg = wrap.querySelector("svg");
+    const tooltip = wrap.querySelector(".trend-tooltip");
+    const cursor = svg?.querySelector(".trend-cursor");
+    let points = [];
+    try {
+      points = JSON.parse(wrap.dataset.trend || "[]");
+    } catch {
+      return;
+    }
+    if (!svg || !tooltip || !cursor || !points.length) return;
+    const viewWidth = svg.viewBox.baseVal.width;
+    const [cursorLine, saleDot, jeonseDot] = cursor.children;
+    const placeDot = (dot, cy) => {
+      dot.style.display = cy == null ? "none" : "";
+      if (cy != null) dot.setAttribute("cy", cy);
+    };
+    const money = (value, volume) => (value > 0 ? `${formatMoney10k(value)} · ${volume}건` : "거래 없음");
+    const show = (event) => {
+      const box = svg.getBoundingClientRect();
+      const viewX = ((event.clientX - box.left) / box.width) * viewWidth;
+      const point = points.reduce((best, row) => (Math.abs(row.x - viewX) < Math.abs(best.x - viewX) ? row : best));
+      cursorLine.setAttribute("x1", point.x);
+      cursorLine.setAttribute("x2", point.x);
+      saleDot.setAttribute("cx", point.x);
+      jeonseDot.setAttribute("cx", point.x);
+      placeDot(saleDot, point.saleY);
+      placeDot(jeonseDot, point.jeonseY);
+      tooltip.innerHTML = `
+        <strong>${escapeHtml(point.month)}</strong>
+        <span><i class="chart-dot sale"></i>매매 ${money(point.sale, point.saleVolume)}</span>
+        <span><i class="chart-dot jeonse"></i>전세 ${money(point.jeonse, point.jeonseVolume)}</span>
+        ${point.sale > 0 && point.jeonse > 0 ? `<span class="trend-tooltip-gap">차이 ${formatMoney10k(point.sale - point.jeonse)}</span>` : ""}
+      `;
+      const pixelX = (point.x / viewWidth) * box.width;
+      const onRight = pixelX < box.width / 2;
+      tooltip.style.left = onRight ? `${pixelX + 12}px` : "";
+      tooltip.style.right = onRight ? "" : `${box.width - pixelX + 12}px`;
+      wrap.classList.add("is-hover");
+    };
+    svg.addEventListener("pointermove", show);
+    svg.addEventListener("pointerdown", show);
+    svg.addEventListener("pointerleave", (event) => {
+      if (event.pointerType === "mouse") wrap.classList.remove("is-hover");
+    });
+  });
 }
 
 function latestRecord(records, predicate) {
@@ -5134,6 +5243,7 @@ function bindPropertyDashboardEvents() {
   document.querySelectorAll(".clause-copy").forEach((button) => {
     button.addEventListener("click", () => handleClauseCopy(button));
   });
+  bindTrendCharts();
   bindAgentCtaEvents();
 }
 

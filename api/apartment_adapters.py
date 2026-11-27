@@ -17,6 +17,7 @@ from property_model import build_property_preview
 ROOT = Path(__file__).resolve().parents[1]
 SNAPSHOT_PATH = ROOT / "data" / "apartments.seoul.snapshot.json"
 AREAS_PATH = ROOT / "data" / "areas.actual.json"
+FIXES_PATH = ROOT / "data" / "apartment-coordinate-fixes.json"
 API_NAME = "OpenAptInfo"
 API_URL = "http://openapi.seoul.go.kr:8088/{key}/json/OpenAptInfo/{start}/{end}/"
 API_KEY_ENVS = ("SEOUL_OPEN_API_KEY", "SEOUL_API_KEY", "MOVEVALUE_SEOUL_OPEN_API_KEY")
@@ -202,18 +203,43 @@ def load_snapshot() -> dict:
     return expanded
 
 
+def apply_coordinate_fixes(dataset: dict) -> dict:
+    """원천 좌표가 실제 주소와 5km 넘게 어긋난 단지를 고치고, 위치를 찾지 못한 단지는 뺀다.
+
+    근거와 조회 방법은 data/apartment-coordinate-fixes.json에 있다. 실시간 API를 써도 같은 원천이라 똑같이 적용한다."""
+    try:
+        with FIXES_PATH.open(encoding="utf-8") as file:
+            table = json.load(file)
+    except (OSError, ValueError):
+        return dataset
+    fixes = {item["id"]: item for item in table.get("fixes", [])}
+    hidden = {item["id"] for item in table.get("hidden", [])}
+    apartments = []
+    for item in dataset.get("apartments", []):
+        if item.get("id") in hidden:
+            continue
+        fix = fixes.get(item.get("id"))
+        if fix:
+            item = {**item, "lat": fix["lat"], "lng": fix["lng"], "coordinatePrecision": fix["precision"],
+                    "coordinateFixed": True}
+        apartments.append(item)
+    meta = {**dataset.get("meta", {}), "coordinateFixes": {
+        "checkedAt": table.get("meta", {}).get("checkedAt"), "fixed": len(fixes), "hidden": len(hidden)}}
+    return {**dataset, "apartments": apartments, "meta": meta}
+
+
 def load_apartment_dataset() -> tuple[dict, str, str]:
     key = seoul_open_api_key()
     if key:
         cache_key = f"live:{key[:4]}"
         if cache_key not in _CACHE:
             try:
-                _CACHE[cache_key] = fetch_live_dataset(key)
+                _CACHE[cache_key] = apply_coordinate_fixes(fetch_live_dataset(key))
             except RuntimeError as exc:
                 _CACHE["last_error"] = {"error": str(exc)}
-                return load_snapshot(), "snapshot_fallback", str(exc)
+                return apply_coordinate_fixes(load_snapshot()), "snapshot_fallback", str(exc)
         return _CACHE[cache_key], "live_api", ""
-    return load_snapshot(), "snapshot", ""
+    return apply_coordinate_fixes(load_snapshot()), "snapshot", ""
 
 
 def parse_bounds(value: str) -> tuple[float, float, float, float] | None:

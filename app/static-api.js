@@ -16,7 +16,7 @@
     "movevalue_api.py",
     "static_dispatcher.py"
   ];
-  const DATA_FILES = ["areas.actual.json", "apartments.seoul.snapshot.json"];
+  const DATA_FILES = ["areas.actual.json", "apartments.seoul.snapshot.json", "apartment-coordinate-fixes.json"];
   const nativeFetch = window.fetch.bind(window);
 
   const banner = document.createElement("div");

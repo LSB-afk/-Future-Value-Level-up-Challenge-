@@ -228,7 +228,7 @@
 .fh-inspect.done { background: var(--fh-safe-soft); }
 .fh-inspect strong { color: var(--fh-ink); font-size: 14px; font-weight: 600; }
 .fh-inspect p { margin: 0; color: #4b5563; font-size: 12px; line-height: 1.55; }
-.fh-inspect .fh-btn { justify-self: start; }
+.fh-inspect .fh-btn { justify-self: stretch; }
 
 /* 집값 대비 빚 */
 .fh-ltv { position: relative; padding: 22px 0 6px; }
@@ -442,6 +442,8 @@
 .fh-spec { margin: 0; color: #374151; font-size: 13px; }
 .fh-note { margin: 0; color: var(--fh-muted); font-size: 13px; }
 .fh-listing-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.fh-note-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.fh-note-row .fh-listing-tags { margin-left: auto; justify-content: flex-end; }
 .fh-tag,
 .fh-ratio { padding: 2px 8px; border-radius: 6px; background: var(--fh-soft); color: #4b5563; font-size: 12px; font-weight: 500; }
 .fh-ratio.is-safe { background: var(--fh-safe-soft); color: var(--fh-safe); }
@@ -517,7 +519,7 @@
   border-radius: 12px;
   background: #fff;
 }
-.fh-inspect .fh-btn { min-width: 0; max-width: 100%; padding-block: 7px; white-space: normal; text-align: left; }
+.fh-inspect .fh-btn { min-width: 0; width: 100%; padding-block: 8px; white-space: normal; text-align: center; }
 .fh-document-intake .fh-service-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .fh-service-list button.fh-service-row {
   width: 100%; align-content: start; align-items: start; text-align: left; color: var(--fh-ink); font-family: inherit;

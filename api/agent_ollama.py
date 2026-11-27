@@ -27,6 +27,8 @@ from agent_llm import (
     answer_problems,
     auto_facts,
     build_system,
+    check_answer,
+    knowledge_trace,
     finalize_answer,
     last_user_text,
     needs_handoff,
@@ -165,6 +167,8 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
         return {"ok": False, "error": "대화 내용이 비어 있습니다."}
 
     tool_trace: list[dict] = []
+    tool_outputs: list[str] = []
+    retrieval = knowledge_trace(messages, hits)
     seen_calls: set = set()
     facts: dict = {}
     input_tokens = 0
@@ -206,6 +210,8 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
                 history.append({"role": "user", "content": rewrite_request(found)})
                 continue
             question = last_user_text(messages)
+            # ④ 교정형 RAG: 인용·숫자를 근거와 대조한다(answer_check).
+            answer, corrected = check_answer(answer, hits, system, question, tool_outputs)
             handoff_added = needs_handoff(question, answer)
             auto_facts(question, context, facts, tool_trace)
             answer = finalize_answer(question, answer, found, facts)
@@ -213,11 +219,13 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
                 "ok": True,
                 "answer": answer,
                 "toolTrace": tool_trace,
+                "retrieval": retrieval,
                 # 웹 검색은 없지만 RAG 근거 조각을 [K번호]로 인용하면 그 출처를 화면에 보낸다.
                 "sources": cited_sources(answer, hits),
                 "knowledge": [h["id"] for h in hits],
                 # 안심 단정 표현이 나와 한 번 고쳐 쓰게 했다면 그 표현을 남긴다. 고친 뒤에도 남았으면 그대로 드러난다.
-                "guard": {"rewroteFor": rewrote or [], "remaining": found, "handoffAdded": handoff_added},
+                "guard": {"rewroteFor": rewrote or [], "remaining": found, "handoffAdded": handoff_added,
+                          "corrected": corrected},
                 "model": data.get("model") or MODEL,
                 "usage": {
                     "inputTokens": input_tokens,
@@ -240,6 +248,7 @@ def agent_chat(messages: list[dict], context: str = "") -> dict:
             name = str(function.get("name") or "")
             payload = _tool_args(function.get("arguments"))
             output = run_tool_once(name, payload, seen_calls, facts)
+            tool_outputs.append(output)
             tool_trace.append({"name": name, "input": payload})
             # Anthropic은 tool_result를 한 user 메시지에 모아 보내지만 Ollama는 호출당 tool 메시지다.
             history.append({"role": "tool", "tool_name": name, "content": output})

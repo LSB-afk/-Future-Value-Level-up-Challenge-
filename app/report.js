@@ -202,10 +202,9 @@
       touched = true;
     }
     if (touched) reg.source = "input";
-    if (intake.registryEvidence()) {
-      reg.mortgageSource = "registry";
-      reg.dateSource = "registry";
-    }
+    // '등기부' 근거는 서버가 발급한 근거 번호로만 붙는다. 화면은 번호만 전달한다.
+    const registryEvidenceId = intake.registryEvidence()?.evidenceId;
+    if (registryEvidenceId) next.registryEvidenceId = registryEvidenceId;
     if (e.violation && e.violation !== "unknown") next.building.violation = e.violation;
     if (e.useEdited || e.use === "nonresidential") {
       next.building.use = e.use;
@@ -356,7 +355,8 @@
   // ---------- 렌더링 ----------
 
   function renderSummary(v) {
-    const original = intake.registryEvidence();
+    // 서버가 근거 번호를 실제로 적용했을 때만 '원문 대조'로 표시한다(만료·다른 주소면 입력값으로 본다).
+    const original = v.registryEvidence?.status === "applied" ? intake.registryEvidence() : null;
     const needsRegistry = v.ltv.mortgagePending;
     const landlordStatus = v.property.housingType === "multi" ? intake.requestStatus() : "";
     const registryStatus = original

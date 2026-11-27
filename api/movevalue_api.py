@@ -220,8 +220,21 @@ def verify_trade_price(payload: dict) -> dict:
             # 화면은 최근 1건을 보내지만, 판정은 Agent·위험 카드와 같은 기준(같은 평형 12개월 중앙값)으로 맞춘다.
             price["value10k"] = server_price["saleMedian10k"]
             notes.append("실거래 최근 1건→같은 평형 중앙값")
+    server_price = (detail or {}).get("price") or {}
+    # '공시가격 API'·'전세 실거래' 출처도 서버 단지 데이터와 금액이 같을 때만 인정한다.
+    if price.get("officialSource") == "public" and not (
+            server_price.get("officialPriceLive")
+            and number(price.get("official10k"), -1) == number(server_price.get("officialPrice10k"), -2)):
+        price["officialSource"] = "input" if price.get("official10k") is not None else "none"
+        notes.append("public→" + price["officialSource"])
+    market = dict(payload.get("market") or {})
+    if market.get("source") == "trade":
+        server_rents = {number(server_price.get(k)) for k in ("recentJeonse10k", "jeonseMedian10k") if server_price.get(k)}
+        if not (server_price.get("jeonseLive") and number(market.get("jeonse10k"), -1) in server_rents):
+            market["source"] = "estimate"
+            notes.append("전세 trade→estimate")
+        payload = {**payload, "market": market}
     if detail:
-        server_price = detail.get("price") or {}
         if (not server_price.get("officialPriceLive") and price.get("official10k") is not None
                 and number(price.get("official10k")) == number(server_price.get("officialPrice10k"), -1)
                 and price.get("basis") != "official"):
@@ -1326,16 +1339,22 @@ class Handler(BaseHTTPRequestHandler):
                     self.send_json(HTTPStatus.OK, deposit_priority_response(payload))
                 elif parsed.path == "/api/jeonse-verdict":
                     owner_token = payload.pop("documentOwnerToken", None)
+                    registry_evidence = payload.pop("registryEvidenceId", None)
                     payload = verify_trade_price(validate_jeonse_input(payload))
-                    confirmed_prior = None
+                    confirmed_prior = evidence = None
                     if owner_token:
                         from document_requests import confirmed_prior as document_prior
                         confirmed_prior = document_prior(owner_token, (payload.get("property") or {}).get("address", ""))
+                    if registry_evidence:
+                        from evidence_store import apply_registry
+                        payload, evidence = apply_registry(payload, registry_evidence)
                     key = str(payload.get("key") or "")
                     payload["feedbackCount"] = len(list_feedback(key)) if key else 0
                     result = evaluate_jeonse(payload, confirmed_prior_deposits10k=confirmed_prior)
                     if payload.get("sourceDowngraded"):
                         result["sourceDowngraded"] = payload["sourceDowngraded"]
+                    if evidence:
+                        result["registryEvidence"] = evidence
                     self.send_json(HTTPStatus.OK, result)
                 else:
                     # 같은 사이트에서 온 요청만, 실제 있는 단지 키만 받는다(재점검 Astra-17). 매물(listing:) 키는 시연용이라 형식만 본다.

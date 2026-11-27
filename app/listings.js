@@ -102,8 +102,10 @@
                 <span class="fh-checked">확인 ${esc(item.checkedAt)}</span>
               </div>
               <p class="fh-spec">아파트 · ${esc(Math.round(item.area))}㎡ · ${esc(item.floorLabel)} · ${esc(item.direction)}</p>
-              <p class="fh-note">${esc(item.note)}</p>
-              <div class="fh-listing-tags">${ratioChip(item.ratioPct)}<span class="fh-tag">가상 매물</span></div>
+              <div class="fh-note-row">
+                <p class="fh-note">${esc(item.note)}</p>
+                <div class="fh-listing-tags">${ratioChip(item.ratioPct)}<span class="fh-tag">가상 매물</span></div>
+              </div>
               <div class="fh-broker">
                 <div>
                   <strong>${esc(item.broker.name)}</strong>

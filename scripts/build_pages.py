@@ -30,7 +30,7 @@ API = ROOT / "api"
 SITE = ROOT / "site"
 
 ENTRY_MODULE = "static_dispatcher"
-DATA_FILES = ["areas.actual.json", "apartments.seoul.snapshot.json"]
+DATA_FILES = ["areas.actual.json", "apartments.seoul.snapshot.json", "apartment-coordinate-fixes.json"]
 # index.html의 로컬 .js/.css 참조(./app.js?v=... 처럼 쿼리가 붙어 있어도 됨). 내용 해시로 ?v=를 다시 붙인다.
 LOCAL_REF = re.compile(r'(src|href)="\./([^"?#]+\.(?:js|css))(?:\?[^"]*)?"')
 APP_SCRIPT = re.compile(r'<script src="\./app\.js(?:\?[^"]*)?"></script>')
