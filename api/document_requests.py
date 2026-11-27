@@ -199,6 +199,11 @@ def _current_evidence(doc):
             issues.append(f"핏홈은 선순위 변동을 반영하기 위해 최근 {REGISTRY_FRESH_DAYS}일 이내에 발급·작성한 자료를 사용합니다. 새 서류를 요청해 주세요.")
         elif age < 0:
             issues.append("발급일이 미래 날짜입니다.")
+    if doc["kind"] in {"nationalTax", "localTax"} and doc.get("issuedAt") and not doc.get("expiresOn"):
+        # 납세증명서는 문서에 미래 유효기한이 있으면 그 기한이 우선하고, 없으면 발급일이 최근 기간 이내여야 한다.
+        age = (today - date.fromisoformat(doc["issuedAt"])).days
+        if age > REGISTRY_FRESH_DAYS:
+            issues.append(f"유효기한이 없는 납세증명서는 최근 {REGISTRY_FRESH_DAYS}일 이내에 발급한 것만 사용합니다. 새 증명서를 요청해 주세요.")
     if issues:
         doc["status"] = "needs_review"
         doc["amount10k"] = None

@@ -547,7 +547,7 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
             local.results = []; // 유료 열람 재전송 방지. 다시 검색하면 새 선택을 받을 수 있다.
             // 같은 선택의 재전송이 두 번 과금되지 않게 요청 번호를 붙인다(서버가 영속 기록으로 막는다).
             local.review = await post("registry/fetch", {address: currentAddress, propertyId, confirmCharge: true,
-              idempotencyKey: crypto.randomUUID().replace(/-/g, ""), ...identityFields()});
+              idempotencyKey: Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, "0")).join(""), ...identityFields()});
           }
         });
       }

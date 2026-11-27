@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -120,6 +121,23 @@ class TierTests(unittest.TestCase):
         self.assertTrue(by_id["use"]["core"] and by_id["violation"]["core"] and by_id["hug126"]["core"])
         self.assertEqual(report["grade"], "check")
 
+    def test_inspected_price_source_is_never_document_evidence_even_with_demo_flag(self):
+        body = typed(isDemo=True, price={"basis": "market", "value10k": 1234, "source": "inspected"})
+        inp = validate_input(body)
+        self.assertEqual(inp["price"]["source"], "input")
+        self.assertEqual(checks(evaluate(inp))["priceBasis"]["evidence"], "input")
+        # validate_input을 거치지 않고 evaluate에 바로 넘겨도 서류 근거가 아니다.
+        self.assertNotEqual(checks(evaluate(body))["priceBasis"]["evidence"], "document")
+
+    def test_villa_with_server_sources_still_needs_violation_check(self):
+        # 의도된 동작: 위반건축물 '없음'은 서버가 읽은 근거가 아직 없어 빌라는 '안심'에 이르지 못한다.
+        villa = verified(property={"housingType": "villa", "address": ADDRESS}, building={"source": "public", "use": "residential", "violation": "no"})
+        villa["price"].update(official10k=60000, officialSource="public")
+        villa["registry"].update(rightsSource="registryUpload", rightsKeys="trust,seizure,auction,leaseRegistration")
+        report = evaluate(villa)
+        self.assertEqual(report["grade"], "check")
+        self.assertEqual({g["id"] for g in report["coreGaps"]}, {"violation"})
+
     def test_multi_without_confirmed_prior_needs_checking(self):
         body = verified(property={"housingType": "multi", "address": ADDRESS})
         report = evaluate(body)
@@ -231,7 +249,7 @@ class ConfirmedTaxTests(unittest.TestCase):
         self.assertFalse(requests.confirmed_tax(None, ADDRESS))
         self.assertFalse(requests.confirmed_tax("x" * 43, ADDRESS))
 
-    def test_verdict_route_uses_confirmed_certificates_for_any_housing_type(self):
+    def verdict_client(self):
         server = ThreadingHTTPServer(("127.0.0.1", 0), __import__("movevalue_api").Handler)
         server.quiet = True
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -250,7 +268,39 @@ class ConfirmedTaxTests(unittest.TestCase):
                 return data
             finally:
                 conn.close()
+        return verdict
 
+    def confirm_both(self):
+        self.submit("nationalTax", "국세 납세증명서")
+        self.submit("localTax", "지방세 납세증명서")
+        self.confirm("nationalTax")
+        self.confirm("localTax")
+
+    def test_confirmed_certificates_do_not_override_typed_arrears_yes(self):
+        verdict = self.verdict_client()
+        self.confirm_both()
+        body = typed(landlord={"taxArrears": "yes"}, documentOwnerToken=self.owner)
+        tax = checks(verdict(body))["taxArrears"]
+        self.assertEqual(tax["result"], "danger")
+        self.assertNotEqual(tax["evidence"], "document")
+        self.assertNotEqual(tax["source"], "submitted")
+
+    def test_document_store_failure_fails_closed_without_dropping_connection(self):
+        verdict = self.verdict_client()
+        self.confirm_both()
+        body = typed(landlord={"taxArrears": "unknown"}, documentOwnerToken=self.owner)
+        for error in (sqlite3.OperationalError("locked"), OSError("disk"), requests.DocumentRequestError(503, "store")):
+            with self.subTest(error=type(error).__name__), patch.object(requests, "confirmed_tax", side_effect=error):
+                report = verdict(body)
+                self.assertNotEqual(checks(report)["taxArrears"]["evidence"], "document")
+        with patch.object(requests, "confirmed_prior", side_effect=sqlite3.OperationalError("locked")):
+            multi = typed(property={"housingType": "multi", "address": ADDRESS}, documentOwnerToken=self.owner)
+            prior = checks(verdict(multi))["priorDeposits"]
+            self.assertNotEqual(prior["evidence"], "document")
+            self.assertNotEqual(checks(verdict(multi))["taxArrears"]["evidence"], "document")
+
+    def test_verdict_route_uses_confirmed_certificates_for_any_housing_type(self):
+        verdict = self.verdict_client()
         body = typed(landlord={"taxArrears": "unknown", "taxSource": "submitted"}, documentOwnerToken=self.owner)
         tax = checks(verdict(body))["taxArrears"]
         self.assertEqual((tax["result"], tax["evidence"]), ("unknown", "none"))

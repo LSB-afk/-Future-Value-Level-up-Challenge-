@@ -134,6 +134,18 @@ class RegistryEvidenceTests(unittest.TestCase):
         self.assertTrue(info["replacedTypedValues"])  # 입력한 신탁 '없음'을 등기 '있음'으로 바꿨다
         self.assertEqual({c["id"]: c for c in evaluate(inp)["checks"]}["trust"]["result"], "danger")
 
+    def test_typed_yes_is_never_replaced_by_document_no(self):
+        rights = dict.fromkeys(evidence_store.RIGHT_KEYS, "no")
+        token = _with_registry_evidence(reading(rights=rights))["evidenceId"]
+        inp, info = evidence_store.apply_registry(validate_input(payload(trust="yes")), token)
+        self.assertEqual(inp["registry"]["trust"], "yes")
+        self.assertNotIn("trust", inp["registry"]["rightsKeys"].split(","))
+        self.assertEqual(info["rightsConflicts"], ["trust"])
+        self.assertNotIn("trust", info["rightsApplied"])
+        report = evaluate(inp)
+        self.assertEqual(report["grade"], "danger")
+        self.assertEqual({c["id"]: c for c in report["checks"]}["trust"]["result"], "danger")
+
     def test_rights_source_label_follows_mortgage_source(self):
         token = _with_registry_evidence(reading(source="hyphen", rights={"trust": "no"}))["evidenceId"]
         inp, info = evidence_store.apply_registry(validate_input(payload()), token)

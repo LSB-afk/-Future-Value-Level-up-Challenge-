@@ -117,12 +117,22 @@ class DocumentStatusTests(unittest.TestCase):
         self.assertEqual(items[PRIOR]["status"], "미확인")
         self.assertEqual(items[TAX]["status"], "미확인")
 
-    def test_tax_status_without_lane_function_is_unknown(self):
-        owner = self.owner_with_prior()
-        with patch.object(document_requests, "confirmed_tax", None, create=True):
-            _, items = status({"address": ADDRESS, "documentOwnerToken": owner})
-        self.assertEqual(items[TAX]["status"], "미확인")
-        self.assertIn("아직 연결되지 않았습니다", items[TAX]["reason"])
+    def test_rights_are_document_confirmed_only_when_stored_evidence_has_yes_no(self):
+        rights = {"trust": "yes", "seizure": "no", "auction": "unknown"}
+        token = evidence_store.issue_registry(reading(rights=rights), "a" * 64)
+        result, items = status({"address": ADDRESS, "registryEvidenceId": token})
+        rows = {r["item"]: r for r in items[REGISTRY]["rights"]}
+        self.assertEqual((rows["신탁등기"]["status"], rows["신탁등기"]["value"]), ("서류 확인", "있음"))
+        self.assertEqual((rows["압류·가압류"]["status"], rows["압류·가압류"]["value"]), ("서류 확인", "없음"))
+        self.assertEqual(rows["경매개시결정"]["status"], "미확인")
+        self.assertEqual(rows["임차권등기"]["status"], "미확인")
+        # 근거가 없으면 전부 미확인. neverChecked에서는 권리 항목이 빠지고 소유자 항목은 남는다.
+        _, none = status({"address": ADDRESS})
+        self.assertEqual({r["status"] for r in none[REGISTRY]["rights"]}, {"미확인"})
+        for text in result["neverChecked"]:
+            for word in ("신탁", "압류", "경매", "임차권"):
+                self.assertNotIn(word, text)
+        self.assertTrue(any("소유자" in text for text in result["neverChecked"]))
 
     def test_tax_status_uses_confirmed_tax_when_present(self):
         owner = self.owner_with_prior()

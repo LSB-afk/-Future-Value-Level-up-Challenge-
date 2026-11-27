@@ -618,6 +618,7 @@ _CHARGE_SUMMARY = ("address", "propertyId", "issuedAt", "mortgageMax10k", "revie
                    "reason", "documentHash", "source", "selectedAddress", "rights")
 _CHARGE_PENDING_SECONDS = 180  # 제공기관 타임아웃보다 길게 처리 중이면 결과를 알 수 없는 것으로 본다.
 _CHARGE_RETENTION = 7 * 86400
+_CHARGE_UNCERTAIN_SECONDS = 24 * 3600  # 같은 고유번호에 결과를 모르는 열람이 있으면 이 시간 동안 새 열람을 막는다.
 _KST = timezone(timedelta(hours=9))
 
 
@@ -651,7 +652,7 @@ def _replay(row, request):
         raise RegistryError("이 요청 번호는 다른 등기 조회에 이미 쓰였습니다. 주소를 다시 검색해 주세요.", 409)
     if status == "done":
         return {**json.loads(summary), "replayed": True}
-    if status == "failed":
+    if status in ("failed", "charged_failed"):
         stored = json.loads(summary)
         raise RegistryError(stored["error"], stored["status"])
     if status == "pending" and time.time() - updated < _CHARGE_PENDING_SECONDS:
@@ -675,6 +676,12 @@ def _reserve(key, request, number):
                                (key,)).fetchone()
             if row:
                 return row
+            # 요청 번호가 달라도 같은 고유번호에 처리 중이거나 결과를 모르는 열람이 있으면 이중 과금을 막기 위해 거절한다.
+            if conn.execute("SELECT 1 FROM registry_charges WHERE uniq_no=? AND status IN ('pending','unknown') "
+                            "AND updated > ?", (number, now - _CHARGE_UNCERTAIN_SECONDS)).fetchone():
+                raise RegistryError(
+                    "같은 등기에 처리 중이거나 결과를 알 수 없는 열람이 있어 과금 여부 확인이 필요합니다. "
+                    "제공기관 이용 내역을 확인한 뒤 다시 시도해 주세요.", 409)
             day = datetime.now(_KST).date().isoformat()
             used = conn.execute("SELECT COUNT(*) FROM registry_charges WHERE day=?", (day,)).fetchone()[0]
             limit = _daily_limit()
@@ -753,6 +760,7 @@ def fetch_registry(address, property_id, confirm_charge=False, idempotency_key=N
                 _settle(key, None)
             raise RegistryError("유효한 주소 검색 결과를 다시 선택해 주세요.", 409)
     _, _, number, where, kind = record
+    charged = False  # _provider가 돌아온 뒤에는 제공기관에 과금된 것으로 본다.
     try:
         data = _provider(
             "in0004000163",
@@ -769,6 +777,7 @@ def fetch_registry(address, property_id, confirm_charge=False, idempotency_key=N
                 "kindclsYn": "Y",
             },
         )
+        charged = True
         out = data.get("outList")
         if not isinstance(out, dict) or _prop_id(out.get("get고유번호")) != number:
             raise RegistryError(
@@ -788,7 +797,7 @@ def fetch_registry(address, property_id, confirm_charge=False, idempotency_key=N
         raise
     except RegistryError as exc:
         if key:
-            _settle(key, "failed", {"error": str(exc), "status": exc.http_status})
+            _settle(key, "charged_failed" if charged else "failed", {"error": str(exc), "status": exc.http_status})
         raise
     except BaseException:
         if key:

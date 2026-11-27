@@ -95,8 +95,14 @@ def apply_registry(payload, token):
     registry.update(mortgageMax10k=values["mortgageMax10k"], issuedAt=values["issuedAt"],
                     mortgageSource=label, dateSource=label)
     rights = values.get("rights") or {}  # 권리 판독 전에 발급한 근거에는 없다
-    applied = [k for k in RIGHT_KEYS if rights.get(k) in ("yes", "no")]
-    for key in applied:
+    applied, conflicts = [], []
+    for key in RIGHT_KEYS:
+        if rights.get(key) not in ("yes", "no"):
+            continue
+        if registry.get(key) == "yes" and rights[key] == "no":
+            conflicts.append(key)  # 입력한 '있음'은 서류의 '없음'으로 지우지 않는다(위험 쪽 우선)
+            continue
+        applied.append(key)
         replaced = replaced or registry.get(key) not in (None, "", rights[key])
         registry[key] = rights[key]
     if applied:
@@ -105,7 +111,7 @@ def apply_registry(payload, token):
     return {**payload, "registry": registry}, {
         "status": "applied", "source": values["source"], "issuedAt": values["issuedAt"],
         "mortgageMax10k": values["mortgageMax10k"], "replacedTypedValues": replaced,
-        "rightsApplied": applied}
+        "rightsApplied": applied, "rightsConflicts": conflicts}
 
 
 def _as_float(value):

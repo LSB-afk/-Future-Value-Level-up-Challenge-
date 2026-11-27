@@ -100,6 +100,19 @@ class Evidence(unittest.TestCase):
                 self.assertIsNone(doc["amount10k"])
                 self.assertTrue(any("핏홈" in issue and "30일" in issue for issue in doc["issues"]))
 
+    def test_tax_certificate_freshness_without_expiry(self):
+        def tax(issued, *extra):
+            return requests._analyze("nationalTax", ADDRESS, [["국세 납세증명서", "주소: 납세자주소", "발급일: " + issued, *extra]])
+        old = (requests._today() - timedelta(days=40)).isoformat()
+        doc = tax(old)
+        self.assertEqual(doc["status"], "needs_review")
+        self.assertTrue(any("납세증명서" in issue and "30일" in issue for issue in doc["issues"]))
+        recent = (requests._today() - timedelta(days=30)).isoformat()
+        self.assertEqual(tax(recent)["status"], "ready")
+        # 문서의 미래 유효기한이 있으면 그 기한이 우선한다.
+        future = (requests._today() + timedelta(days=60)).isoformat()
+        self.assertEqual(tax(old, "유효기간: " + future)["status"], "ready")
+
     def test_two_line_fields_and_another_unit(self):
         doc = self.analyze(["선순위 임차보증금 확인서", "주택 소재지", ADDRESS, "발급일", DAY,
                             "선순위 보증금 합계", "10,000원"])

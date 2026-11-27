@@ -93,7 +93,10 @@ def _save(key, entry):
 
 def _lookup(payload):
     key = _token_key(payload)
-    entry = _challenges.get(key) or _stored(key)
+    with _guard:
+        entry = _challenges.get(key)
+    if entry is None:
+        entry = _stored(key)  # SQLite 읽기는 프로세스 전체 잠금 밖에서 한다.
     if entry is None or entry.scope != _scope(payload) or entry.expires <= time.time():
         raise IdentityVerificationError(404, "이 매물의 인증 시간이 지났어요. 다시 시작해 주세요.")
     return entry
@@ -110,8 +113,7 @@ def identity_status(payload):
         return {"available": False, "status": "unavailable", "reason": "본인인증 기관이 아직 연결되지 않았어요."}
     if not payload.get("challengeToken"):
         return {"available": True, "status": "unverified"}
-    with _guard:
-        return _public(_lookup(payload))
+    return _public(_lookup(payload))
 
 
 def start_verification(payload):
@@ -164,15 +166,15 @@ def confirm_verification(payload):
     store, channel, secret = _config()
     if not (store and channel and secret):
         raise IdentityVerificationError(503, "본인인증 기관이 아직 연결되지 않았어요.")
+    entry = _lookup(payload)
     with _guard:
-        entry = _lookup(payload)
         if entry.verified_at or entry.checking:
             return _public(entry)
         entry.checking = True
     try:
         result = _provider_lookup(entry.verification_id, store, secret)
+        _lookup(payload)  # Recheck expiry after the remote call.
         with _guard:
-            _lookup(payload)  # Recheck expiry after the remote call.
             if result.get("status") == "READY":
                 return _public(entry)
             if result.get("status") == "FAILED":
@@ -204,8 +206,7 @@ def require_verified(payload):
     if not all(_config()):
         return
     try:
-        with _guard:
-            entry = _lookup(payload)
+        entry = _lookup(payload)
     except IdentityVerificationError as exc:
         if exc.status == 503:
             raise

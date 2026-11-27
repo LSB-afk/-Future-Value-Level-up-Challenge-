@@ -154,6 +154,33 @@ class RegistryBillingTest(unittest.TestCase):
             self.fetch(selection, key=KEY)  # 앞선 거절은 하루 상한을 쓰지 않았다.
         self.assertEqual(self.calls, [ID])
 
+    def test_other_key_on_same_uniq_no_is_refused_while_pending_or_unknown(self):
+        selection = self.select()
+        self.fail_with = registry.RegistryUncertain("응답 없음", 502)
+        self.assert_status(502, lambda: self.fetch(selection))  # 'unknown'으로 남는다.
+        self.fail_with = None
+        self.assertIn("과금 여부 확인", self.assert_status(409, lambda: self.fetch(self.select(), key=KEY + "2")))
+        self.assertEqual(self.calls, [ID])
+        # 24시간이 지나면 다시 열람할 수 있다.
+        later = registry.time.time() + registry._CHARGE_UNCERTAIN_SECONDS + 1
+        with patch.object(registry.time, "time", return_value=later):
+            self.fetch(self.select(), key=KEY + "3")
+        self.assertEqual(self.calls, [ID, ID])
+
+    def test_error_after_provider_returns_is_charged_failed(self):
+        selection = self.select()
+        with patch.object(registry, "_parse_pdf", side_effect=registry.RegistryError("PDF 판독 실패", 502)):
+            first = self.assert_status(502, lambda: self.fetch(selection))
+        statuses = [row[0] for row in registry._charge_db().execute("SELECT status FROM registry_charges")]
+        self.assertEqual(statuses, ["charged_failed"])
+        self.assertEqual(self.assert_status(502, lambda: self.fetch(selection)), first)  # 재생, 제공기관 재호출 없음
+        self.assertEqual(self.calls, [ID])
+        # 제공기관 호출 자체가 실패하면 과금되지 않았으므로 'failed'다.
+        self.fail_with = registry.RegistryError("제공기관 오류", 502)
+        self.assert_status(502, lambda: self.fetch(self.select(), key=KEY + "f"))
+        statuses = [row[0] for row in registry._charge_db().execute("SELECT status FROM registry_charges ORDER BY created")]
+        self.assertEqual(statuses, ["charged_failed", "failed"])
+
 
 if __name__ == "__main__":
     unittest.main()

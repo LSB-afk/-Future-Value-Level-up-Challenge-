@@ -12,6 +12,7 @@ import json
 import math
 import mimetypes
 import re
+import sqlite3
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1343,12 +1344,19 @@ class Handler(BaseHTTPRequestHandler):
                     payload = verify_trade_price(validate_jeonse_input(payload))
                     confirmed_prior = evidence = None
                     if owner_token:
-                        from document_requests import confirmed_prior as document_prior, confirmed_tax
+                        from document_requests import DocumentRequestError, confirmed_prior as document_prior, confirmed_tax
                         address = (payload.get("property") or {}).get("address", "")
-                        confirmed_prior = document_prior(owner_token, address)
+                        try:
+                            confirmed_prior = document_prior(owner_token, address)
+                            tax_confirmed = confirmed_tax(owner_token, address)
+                        except (sqlite3.Error, DocumentRequestError, OSError):
+                            # 서류 저장소를 읽지 못하면 선순위·납세 서류 근거 없이 입력값으로만 판정한다(fail closed).
+                            confirmed_prior, tax_confirmed = None, False
                         # 국세·지방세 납세증명서를 모두 원문 확인했으면 체납 없음을 서류 근거로 판정한다(주택 유형 무관).
-                        if confirmed_tax(owner_token, address):
-                            payload["landlord"] = {**(payload.get("landlord") or {}), "taxArrears": "no", "taxSource": "submitted"}
+                        # 입력한 체납 '있음'은 서류가 덮지 않는다(위험 쪽 우선).
+                        landlord = payload.get("landlord") or {}
+                        if tax_confirmed and landlord.get("taxArrears") != "yes":
+                            payload["landlord"] = {**landlord, "taxArrears": "no", "taxSource": "submitted"}
                     if registry_evidence:
                         from evidence_store import apply_registry
                         payload, evidence = apply_registry(payload, registry_evidence)

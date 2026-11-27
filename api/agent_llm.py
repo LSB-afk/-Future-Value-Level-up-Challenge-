@@ -748,30 +748,41 @@ def _doc_item(item: str, status: str, reason: str = "", basis_date: str | None =
     return row
 
 
+RIGHT_LABELS = {"trust": "신탁등기", "seizure": "압류·가압류", "auction": "경매개시결정", "leaseRegistration": "임차권등기"}
+RIGHT_VALUES = {"yes": "있음", "no": "없음"}
+
+
+def _rights_rows(values: dict | None = None) -> list[dict]:
+    """갑구 권리 항목별 상태. 서버가 보관한 등기 근거에 yes/no 판독이 있는 항목만 서류 확인이다."""
+    stored = (values or {}).get("rights") or {}
+    return [_doc_item(label, DOC_CONFIRMED, value=RIGHT_VALUES[stored[key]]) if stored.get(key) in RIGHT_VALUES
+            else _doc_item(label, DOC_UNKNOWN) for key, label in RIGHT_LABELS.items()]
+
+
 def _registry_status(state: dict) -> dict:
     from jeonse_verdict import REGISTRY_FRESH_DAYS, money
 
     item = "등기부 을구 근저당(채권최고액)"
     token = state.get("registryEvidenceId")
     if not token:
-        return _doc_item(item, DOC_UNKNOWN, "이 리포트에서 대조한 등기부가 없습니다.")
+        return _doc_item(item, DOC_UNKNOWN, "이 리포트에서 대조한 등기부가 없습니다.", rights=_rights_rows())
     try:
         from evidence_store import resolve_registry
 
         values, reason = resolve_registry(token, state["address"])
     except (sqlite3.Error, OSError, ValueError):
-        return _doc_item(item, DOC_UNKNOWN, "등기 근거를 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.")
+        return _doc_item(item, DOC_UNKNOWN, "등기 근거를 확인하지 못했습니다. 잠시 뒤 다시 시도해 주세요.", rights=_rights_rows())
     if values is None:
-        return _doc_item(item, DOC_UNKNOWN, reason)
+        return _doc_item(item, DOC_UNKNOWN, reason, rights=_rights_rows())
     issued = values.get("issuedAt") or ""
     source = "제공기관 등기 열람본" if values.get("source") == "hyphen" else "올린 등기부 PDF (형식 대조, 진위 미확인)"
     age = (date.today() - date.fromisoformat(issued)).days if _iso_date(issued) else None
     if age is None or age > REGISTRY_FRESH_DAYS:
         # jeonse_verdict와 같은 기준: 30일 넘은 열람본의 근저당은 쓰지 않는다.
         return _doc_item(item, DOC_UNKNOWN, f"열람일이 최근 {REGISTRY_FRESH_DAYS}일 이내가 아니라 다시 열람해야 합니다.",
-                         issued or None, source=source)
+                         issued or None, source=source, rights=_rights_rows(values))
     return _doc_item(item, DOC_CONFIRMED, basis_date=issued, basisLabel="등기부 열람일", source=source,
-                     amount10k=values["mortgageMax10k"], amountLabel=money(values["mortgageMax10k"]))
+                     rights=_rights_rows(values), amount10k=values["mortgageMax10k"], amountLabel=money(values["mortgageMax10k"]))
 
 
 def _prior_status(state: dict) -> dict:
@@ -804,11 +815,7 @@ def _tax_status(state: dict) -> dict:
     try:
         import document_requests
 
-        # 납세증명서 확인은 별도 작업으로 붙는다. 아직 없으면 '미확인'으로 둔다.
-        confirmed_tax = getattr(document_requests, "confirmed_tax", None)
-        if not callable(confirmed_tax):
-            return _doc_item(item, DOC_UNKNOWN, "납세증명서 확인 기능이 아직 연결되지 않았습니다.")
-        confirmed = confirmed_tax(token, state["address"]) is True
+        confirmed = document_requests.confirmed_tax(token, state["address"]) is True
     except (sqlite3.Error, OSError, ValueError):
         return _doc_item(item, DOC_UNKNOWN, "서류 확인 상태를 불러오지 못했습니다.")
     if not confirmed:
@@ -828,7 +835,7 @@ def tool_document_status(report_state: dict | None = None) -> str:
         "reportOpen": bool(state.get("address")),
         "housingType": state.get("housingType") or "unknown",
         "items": items,
-        "neverChecked": ["갑구 소유자·신탁·압류·경매·임차권등기", "등기부 소유자와 계약 상대 일치", "보증보험 가입 가능 여부"],
+        "neverChecked": ["갑구 소유자·소유권 이전일", "등기부 소유자와 계약 상대 일치", "보증보험 가입 가능 여부"],
         "rule": "status가 '서류 확인'인 항목만 서류 기준으로 말하고 기준일을 밝히세요. '미확인'과 neverChecked 항목은 모른다고 말하세요.",
     }, ensure_ascii=False)
 

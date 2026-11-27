@@ -155,11 +155,9 @@ def validate_input(inp, today: date | None = None) -> dict:
     downgraded = []
     source = price.get("source")
     if source is not None and source not in CLIENT_PRICE_SOURCES:
-        if source == "inspected" and inp.get("isDemo") is True:
-            pass
-        else:
-            inp = {**inp, "price": {**price, "source": "input"}}
-            downgraded.append(f"{source}→input")
+        # 'inspected'는 isDemo로도 인정하지 않는다: isDemo는 화면이 정하는 값이라 서버 근거가 될 수 없다.
+        inp = {**inp, "price": {**price, "source": "input"}}
+        downgraded.append(f"{source}→input")
     for section, field in SERVER_ONLY_FIELDS:
         holder = inp.get(section) or {}
         if field in holder:
@@ -495,6 +493,8 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
     # The PDF reader can identify an explicit violation; absence of that mark cannot confirm a clean building.
     if violation_source == "reviewedPdf" and violation != "yes":
         violation = "unknown"
+    # 의도된 동작: 위반 '없음'은 서버가 건축물대장에서 읽은 근거가 아직 없어 서류 확인이 될 수 없다. 서버가 보관한
+    # 건축물대장 근거 경로가 생기기 전까지 빌라·다가구는 위반건축물이 핵심 공백으로 남아 '안심'에 이르지 못한다.
     checks.append(_check("building", "violation", "위반건축물", "건축물대장에 위반건축물 표시가 없을 것",
                          {"yes": "위반건축물", "no": "해당 없음", "unknown": "미확인"}[violation],
                          {"yes": "caution", "no": "pass", "unknown": "unknown"}[violation],
@@ -515,14 +515,14 @@ def _weakest(*levels: str) -> str:
 
 
 def price_evidence(price: dict, ltv: dict) -> str:
-    """집값 근거 수준. 서버가 확인한 실거래·공시가격 API 값(과 시연용 점검값)만 서류 확인이다."""
+    """집값 근거 수준. 서버가 확인한 실거래·공시가격 API 값만 서류 확인이다."""
     source = ltv["priceSource"]
     if source in {"none", "estimate"}:
         return "none"
     if (price.get("basis") or "market") == "official":
         # 공시가격 출처는 verify_trade_price가 서버 단지 데이터와 맞을 때만 'public'으로 남긴다.
         return "document" if price.get("officialSource") == "public" else "input"
-    return "document" if source in {"trade", "inspected"} else "input"
+    return "document" if source == "trade" else "input"
 
 
 def assign_evidence(inp: dict, ltv: dict, checks: list[dict]) -> None:
@@ -848,7 +848,7 @@ if __name__ == "__main__":
     assert not rejects(clean)
     spoofed = validate_input({**clean, "price": {**clean["price"], "source": "inspected"}}, today)
     assert spoofed["price"]["source"] == "input" and evaluate(spoofed, today)["ltv"]["priceSource"] == "input"
-    assert validate_input({**clean, "isDemo": True, "price": {**clean["price"], "source": "inspected"}}, today)["price"]["source"] == "inspected"
+    assert validate_input({**clean, "isDemo": True, "price": {**clean["price"], "source": "inspected"}}, today)["price"]["source"] == "input"
 
     over = {**clean, "deposit10k": 72000}  # (1.2억 + 7.2억) / 9억 = 93.3%
     assert evaluate(over, today)["grade"] == "danger"
