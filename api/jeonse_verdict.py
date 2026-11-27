@@ -4,6 +4,10 @@
 K Car 진단 대시보드처럼 항목마다 "기준 · 이 집 값 · 결과 · 출처"를 남겨서,
 등급이 어떤 근거로 나왔는지 화면에서 그대로 보여줄 수 있게 한다.
 
+등급은 4단계다: 위험(위험 항목 1개 이상) > 주의(주의 항목 1개 이상) > 확인 필요(핵심 항목 중 미확인이거나
+직접 입력만 있는 항목 1개 이상) > 안심. 각 항목에는 핵심 여부(core)와 근거 수준(evidence: 서류 확인·원문 대조 입력·
+직접 입력·미확인)을 단다. 서버가 확인한 값만 '서류 확인'이다.
+
 다가구의 선순위 보증금은 제출 서류에서 확인한 합계만 사용한다. 미확인이면 금액 판정을 보류한다.
 기준선 근거:
 - 70%: 주의 시작 (FitHome 자체 기준, 공식 기준 아님)
@@ -52,6 +56,13 @@ SOURCE_LABELS = {
     "none": "미확인",
 }
 AREA_LABELS = {"rights": "권리관계", "ratio": "가격·비율", "landlord": "임대인", "building": "건물", "reports": "제보"}
+# 근거 수준: 서버가 확인한 값만 '서류 확인'이다. 핵심 항목이 모두 통과하고 이 두 수준일 때만 '안심'을 준다.
+EVIDENCE_LABELS = {"document": "서류 확인", "reviewed": "원문 대조 입력", "input": "직접 입력", "none": "미확인"}
+EVIDENCE_RANK = {"none": 0, "input": 1, "reviewed": 2, "document": 3}
+SERVER_REGISTRY_SOURCES = {"registry", "registryUpload"}  # evidence_store.apply_registry가 붙이는 출처
+CORE_CHECKS = {"trust", "seizure", "auction", "leaseRegistration", "ownerMatches", "recentOwnership", "registryFresh",
+               "mortgage", "ltv", "priceBasis", "taxArrears"}
+GRADE_LABELS = {"safe": "안심", "check": "확인 필요", "caution": "주의", "danger": "위험"}
 REQUEST_STATUS_LABELS = {
     "none": "요청 전",
     "requested": "요청함",
@@ -77,7 +88,8 @@ CLIENT_SECTION_SOURCES = {
     "landlord": ("source", {"input", "none"}),
     "building": ("source", {"input", "public", "none"}),
 }
-SERVER_ONLY_FIELDS = (("registry", "mortgageSource"), ("registry", "dateSource"))
+SERVER_ONLY_FIELDS = (("registry", "mortgageSource"), ("registry", "dateSource"), ("registry", "rightsSource"),
+                      ("landlord", "taxSource"))
 # 공시가격·전세 시세 출처. 'public'·'trade'는 서버(movevalue_api.verify_trade_price)가 단지 데이터와 맞을 때만 남긴다.
 CLIENT_FIELD_SOURCES = (
     ("price", "officialSource", {"public", "estimate", "input", "none"}),
@@ -328,12 +340,13 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         result = {"yes": present_result, "no": "pass", "unknown": "unknown"}[state]
         checks.append(_check(area, key, label, standard, value, result, src if state != "unknown" else "none", note))
 
-    # 권리관계 (등기부 갑구·을구)
-    tri_check("rights", "trust", "신탁등기", "갑구에 신탁등기가 없을 것", "danger", reg_source,
+    # 권리관계 (등기부 갑구·을구). 갑구 값은 서버가 등기부에서 읽었을 때만 출처가 등기부다(rightsSource).
+    rights_source = registry.get("rightsSource") or reg_source
+    tri_check("rights", "trust", "신탁등기", "갑구에 신탁등기가 없을 것", "danger", rights_source,
               "신탁된 집은 소유권이 신탁회사에 있어 임대인과의 계약이 무효가 될 수 있습니다.")
-    tri_check("rights", "seizure", "압류·가압류", "갑구에 압류·가압류가 없을 것", "danger", reg_source)
-    tri_check("rights", "auction", "경매개시결정", "경매개시결정 기록이 없을 것", "danger", reg_source)
-    tri_check("rights", "leaseRegistration", "임차권등기", "을구에 임차권등기가 없을 것", "danger", reg_source,
+    tri_check("rights", "seizure", "압류·가압류", "갑구에 압류·가압류가 없을 것", "danger", rights_source)
+    tri_check("rights", "auction", "경매개시결정", "경매개시결정 기록이 없을 것", "danger", rights_source)
+    tri_check("rights", "leaseRegistration", "임차권등기", "을구에 임차권등기가 없을 것", "danger", rights_source,
               "앞선 세입자가 보증금을 돌려받지 못했다는 흔적입니다.")
 
     owner = _tri(registry.get("ownerMatches"))
@@ -341,7 +354,7 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         "rights", "ownerMatches", "소유자와 계약 상대", "등기부 소유자와 계약하는 임대인이 같을 것",
         {"yes": "일치", "no": "불일치", "unknown": "미확인"}[owner],
         {"yes": "pass", "no": "danger", "unknown": "unknown"}[owner],
-        reg_source if owner != "unknown" else "none",
+        rights_source if owner != "unknown" else "none",
         "대리인과 계약하면 위임장·인감증명서를 확인해야 합니다." if owner != "yes" else "",
     ))
 
@@ -356,7 +369,7 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         checks.append(_check(
             "rights", "recentOwnership", "최근 소유권 이전",
             f"계약 전 {RECENT_OWNERSHIP_DAYS}일 안에 소유자가 바뀌지 않았을 것",
-            f"{changed.isoformat()} ({days}일 전)", "caution" if recent else "pass", reg_source,
+            f"{changed.isoformat()} ({days}일 전)", "caution" if recent else "pass", rights_source,
             "새 집주인이 곧바로 전세를 놓는 것은 '바지 임대인' 수법과 겹칩니다." if recent else "",
         ))
 
@@ -402,9 +415,10 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          (registry.get("mortgageSource") or reg_source) if mortgage is not None else "none",
                          ltv["mortgageHoldReason"]))
     price_source = ltv["priceSource"]
+    # 추정 집값은 위험 신호가 아니라 아직 확인하지 않은 값이다(주의 대신 확인 필요).
     checks.append(_check("ratio", "priceBasis", "집값 근거", "집값이 확인된 값일 것(추정 아님)",
                          ltv["priceLabel"],
-                         "unknown" if price_source == "none" else "caution" if price_source == "estimate" else "pass",
+                         "unknown" if price_source in {"none", "estimate"} else "pass",
                          price_source))
     if housing not in {"apartment", "officetel"}:
         # 공시가격 환산 방식을 적용할 때는 선순위채권과 보증금을 함께 본다.
@@ -444,7 +458,7 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
     checks.append(_check("landlord", "taxArrears", "임대인 세금 체납", "국세·지방세 체납이 없을 것",
                          {"yes": "체납 있음", "no": "체납 없음", "unknown": "미확인"}[tax],
                          {"yes": "danger", "no": "pass", "unknown": "unknown"}[tax],
-                         land_source if tax != "unknown" else "none",
+                         (landlord.get("taxSource") or land_source) if tax != "unknown" else "none",
                          "법정기일이 내 확정일자보다 빠른 세금은 보증금보다 먼저 배당될 수 있습니다. 그 집에 붙는 당해세라도, 내가 대항요건을 갖추고 확정일자를 그 세금의 법정기일보다 먼저 받았다면 2023년 개정 특례로 그 세금에 배분될 금액 한도에서 보증금이 먼저 배분됩니다(선순위 저당권 몫은 그대로)."))
     guarantee = _tri(landlord.get("guaranteeEligible"))
     if (pending_reason or deposit is None) and guarantee == "yes":
@@ -483,7 +497,73 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
                          f"{reports}건" if reports else "없음", "caution" if reports else "pass",
                          "report" if reports else "input",
                          "핏홈이 확인하기 전까지는 사실 여부가 정해지지 않은 제보입니다." if reports else ""))
+    assign_evidence(inp, ltv, checks)
     return checks
+
+
+def _weakest(*levels: str) -> str:
+    return min(levels, key=EVIDENCE_RANK.__getitem__)
+
+
+def price_evidence(price: dict, ltv: dict) -> str:
+    """집값 근거 수준. 서버가 확인한 실거래·공시가격 API 값(과 시연용 점검값)만 서류 확인이다."""
+    source = ltv["priceSource"]
+    if source in {"none", "estimate"}:
+        return "none"
+    if (price.get("basis") or "market") == "official":
+        # 공시가격 출처는 verify_trade_price가 서버 단지 데이터와 맞을 때만 'public'으로 남긴다.
+        return "document" if price.get("officialSource") == "public" else "input"
+    return "document" if source in {"trade", "inspected"} else "input"
+
+
+def assign_evidence(inp: dict, ltv: dict, checks: list[dict]) -> None:
+    """각 항목에 핵심 여부(core)와 근거 수준(evidence)을 단다."""
+    housing = (inp.get("property") or {}).get("housingType") or "villa"
+    registry = inp.get("registry") or {}
+    landlord = inp.get("landlord") or {}
+    building = inp.get("building") or {}
+    price = inp.get("price") or {}
+    market = inp.get("market") or {}
+    by_id = {c["id"]: c for c in checks}
+    mortgage_doc = registry.get("mortgageSource") in SERVER_REGISTRY_SOURCES
+    # 갑구는 서버가 등기부에서 읽었으면 서류 확인, 같은 등기부 원문을 반영한 상태에서 사용자가 체크했으면 원문 대조 입력.
+    rights = ("document" if registry.get("rightsSource") in SERVER_REGISTRY_SOURCES
+              else "reviewed" if mortgage_doc else "input")
+    mortgage = "none" if ltv["mortgage10k"] is None else "document" if mortgage_doc else "input"
+    price_level = price_evidence(price, ltv)
+    prior = "none" if ltv["prior10k"] is None else "document" if housing == "multi" else "input"
+    official = price.get("officialSource")
+    official_level = "document" if official == "public" else "none" if official in {"estimate", "none"} else "input"
+    gap_source = market.get("source")
+    levels = {
+        **{key: rights for key in ("trust", "seizure", "auction", "leaseRegistration", "ownerMatches", "recentOwnership")},
+        "registryFresh": "document" if registry.get("dateSource") in SERVER_REGISTRY_SOURCES else "input",
+        "mortgage": mortgage,
+        "ltv": _weakest(mortgage, price_level, *((prior,) if housing == "multi" else ())),
+        "priceBasis": price_level,
+        "hug126": _weakest(official_level, mortgage, *((prior,) if housing == "multi" else ())),
+        "marketGap": "document" if gap_source == "trade" else "none" if gap_source in {None, "estimate", "none"} else "input",
+        "priorDeposits": prior if (housing == "multi" or landlord.get("priorDeposits10k") not in (None, "")) else "none",
+        "taxArrears": "document" if landlord.get("taxSource") == "submitted" and landlord.get("taxArrears") == "no" else "input",
+        "guaranteeEligible": "input",
+        "requestRefusals": "input",
+        "use": "document" if building.get("source") == "public" else "input",  # verify_trade_price가 건축물대장 값으로 바꾼 용도
+        "violation": "reviewed" if building.get("violationSource") == "reviewedPdf" else "input",
+        "feedback": "input",
+    }
+    core = set(CORE_CHECKS)
+    if housing == "multi":
+        core.add("priorDeposits")
+    if housing not in {"apartment", "officetel"}:
+        core.update({"hug126", "use", "violation"})
+    for check_id, check in by_id.items():
+        level = "none" if check["result"] == "unknown" else levels.get(check_id, "input")
+        check.update(core=check_id in core, evidence=level, evidenceLabel=EVIDENCE_LABELS[level])
+
+
+def core_gaps(checks: list[dict]) -> list[dict]:
+    """안심을 막는 핵심 항목: 아직 모르거나, 직접 입력만 있는 항목."""
+    return [c for c in checks if c["core"] and (c["result"] == "unknown" or c["evidence"] not in {"document", "reviewed"})]
 
 
 REQUEST_TITLES = {
@@ -613,25 +693,37 @@ def evaluate(inp: dict, today: date | None = None, *, confirmed_prior_deposits10
     checks = build_checks(inp, ltv, today)
     by_id = {c["id"]: c for c in checks}
     counts = {k: sum(1 for c in checks if c["result"] == k) for k in ("pass", "caution", "danger", "unknown")}
+    gaps = core_gaps(checks)
+    # 위험 > 주의 > 확인 필요(핵심 항목 미확인·근거 부족) > 안심. 미확인은 주의로 합치지 않는다.
     if counts["danger"]:
         grade = "danger"
-    elif counts["caution"] or counts["unknown"]:
+    elif counts["caution"]:
         grade = "caution"
+    elif gaps:
+        grade = "check"
     else:
         grade = "safe"
     order = {"danger": 0, "caution": 1, "unknown": 2, "pass": 3}
-    reasons = [c for c in sorted(checks, key=lambda c: order[c["result"]]) if c["result"] != "pass"][:3]
+    reasons = [c for c in sorted(checks, key=lambda c: (order[c["result"]], not c["core"])) if c["result"] != "pass"][:3]
+    if grade == "check":
+        reasons = gaps[:3]
+    unconfirmed = sum(1 for c in gaps if c["evidence"] == "none")
 
     headline = {
-        "safe": "확인한 범위에서 핵심 위험 신호가 없습니다",
-        "caution": f"계약 전에 확인할 항목이 {counts['caution'] + counts['unknown']}개 남았습니다",
+        "safe": "핵심 항목을 서류로 확인한 범위에서 위험 신호가 없습니다",
+        "check": f"핵심 항목 {len(gaps)}개를 서류로 확인해야 판단할 수 있습니다",
+        "caution": f"계약 전에 짚어야 할 주의 항목이 {counts['caution']}개 있습니다",
         "danger": f"이 상태로는 계약하지 마세요 — {reasons[0]['label'] if reasons else ''}",
     }[grade]
 
     tags = []
+    if unconfirmed:
+        tags.append(f"핵심 미확인 {unconfirmed}개")
+    if len(gaps) > unconfirmed:
+        tags.append(f"핵심 직접 입력 {len(gaps) - unconfirmed}개")
     if ltv["priorDepositPending"]:
         tags.append(PRIOR_PENDING_LABEL)
-        if grade == "caution" and (inp.get("property") or {}).get("housingType") == "multi":
+        if grade == "check" and (inp.get("property") or {}).get("housingType") == "multi":
             headline = "선순위 보증금 미확인 · 집주인이 제출한 서류에서 합계를 확인해야 합니다."
     if ltv["mortgagePending"]:
         tags.append(MORTGAGE_PENDING_LABEL)
@@ -657,10 +749,12 @@ def evaluate(inp: dict, today: date | None = None, *, confirmed_prior_deposits10
         "property": {**prop, "housingLabel": HOUSING_LABELS.get(prop.get("housingType"), "주택")},
         "asOf": today.isoformat(),
         "grade": grade,
-        "gradeLabel": {"safe": "안심", "caution": "주의", "danger": "위험"}[grade],
+        "gradeLabel": GRADE_LABELS[grade],
         "headline": headline,
         "tags": tags,
         "reasons": reasons,
+        "coreGaps": [{"id": c["id"], "label": c["label"], "value": c["value"], "evidence": c["evidence"],
+                      "evidenceLabel": c["evidenceLabel"]} for c in gaps],
         "ltv": ltv,
         "checks": checks,
         "counts": counts,
@@ -682,19 +776,28 @@ def evaluate(inp: dict, today: date | None = None, *, confirmed_prior_deposits10
 
 if __name__ == "__main__":
     today = date(2026, 10, 30)
-    clean = {
+    # 시연 예시: 사용자가 직접 입력한 값만 있는 아파트. 위험 신호는 없지만 핵심 근거가 없어 '확인 필요'다.
+    typed = {
         "property": {"housingType": "apartment", "address": "서울 예시구"},
         "deposit10k": 42000,
         "price": {"basis": "market", "value10k": 90000, "official10k": 63000, "source": "input"},
-        "registry": {"source": "registry", "issuedAt": "2026-10-28", "mortgageMax10k": 12000, "trust": "no",
+        "registry": {"source": "input", "issuedAt": "2026-10-28", "mortgageMax10k": 12000, "trust": "no",
                      "seizure": "no", "auction": "no", "leaseRegistration": "no", "ownerMatches": "yes",
                      "lastOwnershipChange": "2019-05-02"},
         "landlord": {"taxArrears": "no", "guaranteeEligible": "yes"},
         "building": {"use": "residential", "violation": "no"},
         "market": {"jeonse10k": 41000, "source": "trade"},
     }
+    r = evaluate(typed, today)
+    assert r["grade"] == "check" and r["gradeLabel"] == "확인 필요", r["reasons"]
+    assert {c["id"] for c in r["reasons"]} <= {c["id"] for c in r["checks"] if c["core"]}
+    # 같은 집을 서버가 확인한 값(실거래 집값, 등기부 근거, 확인한 납세증명서)으로 채우면 '안심'이다.
+    clean = {**typed, "price": {**typed["price"], "source": "trade"},
+             "registry": {**typed["registry"], "mortgageSource": "registry", "dateSource": "registry",
+                          "rightsSource": "registry"},
+             "landlord": {**typed["landlord"], "taxSource": "submitted"}}
     r = evaluate(clean, today)
-    assert r["grade"] == "safe", r["reasons"]
+    assert r["grade"] == "safe" and not r["coreGaps"], r["coreGaps"]
     assert r["ltv"]["ratioPct"] == 60.0 and not r["ltv"]["isLowerBound"]
     assert r["ltv"]["stressRatioPct"] == 66.7  # 5.4억 / (9억 × 0.9)
     assert r["ltv"]["headroom10k"]["80"] == 18000  # 9억 × 80% − 5.4억
@@ -704,7 +807,7 @@ if __name__ == "__main__":
 
     unknown = {**clean, "registry": {**clean["registry"], "mortgageMax10k": None}}
     r = evaluate(unknown, today)
-    assert r["grade"] == "caution" and r["ltv"]["isLowerBound"]
+    assert r["grade"] == "check" and r["ltv"]["isLowerBound"]
 
     # 입력 검증: 잘못된 값은 ValueError(→ 400), 믿을 수 없는 출처는 낮춘다.
     def rejects(payload) -> bool:
@@ -756,6 +859,6 @@ if __name__ == "__main__":
 
     multi = {**clean, "property": {"housingType": "multi"}}
     r = evaluate(multi, today)
-    assert r["grade"] == "caution" and r["ltv"]["isLowerBound"]
+    assert r["grade"] == "check" and r["ltv"]["isLowerBound"]
     assert any(q["id"] == "fixedDate" for q in r["requests"])
     print("jeonse_verdict self-check OK")

@@ -11,7 +11,12 @@
     danger: ["위험", "r-danger", "✕"],
     unknown: ["미확인", "r-unknown", "?"],
   };
-  const GRADE_COPY = { safe: "확인한 항목에서 위험 신호가 없어요", caution: "계약 전에 더 확인해야 해요", danger: "계약을 멈추고 확인하세요" };
+  const GRADE_COPY = {
+    safe: "핵심 항목을 서류로 확인했고 위험 신호가 없어요",
+    check: "핵심 자료를 확인해야 판단할 수 있어요",
+    caution: "계약 전에 주의 신호를 짚어 봐야 해요",
+    danger: "계약을 멈추고 확인하세요",
+  };
   const AREA_ORDER = ["rights", "ratio", "landlord", "building", "reports"];
   const AREA_LABELS = { rights: "권리관계", ratio: "가격·비율", landlord: "임대인", building: "건물", reports: "제보" };
   const KIND_FILTER = { ownership: ["ownership"], mortgage: ["mortgage", "mortgageRelease"], caution: ["trust", "seizure", "auction", "leaseRegistration", "report"] };
@@ -59,6 +64,9 @@
     return `<span class="r-chip ${cls}"><b aria-hidden="true">${mark}</b>${label}</span>`;
   };
   const srcChip = (source, label) => `<span class="src-chip src-${esc(source)}">${esc(label)}</span>`;
+  // 근거 수준: 서버가 확인한 값만 '서류 확인'이다(api/jeonse_verdict.py assign_evidence).
+  // 출처 칩이 이미 '미확인'이거나 보조 항목이면 '미확인' 근거 칩을 겹쳐 보이지 않는다.
+  const evChip = (c) => (c.evidence && !(c.evidence === "none" && (c.source === "none" || !c.core)) ? `<span class="ev-chip ev-${esc(c.evidence)}" title="근거 수준${c.core ? " · 핵심 항목" : ""}">${esc(c.evidenceLabel)}</span>` : "");
 
   async function api(path, options = {}) {
     const response = await fetch(path, { headers: { "Content-Type": "application/json" }, ...options });
@@ -213,7 +221,8 @@
     if (e.housingType) next.property.housingType = e.housingType;
     if (next.property.housingType !== "multi" && num(e.priorDeposits10k) !== null) next.landlord.priorDeposits10k = num(e.priorDeposits10k);
     const documentRequest = store.get(key + ".documentRequest", null);
-    if (next.property.housingType === "multi" && documentRequest?.address === next.property.address) {
+    // 같은 주소의 서류 요청이 있으면 유형과 상관없이 보낸다(다가구 선순위, 납세증명서 확인).
+    if (documentRequest?.address === next.property.address) {
       next.documentOwnerToken = documentRequest.ownerToken;
     }
     if (e.listingSource || e.listingUrl) next.listing = { source: e.listingSource || "", url: e.listingUrl || "" };
@@ -370,6 +379,7 @@
             <h3>${esc(GRADE_COPY[v.grade])}</h3>
             <p class="fh-meta">보증금 ${st.depositKnown ? esc(money(v.ltv.deposit10k)) : "미입력"} · ${esc(v.asOf)} 기준</p>
             <p class="fh-headline">${esc(v.headline)}</p>
+            ${v.grade === "check" && v.coreGaps?.length ? `<p class="fh-check-reasons">확인할 핵심 항목: ${v.coreGaps.slice(0, 3).map((g) => `<b>${esc(g.label)}</b>(${esc(g.evidenceLabel)})`).join(" · ")}${v.coreGaps.length > 3 ? ` 외 ${v.coreGaps.length - 3}개` : ""}</p>` : ""}
             ${intake.confirmedBuildingViolation() ? `<p class="fh-sub is-danger-text">제출한 건축물대장에서 위반건축물 표기를 확인했습니다.
               <button type="button" class="fh-btn" data-action="intake-tab" data-target="building">건축물대장 근거 보기</button></p>` : ""}
             ${v.property.housingType === "multi" && !v.ltv.priorDepositPending ? `<p class="fh-sub">선순위 보증금 ${esc(intake.amountLabel(v.ltv.prior10k))} · ${esc(intake.confirmedSource())} 기준</p>` : ""}
@@ -470,7 +480,7 @@
         .map(
           (c) => `<div class="fh-right is-${c.result}">
             <div class="fh-row"><strong>${esc(c.label)}</strong>${chip(c.result)}</div>
-            <div class="fh-row"><span>${esc(c.value)}</span>${srcChip(c.source, c.sourceLabel)}</div>
+            <div class="fh-row"><span>${esc(c.value)}</span><span>${srcChip(c.source, c.sourceLabel)}${evChip(c)}</span></div>
             <p>${esc(c.standard)}</p>${c.note ? `<p>${esc(c.note)}</p>` : ""}
           </div>`
         )
@@ -481,10 +491,10 @@
       if (!rows.length) return "";
       return `<h4 class="fh-group">${AREA_LABELS[area]}</h4>
         <table class="fh-table fh-check-table">
-          <thead><tr><th>항목</th><th>기준</th><th>이 집</th><th>결과</th><th>출처</th></tr></thead>
+          <thead><tr><th>항목</th><th>기준</th><th>이 집</th><th>결과</th><th>출처·근거</th></tr></thead>
           <tbody>${rows
             .map(
-              (c) => `<tr><td>${esc(c.label)}${c.note ? `<small>${esc(c.note)}</small>` : ""}</td><td class="fh-std">${esc(c.standard)}</td><td>${esc(c.value)}</td><td>${chip(c.result)}</td><td>${srcChip(c.source, c.sourceLabel)}</td></tr>`
+              (c) => `<tr><td>${esc(c.label)}${c.note ? `<small>${esc(c.note)}</small>` : ""}</td><td class="fh-std">${esc(c.standard)}</td><td>${esc(c.value)}</td><td>${chip(c.result)}</td><td>${srcChip(c.source, c.sourceLabel)}${evChip(c)}</td></tr>`
             )
             .join("")}</tbody>
         </table>`;

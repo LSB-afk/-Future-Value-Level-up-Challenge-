@@ -23,6 +23,8 @@
   --fh-danger-soft: #fdeeee;
   --fh-unknown: #6b7280;
   --fh-unknown-soft: #f1f3f5;
+  --fh-check: #546478;
+  --fh-check-soft: #eef1f5;
 }
 
 /* ---------- 공통 작은 요소 ---------- */
@@ -76,6 +78,12 @@
 .fh-report .src-report { border-color: var(--fh-caution); color: var(--fh-caution); }
 .fh-report .src-estimate { border-style: dashed; }
 .fh-report .src-none { border-style: dashed; }
+/* 근거 수준 칩: 서류 확인 > 원문 대조 입력 > 직접 입력 > 미확인 */
+.fh-report .ev-chip { display: inline-block; margin-left: 4px; border-radius: 6px; padding: 1px 6px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.fh-report .ev-document { background: var(--fh-safe-soft); color: var(--fh-safe); }
+.fh-report .ev-reviewed { background: var(--fh-brand-soft); color: var(--fh-brand-strong); }
+.fh-report .ev-input { background: var(--fh-check-soft); color: var(--fh-check); }
+.fh-report .ev-none { border: 1px dashed var(--fh-line); color: var(--fh-muted); }
 
 .fh-toast {
   position: fixed;
@@ -218,6 +226,10 @@
 .grade-safe .fh-grade-badge { background: var(--fh-safe); }
 .grade-caution .fh-grade-badge { background: var(--fh-caution); }
 .grade-danger .fh-grade-badge { background: var(--fh-danger); }
+.grade-check .fh-grade-badge { background: var(--fh-check); }
+.grade-check .fh-grade-badge span { font-size: 17px; }
+.fh-check-reasons { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--fh-check-soft); color: #374151; font-size: 13px; line-height: 1.55; }
+.fh-check-reasons b { font-weight: 600; }
 .fh-grade-text { min-width: 0; display: grid; gap: 6px; justify-items: start; }
 .fh-grade-text h3 { font-size: 18px; line-height: 1.35; }
 .fh-meta { margin: 0; color: var(--fh-muted); font-size: 13px; line-height: 1.5; }

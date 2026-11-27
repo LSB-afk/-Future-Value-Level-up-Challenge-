@@ -1343,8 +1343,12 @@ class Handler(BaseHTTPRequestHandler):
                     payload = verify_trade_price(validate_jeonse_input(payload))
                     confirmed_prior = evidence = None
                     if owner_token:
-                        from document_requests import confirmed_prior as document_prior
-                        confirmed_prior = document_prior(owner_token, (payload.get("property") or {}).get("address", ""))
+                        from document_requests import confirmed_prior as document_prior, confirmed_tax
+                        address = (payload.get("property") or {}).get("address", "")
+                        confirmed_prior = document_prior(owner_token, address)
+                        # 국세·지방세 납세증명서를 모두 원문 확인했으면 체납 없음을 서류 근거로 판정한다(주택 유형 무관).
+                        if confirmed_tax(owner_token, address):
+                            payload["landlord"] = {**(payload.get("landlord") or {}), "taxArrears": "no", "taxSource": "submitted"}
                     if registry_evidence:
                         from evidence_store import apply_registry
                         payload, evidence = apply_registry(payload, registry_evidence)
