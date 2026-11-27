@@ -101,6 +101,7 @@ def apply_registry(payload, token):
         registry[key] = rights[key]
     if applied:
         registry["rightsSource"] = label
+        registry["rightsKeys"] = ",".join(applied)  # 판정 엔진은 이 항목만 등기부 근거로 본다
     return {**payload, "registry": registry}, {
         "status": "applied", "source": values["source"], "issuedAt": values["issuedAt"],
         "mortgageMax10k": values["mortgageMax10k"], "replacedTypedValues": replaced,

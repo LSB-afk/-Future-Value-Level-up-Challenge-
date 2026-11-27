@@ -255,6 +255,13 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
     return "PDF 대조 가능";
   }
 
+  // 본인인증 기관이 연결된 서버는 유료 조회·요청 생성 전에 같은 매물 범위의 인증 영수증을 확인한다.
+  function identityFields() {
+    let receipt = null;
+    try { receipt = JSON.parse(sessionStorage.getItem("fithome.identity.receipt." + report())); } catch { receipt = null; }
+    return { reportKey: report(), ...(receipt?.challengeToken ? { challengeToken: receipt.challengeToken } : {}) };
+  }
+
   function checkIdentityBadge() {
     const current = state();
     if (!window.FitHomeIdentity?.statusFor || current.identityChecking || (current.identityReadAt || 0) > Date.now() - 20000) return;
@@ -523,7 +530,7 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
         const requested = [...new Set([...(verdict().property.housingType === "multi" ? ["fixedDate"] : []), ...data.getAll("kind")])];
         if (!requested.length) { toast("요청할 서류를 한 가지 이상 선택하세요."); return; }
         await run(button, "요청 링크를 만들고 있어요.", async (key, local) => {
-          const result = await post("document-requests/create", { address: currentAddress, requested });
+          const result = await post("document-requests/create", { address: currentAddress, requested, ...identityFields() });
           store.set(key + ".documentRequest", { ownerToken: result.ownerToken, recipientToken: result.recipientToken, requested: result.requested, expiresAt: result.expiresAt, address: result.address });
           local.expired = false; local.submitted = null;
           await refresh(result.ownerToken, local);
@@ -538,7 +545,9 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
             if (data.get("consent") !== "on") throw new Error("유료 열람 동의가 필요해요.");
             const propertyId = data.get("propertyId");
             local.results = []; // 유료 열람 재전송 방지. 다시 검색하면 새 선택을 받을 수 있다.
-            local.review = await post("registry/fetch", {address: currentAddress, propertyId, confirmCharge: true});
+            // 같은 선택의 재전송이 두 번 과금되지 않게 요청 번호를 붙인다(서버가 영속 기록으로 막는다).
+            local.review = await post("registry/fetch", {address: currentAddress, propertyId, confirmCharge: true,
+              idempotencyKey: crypto.randomUUID().replace(/-/g, ""), ...identityFields()});
           }
         });
       }

@@ -1,5 +1,7 @@
 """HTTP integration between the private document inbox and the public-facing verdict."""
 import base64
+
+import document_requests
 from datetime import date, datetime, timezone
 from http.client import HTTPConnection
 from http.server import ThreadingHTTPServer
@@ -116,6 +118,7 @@ class DocumentVerdictTest(unittest.TestCase):
         def submit(lines, revision):
             with patch("document_requests._pdf_lines", return_value=[lines]):
                 post("document-requests/submit", {"kind": "fixedDate", "recipientToken": recipient,
+                     "consent": {"version": document_requests.CONSENT_VERSION, "agreed": True},
                      "fileBase64": base64.b64encode(b"%PDF-" + revision).decode()})
 
         lines = ["확정일자 부여현황", "주택 소재지: " + address, "발급일: " + date.today().isoformat(),

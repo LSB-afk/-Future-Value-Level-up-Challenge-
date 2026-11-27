@@ -89,7 +89,7 @@ CLIENT_SECTION_SOURCES = {
     "building": ("source", {"input", "public", "none"}),
 }
 SERVER_ONLY_FIELDS = (("registry", "mortgageSource"), ("registry", "dateSource"), ("registry", "rightsSource"),
-                      ("landlord", "taxSource"))
+                      ("registry", "rightsKeys"), ("landlord", "taxSource"))
 # 공시가격·전세 시세 출처. 'public'·'trade'는 서버(movevalue_api.verify_trade_price)가 단지 데이터와 맞을 때만 남긴다.
 CLIENT_FIELD_SOURCES = (
     ("price", "officialSource", {"public", "estimate", "input", "none"}),
@@ -191,6 +191,13 @@ def validate_input(inp, today: date | None = None) -> dict:
     if downgraded:
         inp = {**inp, "sourceDowngraded": ", ".join(downgraded)}
     return inp
+
+
+def server_rights_keys(registry: dict) -> set[str]:
+    """evidence_store.apply_registry가 등기부에서 읽어 덮어쓴 권리 항목. 서버만 설정한다(SERVER_ONLY_FIELDS)."""
+    if registry.get("rightsSource") not in {"registry", "registryUpload"}:
+        return set()
+    return {k for k in str(registry.get("rightsKeys") or "").split(",") if k}
 
 
 def _num(value) -> float | None:
@@ -340,21 +347,23 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         result = {"yes": present_result, "no": "pass", "unknown": "unknown"}[state]
         checks.append(_check(area, key, label, standard, value, result, src if state != "unknown" else "none", note))
 
-    # 권리관계 (등기부 갑구·을구). 갑구 값은 서버가 등기부에서 읽었을 때만 출처가 등기부다(rightsSource).
-    rights_source = registry.get("rightsSource") or reg_source
-    tri_check("rights", "trust", "신탁등기", "갑구에 신탁등기가 없을 것", "danger", rights_source,
+    # 권리관계 (등기부 갑구·을구). 서버가 등기부에서 실제로 읽은 항목(rightsKeys)만 출처가 등기부다.
+    def rights_source(key: str) -> str:
+        return registry["rightsSource"] if key in server_rights_keys(registry) else reg_source
+
+    tri_check("rights", "trust", "신탁등기", "갑구에 신탁등기가 없을 것", "danger", rights_source("trust"),
               "신탁된 집은 소유권이 신탁회사에 있어 임대인과의 계약이 무효가 될 수 있습니다.")
-    tri_check("rights", "seizure", "압류·가압류", "갑구에 압류·가압류가 없을 것", "danger", rights_source)
-    tri_check("rights", "auction", "경매개시결정", "경매개시결정 기록이 없을 것", "danger", rights_source)
-    tri_check("rights", "leaseRegistration", "임차권등기", "을구에 임차권등기가 없을 것", "danger", rights_source,
-              "앞선 세입자가 보증금을 돌려받지 못했다는 흔적입니다.")
+    tri_check("rights", "seizure", "압류·가압류", "갑구에 압류·가압류가 없을 것", "danger", rights_source("seizure"))
+    tri_check("rights", "auction", "경매개시결정", "경매개시결정 기록이 없을 것", "danger", rights_source("auction"))
+    tri_check("rights", "leaseRegistration", "임차권등기", "을구에 임차권등기가 없을 것", "danger",
+              rights_source("leaseRegistration"), "앞선 세입자가 보증금을 돌려받지 못했다는 흔적입니다.")
 
     owner = _tri(registry.get("ownerMatches"))
     checks.append(_check(
         "rights", "ownerMatches", "소유자와 계약 상대", "등기부 소유자와 계약하는 임대인이 같을 것",
         {"yes": "일치", "no": "불일치", "unknown": "미확인"}[owner],
         {"yes": "pass", "no": "danger", "unknown": "unknown"}[owner],
-        rights_source if owner != "unknown" else "none",
+        reg_source if owner != "unknown" else "none",
         "대리인과 계약하면 위임장·인감증명서를 확인해야 합니다." if owner != "yes" else "",
     ))
 
@@ -369,7 +378,7 @@ def build_checks(inp: dict, ltv: dict, today: date) -> list[dict]:
         checks.append(_check(
             "rights", "recentOwnership", "최근 소유권 이전",
             f"계약 전 {RECENT_OWNERSHIP_DAYS}일 안에 소유자가 바뀌지 않았을 것",
-            f"{changed.isoformat()} ({days}일 전)", "caution" if recent else "pass", rights_source,
+            f"{changed.isoformat()} ({days}일 전)", "caution" if recent else "pass", reg_source,
             "새 집주인이 곧바로 전세를 놓는 것은 '바지 임대인' 수법과 겹칩니다." if recent else "",
         ))
 
@@ -526,9 +535,13 @@ def assign_evidence(inp: dict, ltv: dict, checks: list[dict]) -> None:
     market = inp.get("market") or {}
     by_id = {c["id"]: c for c in checks}
     mortgage_doc = registry.get("mortgageSource") in SERVER_REGISTRY_SOURCES
-    # 갑구는 서버가 등기부에서 읽었으면 서류 확인, 같은 등기부 원문을 반영한 상태에서 사용자가 체크했으면 원문 대조 입력.
-    rights = ("document" if registry.get("rightsSource") in SERVER_REGISTRY_SOURCES
-              else "reviewed" if mortgage_doc else "input")
+    # 갑구는 서버가 등기부에서 읽은 항목만 서류 확인, 같은 등기부 원문을 반영한 상태에서 사용자가 체크했으면 원문 대조 입력.
+    # 소유자 일치·소유권 이전일은 서버가 읽지 않으므로(개인정보) 원문 대조 입력이 최선이다.
+    read_keys = server_rights_keys(registry)
+    user_checked = "reviewed" if mortgage_doc else "input"
+
+    def rights(key: str) -> str:
+        return "document" if key in read_keys else user_checked
     mortgage = "none" if ltv["mortgage10k"] is None else "document" if mortgage_doc else "input"
     price_level = price_evidence(price, ltv)
     prior = "none" if ltv["prior10k"] is None else "document" if housing == "multi" else "input"
@@ -536,7 +549,7 @@ def assign_evidence(inp: dict, ltv: dict, checks: list[dict]) -> None:
     official_level = "document" if official == "public" else "none" if official in {"estimate", "none"} else "input"
     gap_source = market.get("source")
     levels = {
-        **{key: rights for key in ("trust", "seizure", "auction", "leaseRegistration", "ownerMatches", "recentOwnership")},
+        **{key: rights(key) for key in ("trust", "seizure", "auction", "leaseRegistration", "ownerMatches", "recentOwnership")},
         "registryFresh": "document" if registry.get("dateSource") in SERVER_REGISTRY_SOURCES else "input",
         "mortgage": mortgage,
         "ltv": _weakest(mortgage, price_level, *((prior,) if housing == "multi" else ())),

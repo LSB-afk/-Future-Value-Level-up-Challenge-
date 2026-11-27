@@ -152,8 +152,18 @@ class TierTests(unittest.TestCase):
     def test_server_rights_source_is_a_document(self):
         body = verified()
         body["registry"]["rightsSource"] = "registryUpload"
+        body["registry"]["rightsKeys"] = "trust,seizure"
         by_id = checks(evaluate(body))
         self.assertEqual((by_id["trust"]["evidence"], by_id["trust"]["source"]), ("document", "registryUpload"))
+        # 서버가 읽지 않은 항목은 같은 등기부를 반영한 상태의 사용자 체크(원문 대조 입력)로 남는다.
+        self.assertEqual(by_id["auction"]["evidence"], "reviewed")
+        self.assertNotEqual(by_id["auction"]["source"], "registryUpload")
+        self.assertEqual(by_id["ownerMatches"]["evidence"], "reviewed")
+
+    def test_client_cannot_send_rights_keys(self):
+        body = verified()
+        body["registry"]["rightsKeys"] = "trust"
+        self.assertNotIn("rightsKeys", validate_input(body)["registry"])
 
 
 class RegistryEvidenceTierTests(unittest.TestCase):
@@ -200,6 +210,7 @@ class ConfirmedTaxTests(unittest.TestCase):
     def submit(self, kind, title):
         with patch.object(requests, "_pdf_lines", return_value=[tax_lines(title)]):
             requests.submit_document({"recipientToken": self.created["recipientToken"], "kind": kind,
+                                      "consent": {"version": requests.CONSENT_VERSION, "agreed": True},
                                       "fileBase64": base64.b64encode(b"%PDF-" + kind.encode()).decode()})
 
     def confirm(self, kind):

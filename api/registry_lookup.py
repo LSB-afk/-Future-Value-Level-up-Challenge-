@@ -615,7 +615,7 @@ def read_registry_pdf(address, pdf_bytes):
 # PDF 원문과 증거 줄(이름이 들어갈 수 있다)은 남기지 않고 판독 결과만 남긴다.
 _CHARGE_KEY = re.compile(r"[A-Za-z0-9_-]{16,128}")
 _CHARGE_SUMMARY = ("address", "propertyId", "issuedAt", "mortgageMax10k", "reviewRequired",
-                   "reason", "documentHash", "source", "selectedAddress")
+                   "reason", "documentHash", "source", "selectedAddress", "rights")
 _CHARGE_PENDING_SECONDS = 180  # 제공기관 타임아웃보다 길게 처리 중이면 결과를 알 수 없는 것으로 본다.
 _CHARGE_RETENTION = 7 * 86400
 _KST = timezone(timedelta(hours=9))

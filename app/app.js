@@ -5447,7 +5447,7 @@ function renderJeonseRiskPanel() {
         <div class="fh-report-cta">
           <div>
             <strong>상세 판정 리포트</strong>
-            <span>등기부 값을 넣으면 실제 LTV로 안심·주의·위험을 판정하고, 확인 요청과 특약까지 정리해 드려요.</span>
+            <span>등기부 값을 넣으면 실제 LTV로 위험·주의·확인 필요·안심을 판정하고, 확인 요청과 특약까지 정리해 드려요.</span>
           </div>
           <button type="button" class="fh-report-cta-button" data-open-report="${escapeHtml(detail.id)}">리포트 보기</button>
         </div>

@@ -133,7 +133,8 @@ class PriorEvidenceTests(unittest.TestCase):
                 self.assertTrue(report["ltv"]["mortgagePending"])
                 self.assertEqual(checks["violation"]["result"], result)
                 self.assertEqual(checks["use"]["source"], "input")
-                self.assertEqual(report["grade"], "caution")
+                # 4단계 등급: 위반 표기가 주의면 주의, 아니면 근저당 보류(핵심 미확인)로 확인 필요다.
+                self.assertEqual(report["grade"], "caution" if result == "caution" else "check")
                 if value == "yes" and source == "reviewedPdf":
                     self.assertEqual(checks["violation"]["sourceLabel"], "사용자가 원문 대조")
                 if result == "unknown":

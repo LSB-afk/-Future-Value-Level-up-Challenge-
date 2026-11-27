@@ -139,6 +139,7 @@ class RegistryEvidenceTests(unittest.TestCase):
         inp, info = evidence_store.apply_registry(validate_input(payload()), token)
         self.assertEqual(inp["registry"]["rightsSource"], inp["registry"]["mortgageSource"])
         self.assertEqual(inp["registry"]["rightsSource"], "registry")
+        self.assertTrue(set(inp["registry"]["rightsKeys"].split(",")) <= {"trust", "seizure", "auction", "leaseRegistration"})
         self.assertFalse(info["replacedTypedValues"])
 
     def test_unknown_or_missing_rights_are_not_applied(self):
