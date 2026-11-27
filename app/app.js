@@ -4924,13 +4924,44 @@ function agentHistoryForLlm() {
     .filter((message) => message.content);
 }
 
+// 이 단지 리포트(report.js·doc-report.js)가 저장한 서류 근거 번호를 Agent 도구 맥락으로 보낸다.
+// 키는 report.js의 "fithome.report." + 리포트 키(apt:단지 id) + ".edits"/".registryEvidence"/".documentRequest"다.
+// 서버가 번호를 다시 검증하고, 모델에게는 번호 대신 확인 상태만 전달한다.
+function agentReportState(target) {
+  const detail = state.property.detail;
+  if (!target?.id || detail?.id !== target.id || !detail.address) return null;
+  const read = (suffix) => {
+    try {
+      const raw = localStorage.getItem(`fithome.report.apt:${target.id}.${suffix}`);
+      return raw === null ? null : JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+  const address = detail.address;
+  const edits = read("edits") || {};
+  const evidence = read("registryEvidence");
+  const request = read("documentRequest");
+  const reportState = { address, housingType: edits.housingType || "apartment" };
+  // report.js와 같은 조건: 입력값이 등기 대조 결과와 같을 때만 근거 번호를 쓴다.
+  if (evidence?.evidenceId && evidence.address === address && edits.mortgageUnknown === false
+    && edits.mortgageMax10k != null && edits.mortgageMax10k !== ""
+    && Number(edits.mortgageMax10k) === evidence.mortgageMax10k && edits.issuedAt === evidence.issuedAt) {
+    reportState.registryEvidenceId = evidence.evidenceId;
+  }
+  if (request?.ownerToken && request.address === address) reportState.documentOwnerToken = request.ownerToken;
+  return reportState;
+}
+
 async function sendAgentMessageViaLlm(target) {
+  const reportState = agentReportState(target);
   const response = await fetch("/api/agent-chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: agentHistoryForLlm(),
-      context: `사용자가 현재 보고 있는 단지: ${target.name} (id: ${target.id})`
+      context: `사용자가 현재 보고 있는 단지: ${target.name} (id: ${target.id})`,
+      ...(reportState ? { reportState } : {})
     })
   });
   const payload = await response.json().catch(() => ({}));

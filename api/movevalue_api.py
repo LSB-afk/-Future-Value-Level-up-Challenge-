@@ -1403,7 +1403,11 @@ class Handler(BaseHTTPRequestHandler):
             messages = payload.get("messages")
             if not isinstance(messages, list) or not messages:
                 raise ValueError("messages 배열이 필요합니다.")
-            result = agent_chat(messages, str(payload.get("context") or ""))
+            # 열린 리포트의 근거 번호·서류 요청 토큰은 document_status 실행 맥락으로만 넘긴다(모델에게는 보내지 않는다).
+            from agent_llm import clean_report_state
+
+            report_state = clean_report_state(payload.get("reportState"))
+            result = agent_chat(messages, str(payload.get("context") or ""), report_state)
         except ValueError as exc:
             self.send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return
