@@ -306,6 +306,69 @@ def _empty_collateral_lines(lines):
     return annotations
 
 
+# 요약표 권리 판독: 단어가 유효 기록 행에 있으면 yes, 섹션이 '기록사항 없음'뿐이면 no, 나머지는 unknown.
+# 근거에는 쪽·줄과 찾은 권리 이름만 남긴다. 같은 행의 소유자·채권자 이름은 결과에 넣지 않는다.
+_RIGHT_TERMS = {
+    "trust": r"신탁",
+    "seizure": r"가?압류",
+    "auction": r"(?:임의|강제)?경매개시결정",
+    "leaseRegistration": r"(?:주택|상가건물)?임차권(?:설정)?",
+}
+_RIGHT_SECTIONS = (
+    (("trust", "seizure", "auction"), r"소유지분을제외한소유권에관한사항\(?갑구\)?"),
+    (("leaseRegistration",), r"\(?근\)?저당권및전세권등\(?을구\)?"),
+)
+_EMPTY_MARKS = ("기록사항없음", "해당사항없음", "기록사항없습니다")
+
+
+def _summary_section(lines, compact, summary, title):
+    """요약표에서 제목이 한 번만 나오는 섹션의 본문 행. 섹션이 없거나 여러 번이면 None."""
+    starts = [i for i, k in enumerate(compact) if i > summary and re.search(title, k)]
+    if len(starts) != 1:
+        return None
+    rows = []
+    for i in range(starts[0] + 1, len(lines)):
+        k = compact[i]
+        if re.match(
+            r"^\[?(?:\d+[.．])?참고사항|^이증명서는|^본주요등기사항|^\d+[.．].*(?:갑구|을구)\)?$",
+            k,
+        ):
+            break
+        if re.fullmatch(r"(?:순위번호|등기목적|접수정보|주요등기사항|대상소유자)+", k):
+            continue
+        rows.append((lines[i], k))
+    return rows
+
+
+def _summary_rights(lines, compact, summary):
+    rights = dict.fromkeys(_RIGHT_TERMS, "unknown")
+    evidence = []
+    for keys, title in _RIGHT_SECTIONS:
+        rows = _summary_section(lines, compact, summary, title)
+        # 요약표는 말소되지 않은 사항만 싣는다. 말소 표시가 보이면 형식을 믿을 수 없다.
+        if not rows or any("말소" in k for _, k in rows):
+            continue
+        if any(k.strip("-ㆍ·*.,()[]") in _EMPTY_MARKS for _, k in rows):
+            if len(rows) == 1:
+                row = rows[0][0]
+                rights.update(dict.fromkeys(keys, "no"))
+                evidence.extend(
+                    {"page": row["page"], "line": row["line"], "right": key, "text": row["text"]}
+                    for key in keys
+                )
+            continue
+        for key in keys:
+            for row, k in rows:
+                found = re.search(_RIGHT_TERMS[key], k)
+                if found:
+                    rights[key] = "yes"
+                    evidence.append(
+                        {"page": row["page"], "line": row["line"], "right": key, "text": found[0]}
+                    )
+                    break
+    return rights, evidence
+
+
 def _parse_pdf(address, pdf, selected=None):
     lines = _text_lines(pdf)
     result = {
@@ -314,6 +377,8 @@ def _parse_pdf(address, pdf, selected=None):
         "issuedAt": None,
         "mortgageMax10k": None,
         "evidence": [],
+        "rights": dict.fromkeys(_RIGHT_TERMS, "unknown"),
+        "rightsEvidence": [],
         "reviewRequired": True,
         "reason": "",
         "documentHash": hashlib.sha256(pdf).hexdigest() if isinstance(pdf, bytes) else None,
@@ -422,6 +487,8 @@ def _parse_pdf(address, pdf, selected=None):
     )
     if summary is None:
         return hold("원문에서 현재 유효한 권리 요약을 식별할 수 없습니다.")
+    # 주소·고유번호·열람일을 대조한 문서에서만 갑구·을구 권리를 읽는다. 근저당 보류와는 따로 본다.
+    result["rights"], result["rightsEvidence"] = _summary_rights(lines, compact, summary)
     starts = [
         i
         for i, k in enumerate(compact)

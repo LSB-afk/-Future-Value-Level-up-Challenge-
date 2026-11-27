@@ -122,6 +122,35 @@ class RegistryEvidenceTests(unittest.TestCase):
                 _, info = evidence_store.apply_registry(payload(), "x" * 43)
                 self.assertEqual(info["status"], "rejected")
 
+    def test_rights_stored_and_only_yes_no_applied(self):
+        rights = {"trust": "yes", "seizure": "no", "auction": "unknown", "leaseRegistration": "no"}
+        token = _with_registry_evidence(reading(rights=rights))["evidenceId"]
+        inp, info = evidence_store.apply_registry(validate_input(payload(auction="no")), token)
+        registry = inp["registry"]
+        self.assertEqual(info["rightsApplied"], ["trust", "seizure", "leaseRegistration"])
+        self.assertEqual((registry["trust"], registry["seizure"], registry["leaseRegistration"]), ("yes", "no", "no"))
+        self.assertEqual(registry["auction"], "no")  # unknown은 화면 입력을 덮어쓰지 않는다
+        self.assertEqual(registry["rightsSource"], "registryUpload")
+        self.assertTrue(info["replacedTypedValues"])  # 입력한 신탁 '없음'을 등기 '있음'으로 바꿨다
+        self.assertEqual({c["id"]: c for c in evaluate(inp)["checks"]}["trust"]["result"], "danger")
+
+    def test_rights_source_label_follows_mortgage_source(self):
+        token = _with_registry_evidence(reading(source="hyphen", rights={"trust": "no"}))["evidenceId"]
+        inp, info = evidence_store.apply_registry(validate_input(payload()), token)
+        self.assertEqual(inp["registry"]["rightsSource"], inp["registry"]["mortgageSource"])
+        self.assertEqual(inp["registry"]["rightsSource"], "registry")
+        self.assertFalse(info["replacedTypedValues"])
+
+    def test_unknown_or_missing_rights_are_not_applied(self):
+        unknown = dict.fromkeys(evidence_store.RIGHT_KEYS, "unknown")
+        for held in (reading(), reading(rights=unknown), reading(rights={"trust": "maybe", "seizure": 1})):
+            with self.subTest(rights=held.get("rights")):
+                token = _with_registry_evidence(held)["evidenceId"]
+                inp, info = evidence_store.apply_registry(validate_input(payload(auction="yes")), token)
+                self.assertEqual(info["rightsApplied"], [])
+                self.assertNotIn("rightsSource", inp["registry"])
+                self.assertEqual((inp["registry"]["trust"], inp["registry"]["auction"]), ("no", "yes"))
+
     def test_price_market_violation_labels_need_server_confirmation(self):
         body = payload(mortgageMax10k=0, issuedAt=TODAY)
         body["price"].update(official10k=50000, officialSource="registry")
