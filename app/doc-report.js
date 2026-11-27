@@ -135,7 +135,8 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
     const busy = s.busy ? "disabled" : "";
     if (!record || s.expired) {
       const outstanding = kind => v.requests?.some(row => row.id === kind && row.status !== "received");
-      const needTax = outstanding("taxCert") && v.checks.some(c => c.id === "taxArrears" && c.result === "unknown");
+      // 체납 없음은 납세증명서 두 장을 원문 확인해야 '서류 확인'이 된다. 직접 입력만 있으면 함께 요청한다.
+      const needTax = v.checks.some(c => c.id === "taxArrears" && c.result !== "danger" && c.evidence !== "document");
       return `<section class="fh-doc-intake" data-intake-panel="landlord">
         <h4 class="fh-group">집주인에게 남은 서류 한 번에 요청</h4>
         ${s.expired ? "<p>기존 요청의 유효기간이 지났어요. 필요한 서류를 다시 요청하세요.</p>" : ""}
@@ -173,7 +174,7 @@ window.fitHomeDocumentIntake = function ({ store, esc, money, copyText, render, 
             ${(doc.notes || []).map(note => `<p class="fh-sub">${esc(note)}</p>`).join("")}
             ${doc.status === "needs_review" && kind === "fixedDate" ? "<p>집주인에게 같은 제출 링크로 보완을 요청하세요. 건물 전체 선순위 보증금 합계와 기준일이 명시된 자료가 필요해요. 확정일자 자료의 개별 계약 금액만으로는 현재 선순위 총액을 확인할 수 없어요.</p>" : ""}
             ${evidence(doc.evidence)}
-            ${doc.status === "ready" ? `<button type="button" class="fh-btn primary" data-intake="confirm" data-kind="${esc(kind)}" data-fingerprint="${esc(doc.fingerprint)}" ${busy}>${kind === "fixedDate" ? "주소·원문·총액 확인 후 판정에 반영" : "원문 확인 완료"}</button>` : ""}` : ""}
+            ${doc.status === "ready" ? `<button type="button" class="fh-btn primary" data-intake="confirm" data-kind="${esc(kind)}" data-fingerprint="${esc(doc.fingerprint)}" ${busy}>${kind === "fixedDate" ? "주소·원문·총액 확인 후 판정에 반영" : kind === "nationalTax" || kind === "localTax" ? "원문 확인 후 체납 판정에 반영" : "원문 확인 완료"}</button>` : ""}` : ""}
           </article>`;
       }).join("")}</div></section>`;
   }

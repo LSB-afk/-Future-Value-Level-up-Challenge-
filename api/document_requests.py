@@ -495,5 +495,21 @@ def review_request(payload):
         return _owner_view(conn, row)
 
 
+def confirmed_tax(owner_token, address):
+    """같은 주소 요청에서 국세·지방세 납세증명서를 모두 원문 확인했으면 True."""
+    if not isinstance(address, str) or not owner_token:
+        return False
+    try:
+        with _db() as conn:
+            row = _request(conn, {"ownerToken": owner_token}, "owner")
+            if _address_key(row["address"]) == _address_key(address):
+                confirmed = {doc["kind"] for doc in _owner_view(conn, row)["documents"] if doc["status"] == "confirmed"}
+                return {"nationalTax", "localTax"} <= confirmed
+    except DocumentRequestError as exc:
+        if exc.status != 404:
+            raise
+    return False
+
+
 if __name__ == "__main__" and sys.argv[1:] == ["--pdf-lines"]:
     raise SystemExit(_extract_worker())
